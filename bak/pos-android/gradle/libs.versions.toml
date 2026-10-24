@@ -1,0 +1,47 @@
+[versions]
+agp = "9.4.1"
+kotlin = "2.4.21"
+composeBom = "2026.09.00"
+coreKtx = "1.19.1"
+activityCompose = "1.13.0"
+lifecycle = "2.11.0"
+navigation = "2.10.2"
+coil = "3.6.3"
+shimmer = "1.5.0"
+lottie = "6.7.1"
+haze = "2.0.1"
+telephoto = "0.19.0"
+swipe = "1.3.0"
+konfetti = "2.2.0"
+
+[libraries]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+compose-material-icons = { module = "androidx.compose.material:material-icons-extended" }
+# 图片：菜品图加载与缓存
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+# 骨架屏
+shimmer = { module = "com.valentinilk.shimmer:compose-shimmer", version.ref = "shimmer" }
+# 动效：收款成功
+lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
+konfetti-compose = { module = "nl.dionsegijn:konfetti-compose", version.ref = "konfetti" }
+# 毛玻璃：手机版底部购物车条
+haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
+haze-blur = { module = "dev.chrisbanes.haze:haze-blur", version.ref = "haze" }
+# 菜品详情大图缩放
+telephoto-coil3 = { module = "me.saket.telephoto:zoomable-image-coil3", version.ref = "telephoto" }
+# 待下单行左滑删除
+swipe = { module = "me.saket.swipe:swipe", version.ref = "swipe" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

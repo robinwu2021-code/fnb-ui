@@ -1,0 +1,786 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>点餐页风格对比</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap">
+<style>
+/* Layout: comparison shell (switch + notes) wrapping one live POS prototype; the prototype swaps skins A (UnoCSS mono) and B (mainstream POS) on the same logic. */
+:root {
+  --page-bg: #f4f4f3; --page-fg: #111111; --page-fg2: #555555; --page-line: #dddddb; --page-card: #ffffff;
+  --page-font: "DM Sans", "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", system-ui, sans-serif;
+  --page-mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --cat-hot: #1f2937; --cat-sig: #b91c1c; --cat-cold: #0f766e; --cat-wok: #c2410c; --cat-staple: #a16207; --cat-soup: #6d28d9; --cat-drink: #0369a1; --cat-set: #374151;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --page-bg: #0d0d0d; --page-fg: #f2f2f2; --page-fg2: #a5a5a5; --page-line: #2a2a2a; --page-card: #161616; color-scheme: dark; } }
+:root[data-theme="dark"] { --page-bg: #0d0d0d; --page-fg: #f2f2f2; --page-fg2: #a5a5a5; --page-line: #2a2a2a; --page-card: #161616; color-scheme: dark; }
+
+/* Skin A — UnoCSS mono */
+.app[data-skin="uno"] {
+  --bg: #f5f5f5; --surface: #ffffff; --hover: #fafafa; --sunken: #f0f0f0; --line: #e5e5e5; --line2: #d4d4d4;
+  --fg: #0a0a0a; --fg2: #525252; --fg3: #737373; --fgd: #a3a3a3;
+  --primary: #0a0a0a; --primary-h: #262626; --on-primary: #ffffff;
+  --brand: #ff5a1f; --on-brand: #0a0a0a; --brand-soft: #fff4ed; --brand-text: #c2410c;
+  --send: var(--brand); --on-send: var(--on-brand); --pay: var(--primary); --on-pay: var(--on-primary);
+  --count: var(--brand); --on-count: var(--on-brand);
+  --ok: #15803d; --ok-soft: #f0fdf4; --warn: #b45309; --warn-soft: #fffbeb; --bad: #b91c1c; --bad-soft: #fef2f2; --info: #1d4ed8; --info-soft: #eff6ff;
+  --hdr: var(--surface); --hdr-fg: var(--fg); --hdr-fg2: var(--fg3); --hdr-sunken: var(--sunken); --hdr-line: var(--line); --hdr-input: var(--surface); --hdr-seg-on: var(--surface);
+  --r-tile: 12px; --r-btn: 8px; --tile-shadow: none; --font: var(--page-font); --mono: var(--page-mono); --w-bold: 600;
+  --scrim: rgba(10, 10, 10, 0.48);
+}
+/* Skin B — mainstream POS */
+.app[data-skin="pos"] {
+  --bg: #e7ebf0; --surface: #ffffff; --hover: #f3f5f8; --sunken: #eef1f5; --line: #dde2e8; --line2: #c5ccd5;
+  --fg: #111827; --fg2: #4b5563; --fg3: #6b7280; --fgd: #9ca3af;
+  --primary: #1d4ed8; --primary-h: #1e40af; --on-primary: #ffffff;
+  --brand: #1d4ed8; --on-brand: #ffffff; --brand-soft: #eff6ff; --brand-text: #1d4ed8;
+  --send: #334155; --on-send: #ffffff; --pay: #15803d; --on-pay: #ffffff;
+  --count: #dc2626; --on-count: #ffffff;
+  --ok: #15803d; --ok-soft: #f0fdf4; --warn: #b45309; --warn-soft: #fffbeb; --bad: #b91c1c; --bad-soft: #fef2f2; --info: #1d4ed8; --info-soft: #eff6ff;
+  --hdr: #111827; --hdr-fg: #f9fafb; --hdr-fg2: #9ca3af; --hdr-sunken: #1f2937; --hdr-line: #1f2937; --hdr-input: #1f2937; --hdr-seg-on: #374151;
+  --r-tile: 8px; --r-btn: 6px; --tile-shadow: 0 1px 2px rgba(17, 24, 39, 0.18), 0 2px 6px rgba(17, 24, 39, 0.08);
+  --font: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; --mono: var(--font); --w-bold: 700;
+  --scrim: rgba(17, 24, 39, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app[data-skin="uno"] { --bg: #0a0a0a; --surface: #171717; --hover: #1f1f1f; --sunken: #0f0f0f; --line: #262626; --line2: #404040; --fg: #fafafa; --fg2: #a3a3a3; --fg3: #8a8a8a; --fgd: #525252; --primary: #fafafa; --primary-h: #e5e5e5; --on-primary: #0a0a0a; --brand: #ff6a33; --brand-soft: #2a140a; --brand-text: #ff8a5c; --ok: #4ade80; --ok-soft: #0b2a17; --warn: #fbbf24; --warn-soft: #2a2005; --bad: #f87171; --bad-soft: #2b0e0e; --info: #60a5fa; --info-soft: #0b1a33; --scrim: rgba(0, 0, 0, 0.64); }
+  :root:not([data-theme="light"]) .app[data-skin="pos"] { --bg: #0b0f14; --surface: #161b22; --hover: #1c232c; --sunken: #0f141a; --line: #263040; --line2: #35404f; --fg: #f3f4f6; --fg2: #aab2bd; --fg3: #8b95a3; --fgd: #4b5563; --primary: #60a5fa; --primary-h: #93c5fd; --on-primary: #0b0f14; --brand: #60a5fa; --on-brand: #0b0f14; --brand-soft: #0b1a33; --brand-text: #60a5fa; --send: #475569; --pay: #22c55e; --on-pay: #052e16; --count: #ef4444; --ok: #4ade80; --ok-soft: #0b2a17; --warn: #fbbf24; --warn-soft: #2a2005; --bad: #f87171; --bad-soft: #2b0e0e; --info: #60a5fa; --info-soft: #0b1a33; --hdr: #05070a; --hdr-sunken: #161b22; --hdr-line: #161b22; --hdr-input: #161b22; --hdr-seg-on: #2b3442; --tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); --scrim: rgba(0, 0, 0, 0.7); }
+}
+:root[data-theme="dark"] .app[data-skin="uno"] { --bg: #0a0a0a; --surface: #171717; --hover: #1f1f1f; --sunken: #0f0f0f; --line: #262626; --line2: #404040; --fg: #fafafa; --fg2: #a3a3a3; --fg3: #8a8a8a; --fgd: #525252; --primary: #fafafa; --primary-h: #e5e5e5; --on-primary: #0a0a0a; --brand: #ff6a33; --brand-soft: #2a140a; --brand-text: #ff8a5c; --ok: #4ade80; --ok-soft: #0b2a17; --warn: #fbbf24; --warn-soft: #2a2005; --bad: #f87171; --bad-soft: #2b0e0e; --info: #60a5fa; --info-soft: #0b1a33; --scrim: rgba(0, 0, 0, 0.64); }
+:root[data-theme="dark"] .app[data-skin="pos"] { --bg: #0b0f14; --surface: #161b22; --hover: #1c232c; --sunken: #0f141a; --line: #263040; --line2: #35404f; --fg: #f3f4f6; --fg2: #aab2bd; --fg3: #8b95a3; --fgd: #4b5563; --primary: #60a5fa; --primary-h: #93c5fd; --on-primary: #0b0f14; --brand: #60a5fa; --on-brand: #0b0f14; --brand-soft: #0b1a33; --brand-text: #60a5fa; --send: #475569; --pay: #22c55e; --on-pay: #052e16; --count: #ef4444; --ok: #4ade80; --ok-soft: #0b2a17; --warn: #fbbf24; --warn-soft: #2a2005; --bad: #f87171; --bad-soft: #2b0e0e; --info: #60a5fa; --info-soft: #0b1a33; --hdr: #05070a; --hdr-sunken: #161b22; --hdr-line: #161b22; --hdr-input: #161b22; --hdr-seg-on: #2b3442; --tile-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); --scrim: rgba(0, 0, 0, 0.7); }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--page-bg); color: var(--page-fg); }
+body { font-family: var(--page-font); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; }
+button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--page-fg); outline-offset: 2px; }
+.ic { width: 20px; height: 20px; flex: none; stroke-width: 1.75; }
+.ic-sm { width: 16px; height: 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Shell */
+.shell { max-width: 1440px; margin: 0 auto; display: grid; gap: 16px; }
+.shell-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.shell-bar h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.shell-bar p { margin: 0; color: var(--page-fg2); font-size: 14px; flex: 1 1 260px; min-width: 0; }
+.switch { display: inline-flex; padding: 4px; gap: 4px; border: 1px solid var(--page-line); border-radius: 10px; background: var(--page-card); }
+.switch button { height: 40px; padding: 0 16px; border: 0; border-radius: 7px; background: transparent; color: var(--page-fg2); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.switch button[aria-pressed="true"] { background: var(--page-fg); color: var(--page-bg); }
+.switch b { font: 500 12px/1 var(--page-mono); }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.note { min-width: 0; padding: 20px; border: 1px solid var(--page-line); border-radius: 12px; background: var(--page-card); }
+.note h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; text-wrap: balance; }
+.note .sub { margin: 0 0 14px; color: var(--page-fg2); font-size: 14px; }
+.note dl { margin: 0; display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px 12px; font-size: 14px; line-height: 1.6; }
+.note dt { color: var(--page-fg2); font: 500 12px/1.9 var(--page-mono); letter-spacing: 0.04em; }
+.note dd { margin: 0; }
+.note.is-active { border-color: var(--page-fg); box-shadow: inset 0 0 0 1px var(--page-fg); }
+
+/* App frame */
+.app { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(620px, calc(100vh - 120px), 900px); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 16px; }
+.app .num, .app .price { font-variant-numeric: tabular-nums; }
+.app .mono { font-family: var(--mono); }
+.app button { cursor: pointer; }
+
+/* Header */
+.hdr { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 16px; background: var(--hdr); color: var(--hdr-fg); border-bottom: 1px solid var(--hdr-line); flex-wrap: wrap; }
+.ibtn { position: relative; display: inline-grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: var(--r-btn); background: transparent; color: inherit; }
+.ibtn:hover { background: var(--hdr-sunken); }
+.table-btn { display: inline-flex; align-items: baseline; gap: 8px; height: 48px; padding: 0 10px; border: 0; border-radius: var(--r-btn); background: transparent; color: inherit; }
+.table-btn:hover { background: var(--hdr-sunken); }
+.table-btn strong { font-size: 18px; font-weight: var(--w-bold); }
+.table-btn span { color: var(--hdr-fg2); font: 400 14px/1 var(--mono); }
+.seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: var(--r-btn); background: var(--hdr-sunken); }
+.seg button { height: 40px; padding: 0 14px; border: 0; border-radius: calc(var(--r-btn) - 2px); background: transparent; color: var(--hdr-fg2); font-weight: 500; font-size: 15px; display: inline-flex; align-items: center; gap: 6px; }
+.seg button[aria-pressed="true"] { background: var(--hdr-seg-on); color: var(--hdr-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.search { position: relative; flex: 1 1 220px; min-width: 0; display: flex; align-items: center; }
+.search .ic { position: absolute; left: 14px; color: var(--hdr-fg2); pointer-events: none; }
+.search input { width: 100%; height: 48px; padding: 0 44px; border: 1px solid var(--hdr-line); border-radius: var(--r-btn); background: var(--hdr-input); color: var(--hdr-fg); font: 400 16px/1 var(--font); }
+.app[data-skin="uno"] .search input { border-color: var(--line2); }
+.search input::placeholder { color: var(--hdr-fg2); }
+.search input:focus { outline: none; border-color: var(--hdr-fg); box-shadow: 0 0 0 1px var(--hdr-fg); }
+.search .kbd { position: absolute; right: 12px; padding: 2px 6px; border: 1px solid var(--hdr-fg2); border-radius: 4px; color: var(--hdr-fg2); font: 500 12px/1 var(--mono); }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--hdr-fg2); font: 400 14px/1 var(--mono); white-space: nowrap; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.status .dot { color: var(--ok); }
+
+/* Main grid */
+.main { position: relative; display: grid; gap: 12px; padding: 12px; min-height: 0; }
+.app[data-skin="uno"] .main { grid-template-columns: 112px minmax(0, 1fr) 380px; grid-template-rows: minmax(0, 1fr); grid-template-areas: "rail menu order"; }
+.app[data-skin="pos"] .main { grid-template-columns: 400px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "order rail" "order menu"; }
+.rail-wrap { grid-area: rail; min-height: 0; }
+.menu { grid-area: menu; display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+.order { grid-area: order; min-height: 0; }
+.panel { display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+
+/* Categories */
+.rail { display: flex; flex-direction: column; gap: 4px; padding: 8px; overflow: auto; }
+.cat { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 56px; padding: 8px 12px; border: 0; border-radius: var(--r-btn); background: transparent; color: var(--fg2); font-size: 15px; font-weight: 500; text-align: left; }
+.cat:hover { background: var(--hover); color: var(--fg); }
+.app[data-skin="uno"] .cat[aria-current="true"] { background: var(--primary); color: var(--on-primary); }
+.app[data-skin="pos"] .rail-wrap .panel { height: auto; border: 0; background: transparent; overflow: visible; }
+.app[data-skin="pos"] .rail { flex-direction: row; padding: 2px 2px 4px; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.app[data-skin="pos"] .cat { flex: none; min-height: 52px; padding: 0 18px; gap: 8px; border-radius: var(--r-btn); background: var(--surface); color: var(--fg); font-weight: 700; box-shadow: var(--tile-shadow); white-space: nowrap; }
+.app[data-skin="pos"] .cat::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+.app[data-skin="pos"] .cat[aria-current="true"] { background: var(--c); color: #ffffff; }
+.app[data-skin="pos"] .cat[aria-current="true"]::before { background: #ffffff; }
+.cnt { display: inline-block; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--count); color: var(--on-count); font: 600 13px/22px var(--font); text-align: center; font-variant-numeric: tabular-nums; }
+
+/* Filters */
+.filters { display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px; border: 1px solid var(--line2); border-radius: 999px; background: var(--surface); color: var(--fg2); font-size: 15px; font-weight: 500; }
+.chip[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.app[data-skin="pos"] .chip { border-radius: var(--r-btn); }
+.result-note { color: var(--fg3); font-size: 14px; white-space: nowrap; }
+.spacer { flex: 1; }
+
+/* Tiles */
+.grid-scroll { flex: 1; min-height: 0; overflow: auto; padding: 2px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; align-content: start; }
+.app[data-skin="pos"] .tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.tile { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-height: 112px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-tile); background: var(--surface); color: var(--fg); text-align: left; box-shadow: var(--tile-shadow); user-select: none; -webkit-user-select: none; touch-action: manipulation; transition: border-color .12s ease-out, transform .08s ease-out; }
+.tile:hover { border-color: var(--line2); }
+.tile:active { transform: scale(0.985); }
+.tile .t-name { font-size: 17px; font-weight: var(--w-bold); line-height: 1.35; padding-right: 26px; }
+.tile .t-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tile .t-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.tile .price { font-size: 18px; font-weight: var(--w-bold); }
+.tile .was { color: var(--fg3); font-size: 13px; text-decoration: line-through; margin-left: 4px; }
+.tile .code { color: var(--fg3); font: 400 12px/1 var(--mono); }
+.tile .cnt { position: absolute; top: 10px; right: 10px; }
+.tile[data-sel="true"] { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.tile[data-out="true"] { background: var(--sunken); color: var(--fgd); cursor: not-allowed; box-shadow: none; }
+.tile[data-out="true"] .price, .tile[data-out="true"] .code { color: var(--fgd); }
+.app[data-skin="pos"] .tile { min-height: 104px; border: 0; background: var(--c); color: #ffffff; }
+.app[data-skin="pos"] .tile .code, .app[data-skin="pos"] .tile .was { color: rgba(255, 255, 255, 0.85); }
+.app[data-skin="pos"] .tile .badge { background: rgba(255, 255, 255, 0.2); color: #ffffff; }
+.app[data-skin="pos"] .tile[data-sel="true"] { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--c); }
+.app[data-skin="pos"] .tile .cnt { background: #ffffff; color: #111827; }
+.app[data-skin="pos"] .tile[data-out="true"] { background: var(--sunken); color: var(--fgd); }
+.app[data-skin="pos"] .tile[data-out="true"] .badge { background: var(--bad-soft); color: var(--bad); }
+.app[data-skin="pos"] .tile[data-out="true"] .code { color: var(--fgd); }
+.empty { display: grid; place-items: center; gap: 8px; padding: 48px 16px; color: var(--fg3); text-align: center; }
+
+/* Badges */
+.badge { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 4px; background: var(--sunken); color: var(--fg2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.b-brand { background: var(--brand-soft); color: var(--brand-text); }
+.b-ok { background: var(--ok-soft); color: var(--ok); }
+.b-warn { background: var(--warn-soft); color: var(--warn); }
+.b-bad { background: var(--bad-soft); color: var(--bad); }
+.b-info { background: var(--info-soft); color: var(--info); }
+.b-solid { background: var(--primary); color: var(--on-primary); }
+
+/* Order panel */
+.o-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--line); }
+.o-head h2 { margin: 0; font-size: 18px; font-weight: var(--w-bold); }
+.o-head .mono { color: var(--fg3); font-size: 13px; }
+.o-tools { display: flex; gap: 4px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 20px; border: 1px solid transparent; border-radius: var(--r-btn); font-size: 16px; font-weight: var(--w-bold); white-space: nowrap; transition: background-color .12s ease-out; }
+.btn:active { transform: translateY(1px); }
+.btn-sm { height: 40px; padding: 0 12px; font-size: 14px; }
+.btn-lg { height: 56px; font-size: 17px; }
+.btn-xl { height: 64px; font-size: 18px; }
+.btn-ghost { background: transparent; color: var(--fg); }
+.btn-ghost:hover { background: var(--hover); }
+.btn-sec { background: var(--surface); color: var(--fg); border-color: var(--line2); }
+.btn-sec:hover { background: var(--hover); }
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary:hover { background: var(--primary-h); }
+.btn-send { background: var(--send); color: var(--on-send); }
+.btn-pay { background: var(--pay); color: var(--on-pay); }
+.btn-danger { background: var(--bad); color: var(--surface); }
+.btn-danger-soft { background: var(--bad-soft); color: var(--bad); }
+.btn[disabled] { background: var(--sunken); color: var(--fgd); border-color: transparent; cursor: not-allowed; transform: none; }
+.btn .meta { font: 500 15px/1 var(--mono); }
+.o-list { flex: 1; min-height: 0; overflow: auto; }
+.sec-label { display: flex; justify-content: space-between; padding: 12px 16px 6px; color: var(--fg3); font: 500 12px/1 var(--mono); letter-spacing: 0.06em; }
+.app[data-skin="pos"] .sec-label { font-weight: 700; letter-spacing: 0; font-size: 13px; background: var(--sunken); padding: 8px 16px; }
+.line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.line:hover { background: var(--hover); }
+.line[aria-expanded="true"] { background: var(--hover); }
+.line.flash { animation: flash .9s ease-out; }
+@keyframes flash { from { background: var(--brand-soft); } to { background: transparent; } }
+.l-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 500; line-height: 1.35; }
+.app[data-skin="pos"] .l-name { font-weight: 700; }
+.l-price { font-weight: var(--w-bold); text-align: right; font-variant-numeric: tabular-nums; }
+.l-mods { color: var(--fg3); font-size: 13px; line-height: 1.4; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.l-qty { justify-self: end; color: var(--fg2); font-size: 14px; font-variant-numeric: tabular-nums; }
+.line[data-st="void"] .l-name > span:first-child, .line[data-st="void"] .l-price { color: var(--fg3); text-decoration: line-through; }
+.l-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 8px; }
+.stepper { display: inline-flex; align-items: center; height: 40px; border: 1px solid var(--line2); border-radius: var(--r-btn); background: var(--surface); }
+.stepper button { display: grid; place-items: center; width: 40px; height: 100%; border: 0; background: transparent; color: var(--fg); }
+.stepper button[disabled] { color: var(--fgd); cursor: not-allowed; }
+.stepper .v { min-width: 30px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stepper.lg { height: 48px; }
+.stepper.lg button { width: 48px; }
+.o-empty { display: grid; place-items: center; gap: 6px; height: 100%; padding: 32px; color: var(--fg3); text-align: center; font-size: 15px; }
+.o-foot { border-top: 1px solid var(--line); padding: 12px 16px 16px; display: grid; gap: 8px; }
+.disc { display: flex; gap: 8px; flex-wrap: wrap; }
+.disc .chip { height: 36px; padding: 0 12px; font-size: 14px; }
+.sum-row { display: flex; justify-content: space-between; color: var(--fg2); font-size: 15px; font-variant-numeric: tabular-nums; }
+.sum-row.off > :last-child { color: var(--brand-text); }
+.app[data-skin="pos"] .sum-row.off > :last-child { color: var(--ok); }
+.total { display: flex; justify-content: space-between; align-items: baseline; padding-top: 10px; border-top: 1px dashed var(--line2); }
+.app[data-skin="pos"] .total { border-top-style: solid; }
+.total > :first-child { color: var(--fg2); font-weight: 500; }
+.total > :last-child { font-size: 32px; font-weight: var(--w-bold); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.acts { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-top: 4px; }
+.app[data-skin="pos"] .acts { grid-template-columns: 1fr 1fr; }
+.app[data-skin="pos"] .acts .btn { height: 64px; font-size: 18px; }
+
+/* Narrow: cart bar + drawer */
+.cartbar { display: none; }
+.drawer-close { display: none !important; }
+@media (max-width: 1023px) {
+  .app[data-skin] .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "rail" "menu" "bar"; }
+  .app[data-skin="uno"] .rail-wrap .panel { height: auto; }
+  .app[data-skin="uno"] .rail { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .app[data-skin="uno"] .cat { flex: none; min-height: 44px; white-space: nowrap; }
+  .order { position: absolute; left: 0; right: 0; bottom: 0; height: 86%; z-index: 20; padding: 0 8px 8px; transform: translateY(105%); transition: transform .2s cubic-bezier(.16, 1, .3, 1); }
+  .order .panel { box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.25); }
+  .app.cart-open .order { transform: none; }
+  .cartbar { grid-area: bar; display: flex; align-items: center; gap: 12px; }
+  .cartbar .btn { flex: 1; justify-content: space-between; }
+  .drawer-close { display: inline-grid !important; }
+}
+@media (max-width: 640px) {
+  .hdr .status, .hdr .clock { display: none; }
+  .search { order: 5; flex-basis: 100%; }
+  .seg button { padding: 0 10px; }
+  .app { height: clamp(640px, calc(100vh - 160px), 860px); }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)) !important; }
+}
+
+/* Overlays */
+.overlay { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
+.overlay.side { place-items: stretch end; padding: 0; }
+.modal { display: flex; flex-direction: column; width: min(560px, 100%); max-height: 100%; border-radius: 16px; background: var(--surface); color: var(--fg); box-shadow: 0 20px 48px rgba(0, 0, 0, 0.25); overflow: hidden; animation: pop .2s cubic-bezier(.16, 1, .3, 1); }
+.overlay.side .modal { width: min(560px, 100%); height: 100%; max-height: none; border-radius: 16px 0 0 16px; animation: slide .22s cubic-bezier(.16, 1, .3, 1); }
+@keyframes pop { from { opacity: 0; transform: scale(.98); } }
+@keyframes slide { from { transform: translateX(40px); opacity: 0; } }
+.m-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 16px 16px 24px; border-bottom: 1px solid var(--line); }
+.m-head h3 { margin: 0; font-size: 22px; font-weight: var(--w-bold); }
+.m-head .sub { color: var(--fg3); font: 400 13px/1.4 var(--mono); }
+.m-head .ibtn:hover { background: var(--hover); }
+.m-body { padding: 20px 24px; overflow: auto; flex: 1; min-height: 0; }
+.m-foot { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--line); }
+.m-foot .btn { flex: 1; justify-content: space-between; }
+.m-foot .btn.center { justify-content: center; }
+.og + .og { margin-top: 20px; }
+.og-t { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-weight: 600; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 88px; height: 52px; padding: 0 16px; border: 1px solid var(--line2); border-radius: var(--r-btn); background: var(--surface); color: var(--fg); font-size: 15px; font-weight: 500; line-height: 1.2; }
+.opt small { color: var(--fg3); font-size: 12px; font-weight: 400; }
+.opt[aria-checked="true"] { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.app[data-skin="pos"] .opt[aria-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); box-shadow: none; }
+.app[data-skin="pos"] .opt[aria-checked="true"] small { color: var(--on-primary); }
+.note-in { width: 100%; height: 48px; margin-top: 10px; padding: 0 14px; border: 1px solid var(--line2); border-radius: var(--r-btn); background: var(--surface); color: var(--fg); font: 400 16px/1 var(--font); }
+.note-in:focus { outline: none; border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg); }
+.tables { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.tables .opt { height: 64px; }
+.pay { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; }
+.methods { display: grid; gap: 8px; align-content: start; }
+.methods .opt { flex-direction: row; justify-content: flex-start; gap: 10px; width: 100%; height: 56px; }
+.due { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px dashed var(--line2); }
+.due > :last-child { font-size: 40px; font-weight: var(--w-bold); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cash-in { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.cash-in > :last-child { font-size: 28px; font-weight: var(--w-bold); font-variant-numeric: tabular-nums; }
+.quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.key { height: 60px; border: 1px solid var(--line); border-radius: var(--r-btn); background: var(--surface); color: var(--fg); font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.key:active { background: var(--sunken); }
+.change { margin-top: 12px; display: flex; justify-content: space-between; font-size: 16px; }
+.change b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.scan { display: grid; place-items: center; gap: 10px; padding: 32px 12px; border: 1px dashed var(--line2); border-radius: 12px; color: var(--fg2); text-align: center; }
+.scan .ic { width: 40px; height: 40px; color: var(--fg); }
+.done { display: grid; place-items: center; gap: 10px; padding: 24px 0; text-align: center; }
+.done .ring { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--ok-soft); color: var(--ok); }
+.done .ring .ic { width: 32px; height: 32px; }
+.done strong { font-size: 32px; font-variant-numeric: tabular-nums; }
+.reasons { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) { .pay { grid-template-columns: 1fr; } .methods { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.toast { position: absolute; left: 50%; bottom: 24px; z-index: 60; display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 18px; border-radius: var(--r-btn); background: var(--primary); color: var(--on-primary); font-weight: 500; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18); transform: translateX(-50%); animation: fade .18s ease-out; white-space: nowrap; }
+.app[data-skin="pos"] .toast { background: #111827; color: #ffffff; }
+@keyframes fade { from { opacity: 0; } }
+</style>
+
+<div class="shell">
+  <div class="shell-bar">
+    <h1>点餐页风格对比</h1>
+    <div class="switch" role="group" aria-label="切换方案">
+      <button id="sw-uno" data-skin-to="uno" aria-pressed="true"><b>A</b>UnoCSS 风格</button>
+      <button id="sw-pos" data-skin-to="pos" aria-pressed="false"><b>B</b>主流 POS 风格</button>
+    </div>
+    <p id="skin-desc">两套方案使用相同的数据和交互，只换视觉和布局。可以直接点菜、改单、送厨、结账。</p>
+  </div>
+
+  <div class="app" id="app" data-skin="uno">
+    <header class="hdr">
+      <button class="ibtn" data-act="nav" aria-label="打开导航"><i data-lucide="menu" class="ic"></i></button>
+      <button class="table-btn" data-act="table" id="table-btn"></button>
+      <div class="seg" role="group" aria-label="就餐方式" id="mode-seg">
+        <button data-act="mode" data-v="dine"><i data-lucide="utensils" class="ic ic-sm"></i>堂食</button>
+        <button data-act="mode" data-v="take"><i data-lucide="shopping-bag" class="ic ic-sm"></i>外带</button>
+        <button data-act="mode" data-v="deliv"><i data-lucide="bike" class="ic ic-sm"></i>外卖</button>
+      </div>
+      <label class="search"><i data-lucide="search" class="ic"></i><input id="q" type="search" placeholder="菜名、拼音首字母或编号" autocomplete="off" aria-label="搜索菜品"><span class="kbd">/</span></label>
+      <span class="status"><span class="dot"></span>在线</span>
+      <span class="status clock" id="clock">小王 · 14:32</span>
+    </header>
+    <div class="main">
+      <nav class="rail-wrap" aria-label="菜品分类"><div class="panel"><div class="rail" id="rail"></div></div></nav>
+      <section class="menu" aria-label="菜单">
+        <div class="filters" id="filters"></div>
+        <div class="grid-scroll"><div class="tiles" id="tiles"></div></div>
+      </section>
+      <aside class="order" aria-label="当前订单"><div class="panel" id="order"></div></aside>
+      <div class="cartbar" id="cartbar"></div>
+    </div>
+    <div id="overlay" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </div>
+
+  <div class="notes">
+    <section class="note" id="note-uno">
+      <h2>A · UnoCSS 风格</h2>
+      <p class="sub">黑白灰为主，品牌色只做强调；参照 UnoCSS、Vitesse 的单色、细线、等宽字体。</p>
+      <dl>
+        <dt>视觉</dt><dd>白底面板加 1px 细线，几乎不用阴影。主按钮是墨黑，品牌橙只出现在数量角标、送厨按钮和优惠金额上。</dd>
+        <dt>布局</dt><dd>三栏：分类竖排在左，宫格居中，订单在右，结账按钮落在右手拇指区（同 Square、Clover）。</dd>
+        <dt>菜品卡</dt><dd>文字卡：菜名、标签、价格、编号。已点的菜用墨色描边加角标表示。</dd>
+        <dt>字体</dt><dd>DM Sans 加 DM Mono；单号、桌号、编号用等宽，金额用等宽数字。</dd>
+        <dt>优势</dt><dd>信息密度高、品牌感统一，深浅主题一致；同一套视觉语言可以延伸到后台、厨房显示屏、小程序。</dd>
+        <dt>风险</dt><dd>分类之间没有颜色区分，新员工找菜更依赖搜索和记忆；高峰期视觉锚点少。</dd>
+        <dt>适合</dt><dd>品牌连锁、茶饮咖啡、轻正餐，以及需要多端统一设计的产品。</dd>
+      </dl>
+    </section>
+    <section class="note" id="note-pos">
+      <h2>B · 主流 POS 风格</h2>
+      <p class="sub">参照 Toast、Square 以及国内收银机：深色顶栏、按分类上色的彩色菜品块、实体感按钮。</p>
+      <dl>
+        <dt>视觉</dt><dd>深色顶栏，彩色色块菜品，轻阴影。主色是蓝色，收款用绿色，数量角标用红色。</dd>
+        <dt>布局</dt><dd>订单在左（同 Toast、美团收银），分类横排在宫格上方，宫格区域更宽。</dd>
+        <dt>菜品卡</dt><dd>色块卡：颜色就是分类，白字粗体。员工可以凭颜色形成肌肉记忆。</dd>
+        <dt>字体</dt><dd>系统字体（苹方 / 鸿蒙黑体），加粗、字号偏大。</dd>
+        <dt>优势</dt><dd>找菜靠颜色定位快，上手成本低，和员工用惯的收银机接近。</dd>
+        <dt>风险</dt><dd>颜色多、视觉噪音大，品牌色被分类色稀释；红、绿、蓝既表示状态又表示分类，语义容易冲突。</dd>
+        <dt>适合</dt><dd>高翻台快餐、中式正餐、员工流动大的门店。</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>
+(function () {
+  var CATS = [
+    { id: 'hot', n: '热销', c: 'var(--cat-hot)' }, { id: 'sig', n: '招牌菜', c: 'var(--cat-sig)' }, { id: 'cold', n: '凉菜', c: 'var(--cat-cold)' },
+    { id: 'wok', n: '热菜', c: 'var(--cat-wok)' }, { id: 'staple', n: '主食', c: 'var(--cat-staple)' }, { id: 'soup', n: '汤羹', c: 'var(--cat-soup)' },
+    { id: 'drink', n: '饮品', c: 'var(--cat-drink)' }, { id: 'set', n: '套餐', c: 'var(--cat-set)' }
+  ];
+  var SPICE = { n: '辣度', o: [['不辣', 0], ['微辣', 0], ['中辣', 0], ['特辣', 0]], d: 1 };
+  var SPECS = {
+    fish: [{ n: '规格', req: 1, o: [['小份', 0], ['大份', 3000]], d: 0 }, { n: '辣度', o: [['微辣', 0], ['中辣', 0], ['特辣', 0]], d: 1 }, { n: '加料', multi: 1, o: [['豆芽', 500], ['宽粉', 600], ['午餐肉', 800]] }],
+    spicy: [SPICE],
+    veg: [{ n: '品种', req: 1, o: [['菜心', 0], ['油麦菜', 0], ['西兰花', 400]], d: 0 }],
+    noodle: [{ n: '规格', o: [['小碗', 0], ['大碗', 400]], d: 0 }, SPICE],
+    plum: [{ n: '规格', o: [['杯', 0], ['扎', 2600]], d: 0 }, { n: '温度', o: [['冰', 0], ['常温', 0]], d: 0 }],
+    juice: [{ n: '冰度', o: [['去冰', 0], ['少冰', 0], ['正常冰', 0]], d: 2 }],
+    set2: [{ n: '主菜', req: 1, o: [['水煮鱼', 0], ['酸菜鱼', 0], ['毛血旺', 1000]], d: 0 }, { n: '小炒', req: 1, o: [['宫保鸡丁', 0], ['鱼香肉丝', 0], ['麻婆豆腐', 0]], d: 0 }, { n: '饮品', req: 1, o: [['酸梅汤', 0], ['可乐', 0]], d: 0 }]
+  };
+  var NOTES = ['少盐', '少油', '不要香菜', '不要葱', '打包'];
+  function D(id, n, py, cat, p, x) { x = x || {}; return { id: id, n: n, py: py, cat: cat, p: p, tags: x.t || [], hot: !!x.h, stock: x.s, was: x.w, spec: x.sp }; }
+  var DISHES = [
+    D('101', '水煮鱼', 'szy', 'sig', 6800, { t: ['辣'], h: 1, sp: 'fish' }), D('102', '毛血旺', 'mxw', 'sig', 5800, { t: ['辣'], sp: 'spicy' }),
+    D('103', '东坡肉', 'dpr', 'sig', 4800, { s: 0 }), D('104', '酸菜鱼', 'scy', 'sig', 6200, { t: ['新品'], h: 1, sp: 'spicy' }),
+    D('105', '香辣蟹', 'xlx', 'sig', 12800, { t: ['辣'], s: 3 }),
+    D('201', '拍黄瓜', 'phg', 'cold', 1200, { t: ['素'] }), D('202', '口水鸡', 'ksj', 'cold', 3200, { t: ['辣'], h: 1 }),
+    D('203', '夫妻肺片', 'fqfp', 'cold', 3600, { t: ['辣'] }), D('204', '凉拌木耳', 'lbme', 'cold', 1600, { t: ['素'] }), D('205', '皮蛋豆腐', 'pddf', 'cold', 1400, { t: ['素'] }),
+    D('301', '宫保鸡丁', 'gbjd', 'wok', 3800, { t: ['辣'], h: 1, sp: 'spicy' }), D('302', '麻婆豆腐', 'mpdf', 'wok', 2600, { t: ['辣'] }),
+    D('303', '鱼香肉丝', 'yxrs', 'wok', 3200, { t: ['辣'] }), D('304', '回锅肉', 'hgr', 'wok', 3600, { t: ['辣'] }),
+    D('305', '清炒时蔬', 'qcss', 'wok', 2200, { t: ['素'], sp: 'veg' }), D('306', '干煸四季豆', 'gbsjd', 'wok', 2600, { t: ['素', '特价'], w: 3200 }),
+    D('307', '番茄炒蛋', 'fqcd', 'wok', 2200, { t: ['素'] }),
+    D('401', '米饭', 'mf', 'staple', 300, { h: 1 }), D('402', '蛋炒饭', 'dcf', 'staple', 1800), D('403', '担担面', 'ddm', 'staple', 2200, { t: ['辣'], sp: 'noodle' }),
+    D('404', '红糖糍粑', 'htcb', 'staple', 1800, { t: ['新品'] }), D('405', '钟水饺', 'zsj', 'staple', 2000),
+    D('501', '酸辣汤', 'slt', 'soup', 1800, { t: ['辣'] }), D('502', '番茄蛋花汤', 'fqdht', 'soup', 1600, { t: ['素'] }), D('503', '老鸭汤', 'lyt', 'soup', 4800, { s: 5 }),
+    D('601', '酸梅汤', 'smt', 'drink', 1200, { h: 1, s: 8, sp: 'plum' }), D('602', '冰粉', 'bf', 'drink', 1000, { t: ['素', '新品'] }),
+    D('603', '可乐', 'kl', 'drink', 600), D('604', '鲜榨橙汁', 'xzcz', 'drink', 1800, { sp: 'juice' }), D('605', '青岛啤酒', 'qdpj', 'drink', 1000),
+    D('701', '双人套餐', 'srtc', 'set', 12800, { t: ['特价'], h: 1, w: 14800, sp: 'set2' }), D('702', '单人工作餐', 'drgzc', 'set', 3800, { sp: 'spicy' })
+  ];
+  var byId = {}; DISHES.forEach(function (d) { byId[d.id] = d; });
+  var catOf = {}; CATS.forEach(function (c) { catOf[c.id] = c; });
+
+  var app = document.getElementById('app');
+  var uid = 1;
+  function L(did, spec, unit, qty, st, extra) { var d = byId[did]; return Object.assign({ uid: uid++, did: did, name: d.n, spec: spec, unit: unit, qty: qty, note: '', st: st, gift: false, rush: false }, extra || {}); }
+  function freshLines() {
+    return [
+      L('301', '微辣', 3800, 1, 'sent', { sentAt: '14:12' }), L('202', '', 3200, 1, 'sent', { sentAt: '14:12', rush: true }),
+      L('101', '大份 · 中辣 · 豆芽', 10300, 1, 'new', { note: '少油' }), L('401', '', 300, 4, 'new')
+    ];
+  }
+  var S = {
+    skin: 'uno', cat: 'hot', filter: 'all', q: '', mode: 'dine', table: 'A08', guests: 4,
+    opened: Date.now() - 38 * 60000, no: 1025, lines: freshLines(), member: false, roundOff: false, held: [], exp: null, flash: null
+  };
+  try { var saved = localStorage.getItem('pos-compare-skin'); if (saved === 'uno' || saved === 'pos') S.skin = saved; } catch (e) {}
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function money(c) { var neg = c < 0; c = Math.abs(c); return (neg ? '−' : '') + '¥' + (c / 100).toFixed(2); }
+  function menuPrice(c) { return '¥' + (c % 100 ? (c / 100).toFixed(2) : c / 100); }
+  function icons() { if (window.lucide) window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } }); }
+  function live() { return S.lines.filter(function (l) { return l.st !== 'void'; }); }
+
+  function totals() {
+    var sub = 0, gifts = 0, items = 0;
+    live().forEach(function (l) { items += l.qty; if (l.gift) gifts += l.unit * l.qty; else sub += l.unit * l.qty; });
+    var service = S.mode === 'dine' ? Math.round(sub * 0.1) : 0;
+    var pack = S.mode === 'dine' ? 0 : 200 * (items ? 1 : 0);
+    var member = S.member ? Math.round(sub * 0.05) : 0;
+    var gross = sub + service + pack - member;
+    var round = S.roundOff ? gross % 100 : 0;
+    return { sub: sub, gifts: gifts, items: items, service: service, pack: pack, member: member, round: round, due: gross - round };
+  }
+  function qtyIn(cat) { var n = 0; live().forEach(function (l) { if (byId[l.did].cat === cat) n += l.qty; }); return n; }
+  function qtyOf(did) { var n = 0; live().forEach(function (l) { if (l.did === did) n += l.qty; }); return n; }
+  function pending() { return S.lines.filter(function (l) { return l.st === 'new'; }); }
+
+  /* ---------- render ---------- */
+  function renderHeader() {
+    var mins = Math.max(0, Math.round((Date.now() - S.opened) / 60000));
+    document.getElementById('table-btn').innerHTML = '<strong>' + S.table + '</strong><span>' + S.guests + ' 人 · ' + mins + ' 分钟</span>';
+    Array.prototype.forEach.call(document.querySelectorAll('#mode-seg button'), function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === S.mode)); });
+    var d = new Date(); document.getElementById('clock').textContent = '小王 · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function renderRail() {
+    document.getElementById('rail').innerHTML = CATS.map(function (c) {
+      var n = c.id === 'hot' ? 0 : qtyIn(c.id);
+      return '<button class="cat" style="--c:' + c.c + '" data-act="cat" data-v="' + c.id + '" aria-current="' + (S.cat === c.id && !S.q) + '"><span>' + c.n + '</span>' + (n ? '<span class="cnt">' + n + '</span>' : '') + '</button>';
+    }).join('');
+  }
+  function visible() {
+    var q = S.q.trim().toLowerCase();
+    var list = q ? DISHES.filter(function (d) { return d.n.indexOf(q) > -1 || d.py.indexOf(q) === 0 || d.id.indexOf(q) === 0; })
+      : DISHES.filter(function (d) { return S.cat === 'hot' ? d.hot : d.cat === S.cat; });
+    if (S.filter !== 'all') list = list.filter(function (d) { return d.tags.indexOf(S.filter) > -1; });
+    return list;
+  }
+  function renderFilters(n) {
+    var f = [['all', '全部'], ['辣', '辣'], ['素', '素食'], ['特价', '特价']];
+    document.getElementById('filters').innerHTML = f.map(function (x) {
+      return '<button class="chip" data-act="filter" data-v="' + x[0] + '" aria-pressed="' + (S.filter === x[0]) + '">' + x[1] + '</button>';
+    }).join('') + '<span class="spacer"></span><span class="result-note">' + (S.q ? '搜索“' + esc(S.q) + '” · ' : '') + n + ' 道菜</span>';
+  }
+  function tileHTML(d) {
+    var out = d.stock === 0, n = qtyOf(d.id), tags = '';
+    if (out) tags += '<span class="badge b-bad">已沽清</span>';
+    else if (d.stock) tags += '<span class="badge b-warn"><span class="dot"></span>剩 ' + d.stock + '</span>';
+    d.tags.forEach(function (t) { tags += '<span class="badge' + (t === '特价' ? ' b-brand' : '') + '">' + t + '</span>'; });
+    if (d.spec) tags += '<span class="badge">' + (d.cat === 'set' && d.spec === 'set2' ? '套餐' : '规格') + '</span>';
+    return '<button class="tile" style="--c:' + catOf[d.cat].c + '" data-id="' + d.id + '" data-sel="' + (n > 0) + '" data-out="' + out + '"' + (out ? ' aria-disabled="true"' : '') + ' aria-label="' + d.n + ' ' + menuPrice(d.p) + '">' +
+      (n ? '<span class="cnt">' + n + '</span>' : '') +
+      '<span class="t-name">' + d.n + '</span><span class="t-tags">' + tags + '</span>' +
+      '<span class="t-foot"><span><span class="price">' + menuPrice(d.p) + '</span>' + (d.was ? '<span class="was">' + menuPrice(d.was) + '</span>' : '') + '</span><span class="code">' + d.id + '</span></span></button>';
+  }
+  function renderTiles() {
+    var list = visible();
+    renderFilters(list.length);
+    document.getElementById('tiles').innerHTML = list.length ? list.map(tileHTML).join('')
+      : '<div class="empty" style="grid-column:1/-1"><i data-lucide="search-x" class="ic"></i><div>没有匹配的菜品。试试拼音首字母，比如 gbjd。</div><button class="btn btn-sec btn-sm" data-act="clear-q">清除搜索</button></div>';
+  }
+  function lineHTML(l) {
+    var exp = S.exp === l.uid, mods = [];
+    if (l.st === 'sent') mods.push(l.rush ? '<span class="badge b-warn"><span class="dot"></span>催菜中</span>' : '<span class="badge b-ok"><span class="dot"></span>已下单</span>');
+    if (l.st === 'void') mods.push('<span class="badge b-bad"><span class="dot"></span>已退</span>' + (l.reason ? esc(l.reason) : ''));
+    var txt = [l.spec, l.note].filter(Boolean).join(' · ');
+    if (txt) mods.push('<span>' + esc(txt) + '</span>');
+    if (l.gift) mods.push('<span>原价 ' + money(l.unit * l.qty) + '</span>');
+    var price = l.gift ? 0 : l.unit * l.qty;
+    var h = '<div class="line' + (S.flash === l.uid ? ' flash' : '') + '" data-act="line" data-uid="' + l.uid + '" data-st="' + l.st + '" tabindex="0" role="button" aria-expanded="' + exp + '">' +
+      '<span class="l-name"><span>' + esc(l.name) + '</span>' + (l.gift ? '<span class="badge b-brand">赠</span>' : '') + '</span>' +
+      '<span class="l-price">' + money(price) + '</span>' +
+      '<span class="l-mods">' + mods.join('') + '</span>';
+    if (exp && l.st === 'new') {
+      h += '<span class="stepper" data-stop="1"><button data-act="qty" data-d="-1" data-uid="' + l.uid + '" aria-label="减少"><i data-lucide="minus" class="ic ic-sm"></i></button><span class="v">' + l.qty + '</span><button data-act="qty" data-d="1" data-uid="' + l.uid + '" aria-label="增加"><i data-lucide="plus" class="ic ic-sm"></i></button></span>' +
+        '<div class="l-actions" data-stop="1"><button class="btn btn-sec btn-sm" data-act="note" data-uid="' + l.uid + '"><i data-lucide="pencil" class="ic ic-sm"></i>备注</button>' +
+        '<button class="btn btn-sec btn-sm" data-act="gift" data-uid="' + l.uid + '"><i data-lucide="gift" class="ic ic-sm"></i>' + (l.gift ? '取消赠送' : '赠送') + '</button>' +
+        '<button class="btn btn-danger-soft btn-sm" data-act="del" data-uid="' + l.uid + '"><i data-lucide="trash-2" class="ic ic-sm"></i>删除</button></div>';
+    } else {
+      h += '<span class="l-qty">×' + l.qty + '</span>';
+      if (exp && l.st === 'sent') h += '<div class="l-actions" data-stop="1"><button class="btn btn-sec btn-sm" data-act="rush" data-uid="' + l.uid + '"><i data-lucide="zap" class="ic ic-sm"></i>催菜</button>' +
+        '<button class="btn btn-sec btn-sm" data-act="gift" data-uid="' + l.uid + '"><i data-lucide="gift" class="ic ic-sm"></i>' + (l.gift ? '取消赠送' : '赠送') + '</button>' +
+        '<button class="btn btn-danger-soft btn-sm" data-act="void" data-uid="' + l.uid + '"><i data-lucide="undo-2" class="ic ic-sm"></i>退菜</button></div>';
+    }
+    return h + '</div>';
+  }
+  function renderOrder() {
+    var t = totals(), np = pending(), sent = S.lines.filter(function (l) { return l.st !== 'new'; });
+    var list = '';
+    if (!S.lines.length) list = '<div class="o-empty"><i data-lucide="receipt" class="ic"></i><div>点菜单里的菜品开始下单</div></div>';
+    else {
+      if (np.length) list += '<div class="sec-label"><span>待下单 · ' + np.length + '</span></div>' + np.map(lineHTML).join('');
+      if (sent.length) list += '<div class="sec-label"><span>已下单 · ' + sent.length + '</span><span>' + (sent[0].sentAt || '') + '</span></div>' + sent.map(lineHTML).join('');
+    }
+    var rows = '<div class="sum-row"><span>小计 · ' + t.items + ' 件</span><span>' + money(t.sub) + '</span></div>';
+    if (t.service) rows += '<div class="sum-row"><span>服务费 10%</span><span>' + money(t.service) + '</span></div>';
+    if (t.pack) rows += '<div class="sum-row"><span>打包费</span><span>' + money(t.pack) + '</span></div>';
+    if (t.gifts) rows += '<div class="sum-row off"><span>赠送</span><span>' + money(-t.gifts) + '</span></div>';
+    if (t.member) rows += '<div class="sum-row off"><span>会员 9.5 折</span><span>' + money(-t.member) + '</span></div>';
+    if (t.round) rows += '<div class="sum-row off"><span>抹零</span><span>' + money(-t.round) + '</span></div>';
+    document.getElementById('order').innerHTML =
+      '<div class="o-head"><div><h2>当前订单</h2><div class="mono">#' + S.no + ' · ' + S.table + '</div></div><div class="o-tools">' +
+      (S.held.length ? '<button class="btn btn-ghost btn-sm" data-act="held">取单 · ' + S.held.length + '</button>' : '') +
+      '<button class="btn btn-ghost btn-sm" data-act="hold">挂单</button><button class="btn btn-ghost btn-sm" data-act="clear">清空</button>' +
+      '<button class="ibtn drawer-close" data-act="cart-close" aria-label="收起订单"><i data-lucide="chevron-down" class="ic"></i></button></div></div>' +
+      '<div class="o-list" id="o-list">' + list + '</div>' +
+      '<div class="o-foot"><div class="disc"><button class="chip" data-act="member" aria-pressed="' + S.member + '"><i data-lucide="user-round" class="ic ic-sm"></i>' + (S.member ? '会员 王女士' : '会员') + '</button>' +
+      '<button class="chip" data-act="round" aria-pressed="' + S.roundOff + '">抹零</button></div>' + rows +
+      '<div class="total"><span>应收</span><span>' + money(t.due) + '</span></div>' +
+      '<div class="acts"><button class="btn btn-lg btn-send" data-act="send"' + (np.length ? '' : ' disabled') + '><i data-lucide="chef-hat" class="ic"></i>送厨' + (np.length ? ' · ' + np.length : '') + '</button>' +
+      '<button class="btn btn-lg btn-pay" data-act="pay"' + (live().length ? '' : ' disabled') + '>结账</button></div></div>';
+    document.getElementById('cartbar').innerHTML = '<button class="btn btn-lg btn-pay" data-act="cart-open"><span>查看订单 · ' + t.items + ' 件</span><span class="meta">' + money(t.due) + '</span></button>';
+    if (S.flash) { var el = document.querySelector('.line.flash'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }
+  }
+  function render() {
+    app.dataset.skin = S.skin;
+    ['uno', 'pos'].forEach(function (k) {
+      document.getElementById('sw-' + k).setAttribute('aria-pressed', String(S.skin === k));
+      document.getElementById('note-' + k).classList.toggle('is-active', S.skin === k);
+    });
+    renderHeader(); renderRail(); renderTiles(); renderOrder(); icons();
+    S.flash = null;
+  }
+
+  /* ---------- order ops ---------- */
+  function addLine(d, spec, unit, qty, note) {
+    var hit = S.lines.filter(function (l) { return l.st === 'new' && l.did === d.id && l.spec === spec && l.note === note && !l.gift; })[0];
+    if (hit) { hit.qty += qty; S.flash = hit.uid; }
+    else { var l = L(d.id, spec, unit, qty, 'new', { note: note }); S.lines.push(l); S.flash = l.uid; }
+    S.exp = null; render();
+  }
+  function toast(msg, icon) {
+    var t = document.getElementById('toast');
+    t.innerHTML = '<i data-lucide="' + (icon || 'check') + '" class="ic"></i>' + esc(msg);
+    t.hidden = false; icons();
+    clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 2400);
+  }
+  function lineBy(u) { return S.lines.filter(function (l) { return l.uid === +u; })[0]; }
+
+  /* ---------- modals ---------- */
+  var M = null;
+  var ov = document.getElementById('overlay');
+  function open(html, side) { ov.className = 'overlay' + (side ? ' side' : ''); ov.innerHTML = '<div class="modal" role="dialog" aria-modal="true">' + html + '</div>'; ov.hidden = false; icons(); }
+  function close() { ov.hidden = true; ov.innerHTML = ''; M = null; }
+  function head(title, sub) { return '<div class="m-head"><div><h3>' + title + '</h3>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div><button class="ibtn" data-act="close" aria-label="关闭"><i data-lucide="x" class="ic"></i></button></div>'; }
+
+  function openSpec(d) {
+    var groups = SPECS[d.spec] || [];
+    M = { type: 'spec', d: d, groups: groups, sel: groups.map(function (g) { return g.multi ? [] : g.d; }), notes: [], text: '', qty: 1 };
+    drawSpec();
+  }
+  function specPrice() { var p = M.d.p; M.groups.forEach(function (g, i) { var s = M.sel[i]; if (g.multi) s.forEach(function (k) { p += g.o[k][1]; }); else if (s != null) p += g.o[s][1]; }); return p; }
+  function specText() { var parts = []; M.groups.forEach(function (g, i) { var s = M.sel[i]; if (g.multi) s.forEach(function (k) { parts.push(g.o[k][0]); }); else if (s != null) parts.push(g.o[s][0]); }); return parts.join(' · '); }
+  function drawSpec() {
+    var d = M.d, body = '';
+    M.groups.forEach(function (g, i) {
+      body += '<div class="og"><div class="og-t">' + g.n + (g.req ? ' <span class="badge b-solid">必选</span>' : '') + (g.multi ? ' <span class="badge">可多选</span>' : '') + '</div><div class="opts" role="' + (g.multi ? 'group' : 'radiogroup') + '">' +
+        g.o.map(function (o, k) { var on = g.multi ? M.sel[i].indexOf(k) > -1 : M.sel[i] === k; return '<button class="opt" role="' + (g.multi ? 'checkbox' : 'radio') + '" aria-checked="' + on + '" data-act="opt" data-g="' + i + '" data-k="' + k + '">' + o[0] + (o[1] ? '<small>+' + menuPrice(o[1]) + '</small>' : '') + '</button>'; }).join('') + '</div></div>';
+    });
+    body += '<div class="og"><div class="og-t">备注</div><div class="opts">' + NOTES.map(function (n) { return '<button class="opt" role="checkbox" aria-checked="' + (M.notes.indexOf(n) > -1) + '" data-act="mnote" data-v="' + n + '" style="min-width:0">' + n + '</button>'; }).join('') + '</div>' +
+      '<input class="note-in" id="spec-note" placeholder="其他要求，例如：分两盘装" value="' + esc(M.text) + '"></div>';
+    var total = specPrice() * M.qty;
+    open(head(d.n, d.id + ' · ' + catOf[d.cat].n + ' · ' + menuPrice(d.p)) + '<div class="m-body">' + body + '</div>' +
+      '<div class="m-foot"><span class="stepper lg"><button data-act="mqty" data-d="-1" aria-label="减少"' + (M.qty <= 1 ? ' disabled' : '') + '><i data-lucide="minus" class="ic"></i></button><span class="v">' + M.qty + '</span><button data-act="mqty" data-d="1" aria-label="增加"><i data-lucide="plus" class="ic"></i></button></span>' +
+      '<button class="btn btn-lg btn-primary" data-act="spec-add"><span>加入订单</span><span class="meta">' + money(total) + '</span></button></div>');
+  }
+  function openTable() {
+    M = { type: 'table', table: S.table, guests: S.guests };
+    var busy = ['A02', 'A05', 'A09', 'B01', 'B04'];
+    var tables = [];
+    ['A', 'B'].forEach(function (z) { for (var i = 1; i <= (z === 'A' ? 12 : 6); i++) tables.push(z + String(i).padStart(2, '0')); });
+    function draw() {
+      open(head('桌台与人数', '当前 ' + S.table) + '<div class="m-body"><div class="og"><div class="og-t">就餐人数</div><span class="stepper lg"><button data-act="tg" data-d="-1" aria-label="减少"' + (M.guests <= 1 ? ' disabled' : '') + '><i data-lucide="minus" class="ic"></i></button><span class="v">' + M.guests + '</span><button data-act="tg" data-d="1" aria-label="增加"><i data-lucide="plus" class="ic"></i></button></span></div>' +
+        '<div class="og"><div class="og-t">换桌 <span class="badge">灰色为就餐中</span></div><div class="tables">' + tables.map(function (t) {
+          var b = busy.indexOf(t) > -1; return '<button class="opt" role="radio" aria-checked="' + (M.table === t) + '" data-act="tpick" data-v="' + t + '"' + (b ? ' disabled style="opacity:.45;cursor:not-allowed"' : '') + '>' + t + '<small>' + (b ? '就餐中' : t === S.table ? '当前' : '空闲') + '</small></button>';
+        }).join('') + '</div></div></div><div class="m-foot"><button class="btn btn-lg btn-primary center" data-act="table-ok">确认</button></div>');
+    }
+    M.draw = draw; draw();
+  }
+  function openConfirm(title, text, okLabel, onOk, extra) {
+    M = { type: 'confirm', ok: onOk, reason: null };
+    open(head(title) + '<div class="m-body"><p style="margin:0 0 16px;color:var(--fg2);line-height:1.6">' + text + '</p>' + (extra || '') + '</div>' +
+      '<div class="m-foot"><button class="btn btn-lg btn-sec center" data-act="close">取消</button><button class="btn btn-lg btn-danger center" data-act="confirm-ok">' + okLabel + '</button></div>');
+  }
+  function openNote(l) {
+    M = { type: 'note', uid: l.uid };
+    open(head('备注', esc(l.name)) + '<div class="m-body"><div class="opts">' + NOTES.map(function (n) { return '<button class="opt" data-act="note-chip" data-v="' + n + '" style="min-width:0">' + n + '</button>'; }).join('') + '</div>' +
+      '<input class="note-in" id="line-note" value="' + esc(l.note) + '" placeholder="例如：先上这道"></div>' +
+      '<div class="m-foot"><button class="btn btn-lg btn-primary center" data-act="note-ok">保存</button></div>');
+  }
+  function openHeld() {
+    M = { type: 'held' };
+    open(head('取单', '已挂起 ' + S.held.length + ' 单') + '<div class="m-body" style="padding:0">' + S.held.map(function (h, i) {
+      var n = 0; h.lines.forEach(function (l) { n += l.qty; });
+      return '<div class="line" style="cursor:default"><span class="l-name">#' + h.no + ' · ' + h.table + '</span><span class="l-price">' + n + ' 件</span><span class="l-mods">挂起于 ' + h.at + '</span><span><button class="btn btn-sec btn-sm" data-act="unhold" data-i="' + i + '">取回</button></span></div>';
+    }).join('') + '</div>');
+  }
+  function openPay() {
+    M = { type: 'pay', method: 'wechat', cash: '', done: false };
+    drawPay();
+  }
+  function drawPay() {
+    var t = totals(), np = pending().length;
+    if (M.done) {
+      open(head('收款完成', '#' + M.no) + '<div class="m-body"><div class="done"><span class="ring"><i data-lucide="check" class="ic"></i></span><div style="color:var(--fg2)">' + M.label + ' 收款</div><strong>' + money(M.paid) + '</strong>' +
+        (M.change > 0 ? '<div>找零 <b class="num">' + money(M.change) + '</b></div>' : '') + '</div></div>' +
+        '<div class="m-foot"><button class="btn btn-xl btn-primary center" data-act="new-order">开始新订单</button></div>', true);
+      return;
+    }
+    var methods = [['wechat', '微信', 'message-circle'], ['alipay', '支付宝', 'smartphone'], ['cash', '现金', 'banknote'], ['card', '银行卡', 'credit-card'], ['member', '会员余额', 'wallet']];
+    var right = '<div class="due"><span>应收</span><span>' + money(t.due) + '</span></div>';
+    var ready = true;
+    if (M.method === 'cash') {
+      var cash = Math.round(parseFloat(M.cash || '0') * 100) || 0;
+      var tens = [t.due, Math.ceil(t.due / 5000) * 5000, Math.ceil(t.due / 10000) * 10000 + (t.due % 10000 === 0 ? 10000 : 0)].filter(function (v, i, a) { return a.indexOf(v) === i; });
+      right += '<div class="cash-in"><span>实收现金</span><span>' + money(cash) + '</span></div>' +
+        '<div class="quick">' + tens.map(function (v) { return '<button class="chip" data-act="cash-set" data-v="' + (v / 100) + '">' + money(v) + '</button>'; }).join('') + '</div>' +
+        '<div class="keypad">' + ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map(function (k) {
+          return '<button class="key" data-act="key" data-k="' + k + '"' + (k === 'del' ? ' aria-label="删除"' : '') + '>' + (k === 'del' ? '<i data-lucide="delete" class="ic"></i>' : k) + '</button>';
+        }).join('') + '</div>' +
+        '<div class="change"><span>' + (cash >= t.due ? '找零' : '还差') + '</span><b>' + money(Math.abs(cash - t.due)) + '</b></div>';
+      ready = cash >= t.due;
+    } else {
+      right += '<div class="scan"><i data-lucide="' + (M.method === 'card' ? 'credit-card' : M.method === 'member' ? 'wallet' : 'scan-line') + '" class="ic"></i><div>' +
+        (M.method === 'card' ? '请顾客在刷卡器上刷卡或挥卡' : M.method === 'member' ? '王女士 · 余额 ¥1,260.00' : '扫描顾客出示的付款码') + '</div></div>';
+    }
+    if (np) right += '<p style="margin:12px 0 0;color:var(--warn);font-size:14px;display:flex;gap:6px;align-items:center"><span class="dot"></span>还有 ' + np + ' 道菜未送厨，收款后自动送厨</p>';
+    open(head('结账', '#' + S.no + ' · ' + S.table + ' · ' + t.items + ' 件') +
+      '<div class="m-body"><div class="pay"><div class="methods" role="radiogroup">' + methods.map(function (m) {
+        return '<button class="opt" role="radio" aria-checked="' + (M.method === m[0]) + '" data-act="method" data-v="' + m[0] + '"><i data-lucide="' + m[2] + '" class="ic"></i>' + m[1] + '</button>';
+      }).join('') + '</div><div>' + right + '</div></div></div>' +
+      '<div class="m-foot"><button class="btn btn-xl btn-pay" data-act="pay-ok"' + (ready ? '' : ' disabled') + '><span>确认收款</span><span class="meta">' + money(t.due) + '</span></button></div>', true);
+  }
+
+  /* ---------- events ---------- */
+  var press = null;
+  var tilesEl = document.getElementById('tiles');
+  tilesEl.addEventListener('pointerdown', function (e) {
+    var t = e.target.closest('.tile'); if (!t) return;
+    press = { id: t.dataset.id, long: false, timer: setTimeout(function () { press.long = true; var d = byId[t.dataset.id]; if (d.stock !== 0) openSpec(d); }, 480) };
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { tilesEl.addEventListener(ev, function () { if (press) clearTimeout(press.timer); }); });
+  tilesEl.addEventListener('contextmenu', function (e) { if (e.target.closest('.tile')) e.preventDefault(); });
+  tilesEl.addEventListener('click', function (e) {
+    var t = e.target.closest('.tile'); if (!t) return;
+    if (press && press.long) { press = null; return; }
+    var d = byId[t.dataset.id];
+    if (d.stock === 0) { toast(d.n + ' 已沽清', 'circle-slash'); return; }
+    if (d.spec) openSpec(d); else addLine(d, '', d.p, 1, '');
+  });
+
+  document.addEventListener('click', function (e) {
+    var sw = e.target.closest('[data-skin-to]');
+    if (sw) { S.skin = sw.dataset.skinTo; try { localStorage.setItem('pos-compare-skin', S.skin); } catch (x) {} render(); return; }
+    if (e.target === ov) { if (M && M.type !== 'spec') close(); return; }
+    var a = e.target.closest('[data-act]'); if (!a || !app.contains(a)) return;
+    var act = a.dataset.act, v = a.dataset.v, l;
+    switch (act) {
+      case 'nav': toast('原型只包含点餐页', 'info'); break;
+      case 'table': openTable(); break;
+      case 'mode': S.mode = v; render(); break;
+      case 'cat': S.cat = v; S.q = ''; document.getElementById('q').value = ''; render(); break;
+      case 'filter': S.filter = v; render(); break;
+      case 'clear-q': S.q = ''; document.getElementById('q').value = ''; render(); break;
+      case 'line':
+        if (e.target.closest('[data-stop]')) break;
+        l = lineBy(a.dataset.uid); if (l.st === 'void') break;
+        S.exp = S.exp === l.uid ? null : l.uid; renderOrder(); icons(); break;
+      case 'qty':
+        l = lineBy(a.dataset.uid); l.qty += +a.dataset.d;
+        if (l.qty < 1) { l.qty = 1; openConfirm('删除这道菜？', esc(l.name) + ' 还没送厨，删除后不会通知厨房。', '删除', function () { S.lines = S.lines.filter(function (x) { return x !== l; }); S.exp = null; }); break; }
+        render(); break;
+      case 'del': l = lineBy(a.dataset.uid); S.lines = S.lines.filter(function (x) { return x !== l; }); S.exp = null; render(); toast('已删除 ' + l.name, 'trash-2'); break;
+      case 'gift': l = lineBy(a.dataset.uid); l.gift = !l.gift; render(); toast(l.gift ? '已赠送 ' + l.name : '已取消赠送', 'gift'); break;
+      case 'rush': l = lineBy(a.dataset.uid); l.rush = true; S.exp = null; render(); toast('已通知厨房催 ' + l.name, 'zap'); break;
+      case 'void':
+        l = lineBy(a.dataset.uid);
+        openConfirm('退菜', esc(l.name) + ' ×' + l.qty + ' 已送厨，退菜会通知厨房，并记入退菜报表。选择原因：', '确认退菜', function (m) { l.st = 'void'; l.reason = m.reason || '客人退菜'; S.exp = null; },
+          '<div class="reasons">' + ['上错菜', '客人退菜', '菜品质量', '等待太久'].map(function (r, i) { return '<button class="opt" role="radio" aria-checked="' + (i === 1) + '" data-act="reason" data-v="' + r + '" style="min-width:0">' + r + '</button>'; }).join('') + '</div>');
+        M.reason = '客人退菜'; break;
+      case 'reason': M.reason = v; Array.prototype.forEach.call(ov.querySelectorAll('[data-act="reason"]'), function (b) { b.setAttribute('aria-checked', String(b === a)); }); break;
+      case 'note': openNote(lineBy(a.dataset.uid)); break;
+      case 'note-chip': var inp = document.getElementById('line-note'); inp.value = inp.value ? inp.value + ' · ' + v : v; break;
+      case 'note-ok': lineBy(M.uid).note = document.getElementById('line-note').value.trim(); close(); render(); break;
+      case 'member': S.member = !S.member; render(); if (S.member) toast('已识别会员 王女士 · 9.5 折', 'user-round'); break;
+      case 'round': S.roundOff = !S.roundOff; render(); break;
+      case 'hold':
+        if (!live().length) { toast('订单是空的，不需要挂单', 'info'); break; }
+        var d0 = new Date();
+        S.held.push({ no: S.no, table: S.table, lines: S.lines, at: String(d0.getHours()).padStart(2, '0') + ':' + String(d0.getMinutes()).padStart(2, '0') });
+        toast('已挂单 #' + S.no, 'pause'); S.no++; S.lines = []; S.exp = null; S.member = false; S.roundOff = false; render(); break;
+      case 'held': openHeld(); break;
+      case 'unhold':
+        var h = S.held.splice(+a.dataset.i, 1)[0];
+        if (S.lines.length) S.held.push({ no: S.no, table: S.table, lines: S.lines, at: '刚刚' });
+        S.no = h.no; S.table = h.table; S.lines = h.lines; close(); render(); toast('已取回 #' + h.no, 'play'); break;
+      case 'clear':
+        if (!S.lines.length) break;
+        if (S.lines.some(function (x) { return x.st !== 'new'; })) { toast('有已送厨的菜，不能清空，请逐道退菜', 'info'); break; }
+        openConfirm('清空订单？', '会删除 ' + S.lines.length + ' 道未送厨的菜。', '清空', function () { S.lines = []; S.exp = null; }); break;
+      case 'confirm-ok': var m = M; close(); m.ok(m); render(); break;
+      case 'send':
+        var np = pending(); if (!np.length) break;
+        var d1 = new Date(), at = String(d1.getHours()).padStart(2, '0') + ':' + String(d1.getMinutes()).padStart(2, '0');
+        np.forEach(function (x) { x.st = 'sent'; x.sentAt = at; });
+        S.lines = S.lines.filter(function (x) { return x.st !== 'sent'; }).concat(S.lines.filter(function (x) { return x.st === 'sent'; }));
+        S.exp = null; render(); toast('已送厨 ' + np.length + ' 道菜', 'chef-hat'); break;
+      case 'pay': app.classList.remove('cart-open'); openPay(); break;
+      case 'method': M.method = v; M.cash = ''; drawPay(); break;
+      case 'cash-set': M.cash = v; drawPay(); break;
+      case 'key':
+        var k = a.dataset.k;
+        if (k === 'del') M.cash = M.cash.slice(0, -1);
+        else if (k === '.' && M.cash.indexOf('.') > -1) break;
+        else if (/\.\d\d$/.test(M.cash) || M.cash.length >= 8) break;
+        else M.cash = (M.cash === '0' && k !== '.' ? '' : M.cash) + k;
+        drawPay(); break;
+      case 'pay-ok':
+        var t = totals(), cash = Math.round(parseFloat(M.cash || '0') * 100) || 0;
+        var labels = { wechat: '微信', alipay: '支付宝', cash: '现金', card: '银行卡', member: '会员余额' };
+        pending().forEach(function (x) { x.st = 'sent'; x.sentAt = '结账'; });
+        M.done = true; M.no = S.no; M.paid = t.due; M.label = labels[M.method]; M.change = M.method === 'cash' ? cash - t.due : 0;
+        drawPay(); break;
+      case 'new-order':
+        close(); S.no++; S.lines = []; S.member = false; S.roundOff = false; S.exp = null; S.opened = Date.now(); S.guests = 2;
+        render(); toast('已收款，开始新订单 #' + S.no, 'check'); break;
+      case 'opt':
+        var gi = +a.dataset.g, ki = +a.dataset.k, g = M.groups[gi];
+        if (g.multi) { var arr = M.sel[gi], p = arr.indexOf(ki); if (p > -1) arr.splice(p, 1); else arr.push(ki); } else M.sel[gi] = ki;
+        M.text = document.getElementById('spec-note').value; drawSpec(); break;
+      case 'mnote':
+        var ni = M.notes.indexOf(v); if (ni > -1) M.notes.splice(ni, 1); else M.notes.push(v);
+        M.text = document.getElementById('spec-note').value; drawSpec(); break;
+      case 'mqty': M.qty = Math.max(1, M.qty + +a.dataset.d); M.text = document.getElementById('spec-note').value; drawSpec(); break;
+      case 'spec-add':
+        var txt = document.getElementById('spec-note').value.trim();
+        var note = M.notes.concat(txt ? [txt] : []).join(' · ');
+        var dd = M.d, sp = specText(), pr = specPrice(), q = M.qty; close(); addLine(dd, sp, pr, q, note); break;
+      case 'tg': M.guests = Math.max(1, M.guests + +a.dataset.d); M.draw(); break;
+      case 'tpick': M.table = v; M.draw(); break;
+      case 'table-ok': S.table = M.table; S.guests = M.guests; close(); render(); toast('已更新为 ' + S.table + ' · ' + S.guests + ' 人', 'armchair'); break;
+      case 'close': close(); break;
+      case 'cart-open': app.classList.add('cart-open'); break;
+      case 'cart-close': app.classList.remove('cart-open'); break;
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); document.getElementById('q').focus(); }
+    if (e.key === 'Escape' && !ov.hidden) close();
+    if ((e.key === 'Enter' || e.key === ' ') && document.activeElement.classList.contains('line')) { e.preventDefault(); document.activeElement.click(); }
+  });
+  document.getElementById('q').addEventListener('input', function (e) { S.q = e.target.value; renderRail(); renderTiles(); icons(); });
+  setInterval(renderHeader, 30000);
+  render();
+})();
+</script>

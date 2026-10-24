@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dining POS 原型</title>
+<style>
+  :root { --bg: #f6f6f7; --fg: #111113; --fg2: #5b5c61; --card: #ffffff; --line: #e3e3e6; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0c0c0d; --fg: #f4f4f5; --fg2: #a8a9ae; --card: #161618; --line: #26262a; color-scheme: dark; } }
+  body { margin: 0; padding: 40px max(16px, env(safe-area-inset-left, 0px)); background: var(--bg); color: var(--fg); font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; display: grid; gap: 12px; }
+  h1 { margin: 0 0 8px; font-size: 22px; }
+  a { display: block; padding: 16px 18px; border-radius: 8px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); color: inherit; text-decoration: none; }
+  a:hover { box-shadow: inset 0 0 0 1px var(--fg2); }
+  a b { display: block; font-size: 16px; }
+  a span { color: var(--fg2); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dining POS 原型</h1>
+  <a href="bapp/pos-ui.html"><b>UI 原型 · 组件方案拼装（最新）</b><span>中文 / English；五个工作台可点菜、送厨、结账、收款；菜品卡中英双语名 + 价格 + 库存，有图无图混排；可切换面感、字体、圆角、密度、皮肤、布局 L1–L6、离线横幅</span></a>
+  <a href="bapp/pos-components.html"><b>UI 组件方案 · B 端风格</b><span>组件清单的 52 个组件按 ai-shop B 端 App 设计语言 1:1 画出；可切换 B 端 7 套皮肤、深浅、形状</span></a>
+  <a href="pos-palette.html"><b>配色方案 A · 主题色</b><span>黑白灰 + 主题色 + 辅助色：8 套主题浅深并排，带实测对比度（方案 B 色块见框架草图）</span></a>
+  <a href="pos-frame.html"><b>全线点餐 POS · 原型框架草图（最新）</b><span>按功能区清单的 27 个功能区搭线框；配色可切换方案 B 色块（实色 / 粉彩，默认）和方案 A 主题色；菜品卡可切换有图 / 无图；可切换工作台、浮层、布局 L1–L6、形状、深浅、密度，可标注和高亮功能区</span></a>
+  <a href="dining-pos-review.html"><b>点餐原型 · 评审优化版</b><span>按 docs/原型评审-2026-10-22.md 修正上一版黑白灰 + 主题色方案</span></a>
+  <a href="bapp/dining-pos-skeleton.html"><b>全线点餐 POS · UI 骨架</b><span>9 组组件拼成 31 屏；可切换布局 L1–L6、主题色、形状、深浅，可标注功能区</span></a>
+  <a href="bapp/dining-pos-fullline.html"><b>全线点餐 POS 原型（B 端 App 积木）</b><span>开班到收班 22 屏：收银平板、服务员手机、厨房屏、店长 B 端 App</span></a>
+  <a href="dining-pos.html"><b>点餐原型（最新）</b><span>黑白灰 + 主题色（ai-shop 皮肤主色），历史方案收在「调整方案细节」里</span></a>
+  <a href="bapp/dining-pos-bapp.html"><b>B 端组件版</b><span>沿用 ai-shop B 端原型方案与 proto.css：桌台、点餐、结账、交接班、系统入口面板五屏</span></a>
+  <a href="pos-workbench.html"><b>点餐工作台</b><span>6 种布局 × 4 套组件库方案对比</span></a>
+  <a href="pos-compare.html"><b>风格对比（早期）</b><span>UnoCSS 风格与主流 POS 风格</span></a>
+</main>
+</body>
+</html>

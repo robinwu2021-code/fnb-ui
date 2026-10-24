@@ -1,0 +1,175 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * 全线点餐 POS · 色彩令牌（pos-colors.css）—— 由 tools/gen-colors.py 生成，不要手改。
+ * 定义见 docs/全线点餐POS-色彩体系.md；评审见 docs/全线点餐POS-色彩体系评审.md（P0、P1 已改入）。
+ *   第一层 原色阶：--gray-* · 6 个主题色系 --{色系}-50…950 · 4 个状态色系 · 11 个分类色。组件不直接用。
+ *   第二层 基本色角色（黑白灰，不随主题变）：--c-canvas / surface / faint / edge / line / ink / sub / hint / placeholder / control-off …
+ *   第三层 主题色角色：data-skin 选色系 → --p-50…950 → --c-primary / hover / pressed / tint / text / focus；
+ *          另有避让角色 --c-mark-* / --c-progress-* / --c-due-* / --c-hint-*，撞色的色系在这里换掉颜色。
+ *   状态色角色：--c-{success|warning|danger|info}-{dot|text|tint|border|strong}，所有主题共用。
+ *   第四层 接入：<html data-colors="v2"> 时把旧 --sh-* 令牌指到新角色；不加时不影响现有页面。
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+:root{
+  /* ── 第一层 · 灰阶：OKLCH 色相 258°、彩度 0.0045 ── */
+  --gray-0:#FFFFFF; --gray-50:#F4F6F9; --gray-100:#EDEFF2; --gray-150:#E5E7EA; --gray-200:#DCDEE1; --gray-300:#C5C7CA; --gray-400:#A3A5A7; --gray-500:#848689; --gray-600:#67696B; --gray-700:#4B4D50; --gray-800:#313335; --gray-900:#181A1C; --gray-950:#0A0B0D;
+  /* ── 第一层 · 虹选红 Brand red（品牌原色 #E1251B，色相 29°）── */
+  --brand-50:#FEF4F2; --brand-100:#FFE6E2; --brand-200:#FFCDC5; --brand-300:#FFAB9E; --brand-400:#FF7C6B; --brand-500:#F94233; --brand-600:#DC1C14; --brand-700:#BB0000; --brand-800:#930000; --brand-900:#730000; --brand-950:#540000;
+  /* ── 第一层 · 经典蓝 Classic blue（品牌原色 #2C69FF，色相 264°）── */
+  --blue-50:#F3F7FE; --blue-100:#E4EDFE; --blue-200:#C9DBFF; --blue-300:#A7C4FE; --blue-400:#7DA7FF; --blue-500:#5288FF; --blue-600:#2A67FD; --blue-700:#1C51D9; --blue-800:#103CB1; --blue-900:#0A2D89; --blue-950:#051F64;
+  /* ── 第一层 · 微信绿 Fresh green（品牌原色 #00B578，色相 160°）── */
+  --fresh-50:#EBFCF2; --fresh-100:#D5F6E3; --fresh-200:#B0EACB; --fresh-300:#82DAAD; --fresh-400:#4BC38C; --fresh-500:#04A970; --fresh-600:#008E5D; --fresh-700:#00754B; --fresh-800:#005B39; --fresh-900:#00452B; --fresh-950:#00311C;
+  /* ── 第一层 · 青碧 Teal（品牌原色 #008484，色相 195°）── */
+  --teal-50:#EDFAF9; --teal-100:#D9F3F2; --teal-200:#B9E5E4; --teal-300:#90D2D1; --teal-400:#64BAB9; --teal-500:#37A1A1; --teal-600:#0E8888; --teal-700:#017070; --teal-800:#005858; --teal-900:#004343; --teal-950:#002F2F;
+  /* ── 第一层 · 琥珀 Amber（品牌原色 #A46911，色相 69°）── */
+  --amber-50:#FEF5EB; --amber-100:#FCE9D6; --amber-200:#F4D5B3; --amber-300:#E8BB89; --amber-400:#D49D5D; --amber-500:#BD8132; --amber-600:#A46910; --amber-700:#895500; --amber-800:#6C4100; --amber-900:#533000; --amber-950:#3B2100;
+  /* ── 第一层 · 紫 Violet（品牌原色 #7A4CE0，色相 292°）── */
+  --violet-50:#F7F5FE; --violet-100:#EDEAFE; --violet-200:#DBD4FF; --violet-300:#C5B9FE; --violet-400:#AC96FE; --violet-500:#966FFF; --violet-600:#7F53E7; --violet-700:#6A3FC6; --violet-800:#532CA0; --violet-900:#3F207C; --violet-950:#2C155A;
+  /* ── 第一层 · 松绿 Pine（品牌原色 #216857，色相 174°）── */
+  --pine-50:#F0F9F6; --pine-100:#DFF2EC; --pine-200:#C3E3D9; --pine-300:#A1D0C1; --pine-400:#7DB7A6; --pine-500:#5B9E8C; --pine-600:#428674; --pine-700:#306F5F; --pine-800:#215749; --pine-900:#174237; --pine-950:#0E2E26;
+  /* ── 第一层 · 状态 成功（原色 #12B76A，色相 155°）── */
+  --success-50:#EBFCF0; --success-100:#D5F7DF; --success-200:#B1EBC4; --success-300:#83DBA3; --success-400:#4DC47F; --success-500:#02AB61; --success-600:#008F50; --success-700:#007541; --success-800:#005C31; --success-900:#004623; --success-950:#003216;
+  /* ── 第一层 · 状态 警告（原色 #F79009，色相 62°）── */
+  --warning-50:#FFF5EC; --warning-100:#FFE8D5; --warning-200:#FFD1A9; --warning-300:#FBB270; --warning-400:#EB9133; --warning-500:#CE7600; --warning-600:#AD6200; --warning-700:#8F5000; --warning-800:#703D00; --warning-900:#572D00; --warning-950:#401D00;
+  /* ── 第一层 · 状态 危险（原色 #F04438，色相 29°）── */
+  --danger-50:#FEF4F2; --danger-100:#FFE7E3; --danger-200:#FECDC6; --danger-300:#FFAB9F; --danger-400:#FE7D6D; --danger-500:#F5493C; --danger-600:#D82821; --danger-700:#B70F0F; --danger-800:#930001; --danger-900:#720001; --danger-950:#520001;
+  /* ── 第一层 · 状态 信息（原色 #2E90FA，色相 254°）── */
+  --info-50:#F2F7FF; --info-100:#E1EEFF; --info-200:#C2DDFF; --info-300:#9BC8FE; --info-400:#67ACFF; --info-500:#2D8FF9; --info-600:#0076DE; --info-700:#0060B9; --info-800:#004A93; --info-900:#003873; --info-950:#002656;
+  /* ── 第一层 · 辅助色 青（色相 200°，业务状态用）── */
+  --cyan-50:#ECFAFB; --cyan-100:#D7F3F4; --cyan-200:#B4E5E8; --cyan-300:#89D3D7; --cyan-400:#58BBC0; --cyan-500:#1DA2A8; --cyan-600:#00888E; --cyan-700:#027074; --cyan-800:#00575B; --cyan-900:#004346; --cyan-950:#002F31;
+  /* ── 第一层 · 辅助色 紫罗兰（色相 312°，业务状态用）── */
+  --purple-50:#FAF4FF; --purple-100:#F5E6FF; --purple-200:#EBCDFF; --purple-300:#E0ACFF; --purple-400:#CE85F8; --purple-500:#B762E5; --purple-600:#9E49CA; --purple-700:#8436AC; --purple-800:#69258A; --purple-900:#501A6A; --purple-950:#39114D;
+  /* ── 第一层 · 辅助色 橄榄（色相 123°，业务状态用）── */
+  --olive-50:#F4F9EA; --olive-100:#E7F2D3; --olive-200:#D1E3AE; --olive-300:#B7D081; --olive-400:#99B750; --olive-500:#7E9D18; --olive-600:#688400; --olive-700:#556C00; --olive-800:#415400; --olive-900:#304000; --olive-950:#212D00;
+  /* ── 第一层 · 辅助色 品红（色相 350°，业务状态用）── */
+  --magenta-50:#FFF3F8; --magenta-100:#FFE5F0; --magenta-200:#FFC9E1; --magenta-300:#FFA3CF; --magenta-400:#F875B9; --magenta-500:#E24EA0; --magenta-600:#C63288; --magenta-700:#A81E70; --magenta-800:#860D58; --magenta-900:#680843; --magenta-950:#4A042F;
+  /* ── 第一层 · 分类色：-solid 实色 · -bg 粉彩底 · -fg 字 ── */
+  --cat-red-solid:#CC3430; --cat-red-bg:#FFE0DB; --cat-red-fg:#910F13; /* 朱红 */
+  --cat-orange-solid:#C25500; --cat-orange-bg:#FEE1D3; --cat-orange-fg:#7E3300; /* 橘橙 */
+  --cat-yellow-solid:#F6C330; --cat-yellow-bg:#F4E7C7; --cat-yellow-fg:#614900; /* 明黄 */
+  --cat-green-solid:#18883A; --cat-green-bg:#D6F0D8; --cat-green-fg:#005E21; /* 草绿 */
+  --cat-teal-solid:#038476; --cat-teal-bg:#D5EEE9; --cat-teal-fg:#005A50; /* 青绿 */
+  --cat-blue-solid:#006CC4; --cat-blue-bg:#D8EAFF; --cat-blue-fg:#004D91; /* 湛蓝 */
+  --cat-indigo-solid:#5552BB; --cat-indigo-bg:#E3E6FE; --cat-indigo-fg:#413F94; /* 靛紫 */
+  --cat-purple-solid:#8747AA; --cat-purple-bg:#F2E0FE; --cat-purple-fg:#653181; /* 葡萄紫 */
+  --cat-rose-solid:#BC3E79; --cat-rose-bg:#FFDEE9; --cat-rose-fg:#841E51; /* 玫红 */
+  --cat-brown-solid:#80512F; --cat-brown-bg:#F4E4DA; --cat-brown-fg:#6A4327; /* 栗棕 */
+  --cat-gray-solid:#5E5E5E; --cat-gray-bg:#E6E6E6; --cat-gray-fg:#3D3D3D; /* 石灰 */
+
+  /* ── 第二层 · 基本色角色（黑白灰，不随主题变）── */
+  --c-canvas:var(--gray-50); /* 画布 */
+  --c-surface:var(--gray-0); /* 面板、卡片、弹窗、侧滑 */
+  --c-faint:var(--gray-100); /* 中性块：muted 按钮、输入框、步进器、按键、分段轨道 */
+  --c-edge:var(--gray-150); /* 少数必须的细描边（白卡细线面感已退役，组件不再用它画卡片外框） */
+  --c-line:var(--gray-100); /* 列表行间分隔（唯一保留的线） */
+  --c-strong:var(--gray-200); /* 按下态、强一档的中性块 */
+  --c-ink:var(--gray-900); /* 正文、标题、金额、选中的位置 */
+  --c-sub:var(--gray-600); /* 次要文字 */
+  --c-hint:var(--gray-600); /* 作说明的占位字（搜索框等没有外部标签的输入框，P0-4） */
+  --c-placeholder:var(--gray-400); /* 纯示例的占位字、禁用文字，不承载必要信息 */
+  --c-control-off:var(--gray-500); /* 开关关闭态轨道、勾选框未选态描边（≥3:1，P0-3） */
+  --c-disabled-bg:var(--gray-100); /* 禁用控件底 */
+  --c-slot-bg:var(--gray-100); /* 无图菜品大字位的底（中性，字用分类色，P1-1） */
+  --c-inverse:var(--gray-900); /* 反色面：Toast、操作菜单 */
+  --c-on-inverse:var(--gray-0); /* 反色面上的字 */
+  --c-scrim:rgba(12,14,18,.45); /* 遮罩 */
+  --c-on-solid:var(--gray-0); /* 实心色块上的字和图标：危险实心按钮、角标、支付方式图标 */
+  --c-saving:var(--c-success-text); /* 优惠金额（−¥）与已用优惠的图标；黑白灰色系下为墨 */
+  --c-check-off:var(--gray-150); /* 勾选框未选：实心块 */
+  --c-pick:var(--gray-200); /* 已点的菜（墨黑）：比浅块深两档 */
+
+  /* ── 状态色角色：浅底 200（比主题浅底深一档）· 文字在浅底上 ≥4.5:1 · 圆点在浅底和白底上都 ≥3:1 · 实心放白字 ≥4.5:1 ── */
+  --c-success-dot:var(--success-600); --c-success-text:var(--success-800); --c-success-tint:var(--success-200); --c-success-border:var(--success-300); --c-success-strong:var(--success-700);
+  --c-warning-dot:var(--warning-600); --c-warning-text:var(--warning-700); --c-warning-tint:var(--warning-200); --c-warning-border:var(--warning-300); --c-warning-strong:var(--warning-600);
+  --c-danger-dot:var(--danger-600); --c-danger-text:var(--danger-700); --c-danger-tint:var(--danger-200); --c-danger-border:var(--danger-300); --c-danger-strong:var(--danger-600);
+  --c-info-dot:var(--info-600); --c-info-text:var(--info-800); --c-info-tint:var(--info-200); --c-info-border:var(--info-300); --c-info-strong:var(--info-600);
+
+  /* ── 业务状态角色：9 组，每组 圆点 / 图标 · 文字 · 浅底 · 描边。状态一律「图标 + 文字」，颜色只是辅助。清单见 docs/全线点餐POS-业务状态.md ── */
+  --c-st-action-dot:var(--warning-600); --c-st-action-text:var(--warning-700); --c-st-action-tint:var(--warning-200); --c-st-action-border:var(--warning-300); /* 待处理 chip */
+  --c-st-progress-dot:var(--info-600); --c-st-progress-text:var(--info-800); --c-st-progress-tint:var(--info-200); --c-st-progress-border:var(--info-300); /* 进行中 dot */
+  --c-st-waiting-dot:var(--cyan-600); --c-st-waiting-text:var(--cyan-800); --c-st-waiting-tint:var(--cyan-200); --c-st-waiting-border:var(--cyan-300); /* 等待中 dot */
+  --c-st-done-dot:var(--success-600); --c-st-done-text:var(--success-800); --c-st-done-tint:var(--success-200); --c-st-done-border:var(--success-300); /* 已完成 dot */
+  --c-st-booked-dot:var(--purple-600); --c-st-booked-text:var(--purple-700); --c-st-booked-tint:var(--purple-200); --c-st-booked-border:var(--purple-300); /* 预约 chip */
+  --c-st-held-dot:var(--olive-600); --c-st-held-text:var(--olive-800); --c-st-held-tint:var(--olive-200); --c-st-held-border:var(--olive-300); /* 暂存 chip */
+  --c-st-trace-dot:var(--magenta-600); --c-st-trace-text:var(--magenta-700); --c-st-trace-tint:var(--magenta-200); --c-st-trace-border:var(--magenta-300); /* 变更标记 dot */
+  --c-st-closed-dot:var(--gray-500); --c-st-closed-text:var(--gray-600); --c-st-closed-tint:var(--gray-100); --c-st-closed-border:var(--gray-300); /* 已关闭 dot */
+  --c-st-failed-dot:var(--danger-600); --c-st-failed-text:var(--danger-700); --c-st-failed-tint:var(--danger-200); --c-st-failed-border:var(--danger-300); /* 异常 chip */
+  /* 状态块：卡片整块用的状态底（桌台卡、订单卡、活动卡）。常态 = 浅底 30% 叠在面板色上，要处理的 = 60%。跟着浅底走，主题避让改了浅底也随之变 */
+  --c-st-action-block:color-mix(in srgb,var(--c-st-action-tint) 30%,var(--c-surface)); --c-st-action-block-strong:color-mix(in srgb,var(--c-st-action-tint) 60%,var(--c-surface)); --c-st-progress-block:color-mix(in srgb,var(--c-st-progress-tint) 30%,var(--c-surface)); --c-st-progress-block-strong:color-mix(in srgb,var(--c-st-progress-tint) 60%,var(--c-surface)); --c-st-waiting-block:color-mix(in srgb,var(--c-st-waiting-tint) 30%,var(--c-surface)); --c-st-waiting-block-strong:color-mix(in srgb,var(--c-st-waiting-tint) 60%,var(--c-surface)); --c-st-done-block:color-mix(in srgb,var(--c-st-done-tint) 30%,var(--c-surface)); --c-st-done-block-strong:color-mix(in srgb,var(--c-st-done-tint) 60%,var(--c-surface)); --c-st-booked-block:color-mix(in srgb,var(--c-st-booked-tint) 30%,var(--c-surface)); --c-st-booked-block-strong:color-mix(in srgb,var(--c-st-booked-tint) 60%,var(--c-surface)); --c-st-held-block:color-mix(in srgb,var(--c-st-held-tint) 30%,var(--c-surface)); --c-st-held-block-strong:color-mix(in srgb,var(--c-st-held-tint) 60%,var(--c-surface)); --c-st-trace-block:color-mix(in srgb,var(--c-st-trace-tint) 30%,var(--c-surface)); --c-st-trace-block-strong:color-mix(in srgb,var(--c-st-trace-tint) 60%,var(--c-surface)); --c-st-closed-block:color-mix(in srgb,var(--c-st-closed-tint) 30%,var(--c-surface)); --c-st-closed-block-strong:color-mix(in srgb,var(--c-st-closed-tint) 60%,var(--c-surface)); --c-st-failed-block:color-mix(in srgb,var(--c-st-failed-tint) 30%,var(--c-surface)); --c-st-failed-block-strong:color-mix(in srgb,var(--c-st-failed-tint) 60%,var(--c-surface));
+}
+
+/* ── 第三层 · 主题色 ── */
+[data-skin="mono"]{--p-50:var(--gray-50); --p-100:var(--gray-100); --p-200:var(--gray-200); --p-300:var(--gray-300); --p-400:var(--gray-400); --p-500:var(--gray-500); --p-600:var(--gray-600); --p-700:var(--gray-700); --p-800:var(--gray-800); --p-900:var(--gray-900); --p-950:var(--gray-950);}  /* 墨黑 */
+[data-skin="brand"]{--p-50:var(--brand-50); --p-100:var(--brand-100); --p-200:var(--brand-200); --p-300:var(--brand-300); --p-400:var(--brand-400); --p-500:var(--brand-500); --p-600:var(--brand-600); --p-700:var(--brand-700); --p-800:var(--brand-800); --p-900:var(--brand-900); --p-950:var(--brand-950);}  /* 虹选红 */
+[data-skin="blue"]{--p-50:var(--blue-50); --p-100:var(--blue-100); --p-200:var(--blue-200); --p-300:var(--blue-300); --p-400:var(--blue-400); --p-500:var(--blue-500); --p-600:var(--blue-600); --p-700:var(--blue-700); --p-800:var(--blue-800); --p-900:var(--blue-900); --p-950:var(--blue-950);}  /* 经典蓝 */
+[data-skin="fresh"]{--p-50:var(--fresh-50); --p-100:var(--fresh-100); --p-200:var(--fresh-200); --p-300:var(--fresh-300); --p-400:var(--fresh-400); --p-500:var(--fresh-500); --p-600:var(--fresh-600); --p-700:var(--fresh-700); --p-800:var(--fresh-800); --p-900:var(--fresh-900); --p-950:var(--fresh-950);}  /* 微信绿 */
+[data-skin="teal"]{--p-50:var(--teal-50); --p-100:var(--teal-100); --p-200:var(--teal-200); --p-300:var(--teal-300); --p-400:var(--teal-400); --p-500:var(--teal-500); --p-600:var(--teal-600); --p-700:var(--teal-700); --p-800:var(--teal-800); --p-900:var(--teal-900); --p-950:var(--teal-950);}  /* 青碧 */
+[data-skin="amber"]{--p-50:var(--amber-50); --p-100:var(--amber-100); --p-200:var(--amber-200); --p-300:var(--amber-300); --p-400:var(--amber-400); --p-500:var(--amber-500); --p-600:var(--amber-600); --p-700:var(--amber-700); --p-800:var(--amber-800); --p-900:var(--amber-900); --p-950:var(--amber-950);}  /* 琥珀 */
+[data-skin="violet"]{--p-50:var(--violet-50); --p-100:var(--violet-100); --p-200:var(--violet-200); --p-300:var(--violet-300); --p-400:var(--violet-400); --p-500:var(--violet-500); --p-600:var(--violet-600); --p-700:var(--violet-700); --p-800:var(--violet-800); --p-900:var(--violet-900); --p-950:var(--violet-950);}  /* 紫 */
+[data-skin="pine"]{--p-50:var(--pine-50); --p-100:var(--pine-100); --p-200:var(--pine-200); --p-300:var(--pine-300); --p-400:var(--pine-400); --p-500:var(--pine-500); --p-600:var(--pine-600); --p-700:var(--pine-700); --p-800:var(--pine-800); --p-900:var(--pine-900); --p-950:var(--pine-950);}  /* 松绿 */
+/* 角色：实心 = 第一个白字 ≥4.5:1 的档；悬停 / 按下再深一档、两档；浅底 100；文字 = 浅底上 ≥4.5:1 的档；焦点用实心色（P0-2） */
+[data-skin="mono"]{--c-primary:var(--p-900); --c-primary-hover:var(--p-800); --c-primary-pressed:var(--p-950); --c-on-primary:#FFFFFF; --c-primary-tint:var(--gray-100); --c-primary-tint-hover:var(--gray-150); --c-primary-border:var(--p-300); --c-primary-text:var(--p-900); --c-focus:var(--c-primary)}
+[data-skin="mono"]{--c-wash:var(--gray-50); --c-wash-strong:var(--gray-100); --c-sel-bg:var(--gray-200); --c-sel-fg:var(--gray-900)}
+[data-skin="brand"]{--c-primary:var(--p-600); --c-primary-hover:var(--p-700); --c-primary-pressed:var(--p-800); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="brand"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+[data-skin="blue"]{--c-primary:var(--p-600); --c-primary-hover:var(--p-700); --c-primary-pressed:var(--p-800); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="blue"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+[data-skin="fresh"]{--c-primary:var(--p-700); --c-primary-hover:var(--p-800); --c-primary-pressed:var(--p-900); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="fresh"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+[data-skin="teal"]{--c-primary:var(--p-700); --c-primary-hover:var(--p-800); --c-primary-pressed:var(--p-900); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="teal"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+[data-skin="amber"]{--c-primary:var(--p-600); --c-primary-hover:var(--p-700); --c-primary-pressed:var(--p-800); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="amber"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+[data-skin="violet"]{--c-primary:var(--p-600); --c-primary-hover:var(--p-700); --c-primary-pressed:var(--p-800); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="violet"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+[data-skin="pine"]{--c-primary:var(--p-700); --c-primary-hover:var(--p-800); --c-primary-pressed:var(--p-900); --c-on-primary:#FFFFFF; --c-primary-tint:var(--p-100); --c-primary-tint-hover:var(--p-200); --c-primary-border:var(--p-300); --c-primary-text:var(--p-700); --c-focus:var(--c-primary)}
+[data-skin="pine"]{--c-wash:var(--p-50); --c-wash-strong:var(--p-100); --c-sel-bg:var(--c-primary-tint); --c-sel-fg:var(--c-primary-text)}
+
+/* ── 避让角色（P0-1 方案 A）：默认取主题色或状态色；撞色的色系在下面改掉 ──
+ *   mark：赠送、会员价、优惠券、预订等「和钱有关的主题标记」 · progress：制作中、已接单等进行中状态
+ *   due：桌台「待结账」（--c-due-mark 是桌号前的标记，none 为不加） · hint：提示类说明 */
+[data-skin]{--c-mark-bg:var(--c-primary-tint); --c-mark-text:var(--c-primary-text); --c-progress-dot:var(--c-st-progress-dot); --c-progress-text:var(--c-st-progress-text);
+  --c-due-bg:var(--c-warning-tint); --c-due-text:var(--c-warning-text); --c-due-mark:none; --c-hint-bg:var(--c-info-tint); --c-hint-fg:var(--c-info-text)}
+[data-skin="brand"]{--c-mark-bg:var(--c-faint); --c-mark-text:var(--c-ink);}  /* 虹选红 ↔ 危险（色相差 0°）：赠送、会员价、优惠券、预订这类主题标记改用中性标签，红色只留给已退、失败 */
+[data-skin="fresh"]{--c-st-done-dot:var(--gray-500); --c-st-done-text:var(--gray-600); --c-st-done-tint:var(--gray-100); --c-st-done-border:var(--gray-300);}  /* 微信绿 ↔ 成功（色相差 5°）：「已完成」组（已上菜、已结账、已送达…）改用灰色，绿色只留给主题 */
+[data-skin="amber"]{--c-due-mark:"¥";}  /* 琥珀 ↔ 警告（色相差 8°）：桌台「待结账」在桌号前加 ¥ 标记，不只靠底色 */
+[data-skin="teal"]{--c-st-waiting-dot:var(--gray-500); --c-st-waiting-text:var(--gray-600); --c-st-waiting-tint:var(--gray-100); --c-st-waiting-border:var(--gray-300);}  /* 青碧 ↔ 辅助色青（色相差 6°）：「等待中」组（待取餐、配送中、支付中…）改用灰色 */
+[data-skin="blue"]{--c-st-progress-dot:var(--gray-500); --c-st-progress-text:var(--gray-600); --c-st-progress-tint:var(--gray-100); --c-st-progress-border:var(--gray-300); --c-progress-dot:var(--gray-500); --c-progress-text:var(--gray-600); --c-hint-bg:var(--c-faint); --c-hint-fg:var(--c-ink);}  /* 经典蓝 ↔ 信息（色相差 10°）：提示类说明改中性底，「进行中」组（制作中、已接单…）改用灰色，蓝色只留给主题 */
+
+/* ── 色系 · 黑白灰（data-tone="quiet"，默认；多色为 data-tone="color"，见 docs/全线点餐POS-黑白灰色系方案.md）──
+ *   黑白灰承担结构和常态；颜色只留给「要人处理」的两组：待处理 = 琥珀、异常 = 红。
+ *   常态按明度分层：进行中 = 墨（正在发生）· 等待中 = gray-700 · 已完成 / 变更标记 = gray-600（退后）· 已关闭 = gray-500；
+ *   预约、暂存要提前看到，保留 chip 形式但用中性底（gray-150 + 墨字）。每组只用一档颜色：圆点和文字同档。
+ *   分类色退成中性小方块（gray-300），无图大字位用墨字；支付方式图标是品牌色，不在此列。 */
+[data-tone="quiet"]{--c-st-action-dot:var(--warning-700); --c-st-action-text:var(--warning-700); --c-st-action-tint:var(--warning-200); --c-st-failed-dot:var(--danger-700); --c-st-failed-text:var(--danger-700); --c-st-failed-tint:var(--danger-200); --c-st-progress-dot:var(--gray-900); --c-st-progress-text:var(--gray-900); --c-st-progress-tint:var(--gray-100); --c-st-waiting-dot:var(--gray-700); --c-st-waiting-text:var(--gray-700); --c-st-waiting-tint:var(--gray-100); --c-st-done-dot:var(--gray-600); --c-st-done-text:var(--gray-600); --c-st-done-tint:var(--gray-100); --c-st-trace-dot:var(--gray-600); --c-st-trace-text:var(--gray-600); --c-st-trace-tint:var(--gray-100); --c-st-booked-dot:var(--gray-900); --c-st-booked-text:var(--gray-900); --c-st-booked-tint:var(--gray-150); --c-st-held-dot:var(--gray-900); --c-st-held-text:var(--gray-900); --c-st-held-tint:var(--gray-150); --c-st-closed-dot:var(--gray-500); --c-st-closed-text:var(--gray-600); --c-st-closed-tint:var(--gray-100); --c-progress-dot:var(--gray-900); --c-progress-text:var(--gray-900); --c-saving:var(--gray-900); --c-st-progress-block:var(--gray-100); --c-st-progress-block-strong:var(--gray-150); --c-st-waiting-block:var(--gray-100); --c-st-waiting-block-strong:var(--gray-150); --c-st-done-block:var(--gray-100); --c-st-done-block-strong:var(--gray-150); --c-st-trace-block:var(--gray-100); --c-st-trace-block-strong:var(--gray-150); --c-st-booked-block:var(--gray-100); --c-st-booked-block-strong:var(--gray-150); --c-st-held-block:var(--gray-100); --c-st-held-block-strong:var(--gray-150); --c-st-closed-block:var(--gray-50); --c-st-closed-block-strong:var(--gray-100); --cat-red-solid:var(--gray-300); --cat-red-bg:var(--gray-100); --cat-red-fg:var(--gray-900); --cat-orange-solid:var(--gray-300); --cat-orange-bg:var(--gray-100); --cat-orange-fg:var(--gray-900); --cat-yellow-solid:var(--gray-300); --cat-yellow-bg:var(--gray-100); --cat-yellow-fg:var(--gray-900); --cat-green-solid:var(--gray-300); --cat-green-bg:var(--gray-100); --cat-green-fg:var(--gray-900); --cat-teal-solid:var(--gray-300); --cat-teal-bg:var(--gray-100); --cat-teal-fg:var(--gray-900); --cat-blue-solid:var(--gray-300); --cat-blue-bg:var(--gray-100); --cat-blue-fg:var(--gray-900); --cat-indigo-solid:var(--gray-300); --cat-indigo-bg:var(--gray-100); --cat-indigo-fg:var(--gray-900); --cat-purple-solid:var(--gray-300); --cat-purple-bg:var(--gray-100); --cat-purple-fg:var(--gray-900); --cat-rose-solid:var(--gray-300); --cat-rose-bg:var(--gray-100); --cat-rose-fg:var(--gray-900); --cat-brown-solid:var(--gray-300); --cat-brown-bg:var(--gray-100); --cat-brown-fg:var(--gray-900); --cat-gray-solid:var(--gray-300); --cat-gray-bg:var(--gray-100); --cat-gray-fg:var(--gray-900);}
+
+/* ── P1-4：微信绿、青碧的品牌原色偏亮，默认实心用深一档（白字）。品牌方要求贴近原色时，加 data-primary="bright"：500 档 + 墨字。全产品只选一种。 ── */
+[data-skin="fresh"][data-primary="bright"]{--c-primary:var(--p-500); --c-primary-hover:var(--p-600); --c-primary-pressed:var(--p-700); --c-on-primary:var(--gray-900)}  /* 墨字 / 实心 5.75:1 */
+[data-skin="teal"][data-primary="bright"]{--c-primary:var(--p-500); --c-primary-hover:var(--p-600); --c-primary-pressed:var(--p-700); --c-on-primary:var(--gray-900)}  /* 墨字 / 实心 5.63:1 */
+
+/* ── 第四层 · 接入旧令牌（data-colors="v2" 时生效）── */
+:root[data-colors="v2"]{
+  --sh-bg:var(--c-canvas); --sh-card:var(--c-surface); --sh-faint:var(--c-faint); --sh-line:var(--c-line); --sh-ink:var(--c-ink); --sh-sub:var(--c-sub); --sh-disabled:var(--c-placeholder);
+  --sh-primary:var(--c-primary); --sh-primary-tint:var(--c-primary-tint); --sh-primary-text:var(--c-primary-text); --sh-on-primary:var(--c-on-primary);
+  --sh-success-tint:var(--c-success-tint); --sh-success-text:var(--c-success-text); --sh-warning-tint:var(--c-warning-tint); --sh-warning-text:var(--c-warning-text);
+  --sh-danger:var(--c-danger-strong); --sh-danger-tint:var(--c-danger-tint); --sh-danger-text:var(--c-danger-text); --pc-edge:var(--c-edge);
+  --sh-wash:var(--c-wash); --sh-wash-strong:var(--c-wash-strong); --sh-sel-bg:var(--c-sel-bg); --sh-sel-fg:var(--c-sel-fg); --sh-on-solid:var(--c-on-solid); --sh-scrim:var(--c-scrim); --sh-saving:var(--c-saving)}
+:root[data-colors="v2"] .pc{--sh-bg:var(--c-canvas); --sh-faint:var(--c-wash); --sh-wash:var(--c-wash); --sh-wash-strong:var(--c-wash-strong); --sh-sel-bg:var(--c-sel-bg); --sh-sel-fg:var(--c-sel-fg); --sh-primary-tint:var(--c-primary-tint)}
+:root[data-colors="v2"] .pc .k-red{--ks:var(--cat-red-solid); --kp:var(--cat-red-bg); --kpf:var(--cat-red-fg)}
+:root[data-colors="v2"] .pc .k-orange{--ks:var(--cat-orange-solid); --kp:var(--cat-orange-bg); --kpf:var(--cat-orange-fg)}
+:root[data-colors="v2"] .pc .k-yellow{--ks:var(--cat-yellow-solid); --kp:var(--cat-yellow-bg); --kpf:var(--cat-yellow-fg)}
+:root[data-colors="v2"] .pc .k-green{--ks:var(--cat-green-solid); --kp:var(--cat-green-bg); --kpf:var(--cat-green-fg)}
+:root[data-colors="v2"] .pc .k-teal{--ks:var(--cat-teal-solid); --kp:var(--cat-teal-bg); --kpf:var(--cat-teal-fg)}
+:root[data-colors="v2"] .pc .k-blue{--ks:var(--cat-blue-solid); --kp:var(--cat-blue-bg); --kpf:var(--cat-blue-fg)}
+:root[data-colors="v2"] .pc .k-indigo{--ks:var(--cat-indigo-solid); --kp:var(--cat-indigo-bg); --kpf:var(--cat-indigo-fg)}
+:root[data-colors="v2"] .pc .k-purple{--ks:var(--cat-purple-solid); --kp:var(--cat-purple-bg); --kpf:var(--cat-purple-fg)}
+:root[data-colors="v2"] .pc .k-rose{--ks:var(--cat-rose-solid); --kp:var(--cat-rose-bg); --kpf:var(--cat-rose-fg)}
+:root[data-colors="v2"] .pc .k-brown{--ks:var(--cat-brown-solid); --kp:var(--cat-brown-bg); --kpf:var(--cat-brown-fg)}
+:root[data-colors="v2"] .pc .k-gray{--ks:var(--cat-gray-solid); --kp:var(--cat-gray-bg); --kpf:var(--cat-gray-fg)}
+/* 接入时组件要改的地方（只靠改令牌做不到的）：无图大字位改中性底（P1-1）、关闭态开关 / 勾选框、焦点环、主题标记 / 进行中 / 待结账改用避让角色 */
+:root[data-colors="v2"] .pc .dn-dish--img .pic.txt{background:var(--c-slot-bg); color:var(--kpf)}
+:root[data-colors="v2"] .pc .sh-switch:not(.is-on){background:var(--c-control-off)}
+:root[data-colors="v2"] .pc .sh-check:not(.is-on):not(.is-mixed){background:var(--c-check-off); box-shadow:none}   /* 未选：实心浅灰块，不用描边 */
+:root[data-colors="v2"] .pc :focus-visible{outline:2px solid var(--c-focus); outline-offset:2px}
+:root[data-colors="v2"] .pc .sh-search{color:var(--c-hint)}
+:root[data-colors="v2"] .pc .sh-chip--act{background:var(--c-mark-bg); color:var(--c-mark-text)}
+:root[data-colors="v2"] .pc .ost--ok{color:var(--c-progress-text)}
+:root[data-colors="v2"] .pc .dn-table--pay b::before{content:var(--c-due-mark); margin-right:2px}

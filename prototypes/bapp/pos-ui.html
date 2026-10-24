@@ -1,0 +1,32 @@
+<!doctype html><html lang="zh-CN" data-skin="mono" data-font="inter" data-frame="f14" data-btn="b8" data-density="compact" data-colors="v2" data-tone="quiet"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>全线点餐 POS · UI 原型</title>
+<!-- 样式只在 proto.css：组件用「UI 组件方案」一段（sh-* / dn-*），外壳用「UI 原型」一段。本页只写内容和交互。 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="proto.css">
+<link rel="stylesheet" href="pos-colors.css">
+<script src="pos-states.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<div class="wrap wrap--wide">
+<header class="top">
+  <div class="eyebrow">全线点餐 POS · UI 原型 · 2026-10-23</div>
+  <h1>全线点餐 POS · UI 原型</h1>
+  <p class="sub">按《UI 组件方案》的组件拼成收银平板的五个工作台。可以点菜、改数量、送厨、结账、收款；页首切换字体、组件风格（圆角、密度）、皮肤和布局，整台设备一起变；菜单可以有图、无图混排。所有数据都是本地示例。</p>
+  <div class="pd-switch" id="sw"></div>
+</header>
+<div class="ui-stage" id="stage"><div class="pc ui-dev" id="dev"></div></div>
+<p class="credits">图片来源 Photo credits（Wikimedia Commons，图片从 Wikimedia 服务器直接加载，未改动）：<a href="https://commons.wikimedia.org/wiki/File:Kung_Pao_Chicken_at_Yujiayan_Restaurant_(20230510123120).jpg">宫保鸡丁</a>：N509FZ，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:Shuizhuyu_at_Hamarkand_Silk_Road_Cuisine,_Beiqinglu_(20230121154615).jpg">水煮鱼</a>：N509FZ，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:%E6%B9%98%E8%8F%9C%E9%A6%86%E4%B9%8B%E5%B0%8F%E7%82%92%E9%BB%84%E7%89%9B%E8%82%89.jpg">小炒黄牛肉</a>：Liuxingy，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:Chen_Mapo_Tofu.jpg">麻婆豆腐</a>：ZhengZhou，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:%E9%85%B8%E8%8F%9C%E9%B1%BC_Preserved_Mustard_Green_with_Fish_-_Charming_Spice_AUD24.80_(4104355401).jpg">酸菜鱼</a>：Alpha from Melbourne, Australia，CC BY-SA 2.0 · <a href="https://commons.wikimedia.org/wiki/File:Fuqi_Feipian.jpg">夫妻肺片</a>：ZhengZhou，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:Dan-dan_noodles,_Shanghai.jpg">担担面</a>：Steven G. Johnson，CC BY-SA 3.0 · <a href="https://commons.wikimedia.org/wiki/File:Sour_plum_drink.jpg">酸梅汤</a>：用心阁/Yongxinge，CC BY-SA 3.0。</p>
+<footer>组件见 pos-components.html · 方案见 docs/全线点餐POS-UI组件方案.md · 样式见 proto.css「UI 组件方案」「UI 原型」两段</footer>
+</div>
+<script src="ui/core.js"></script>
+<script src="ui/layout.js"></script>
+<script src="ui/modules/order.js"></script>
+<script src="ui/modules/tables.js"></script>
+<script src="ui/modules/checkout.js"></script>
+<script src="ui/modules/orders.js"></script>
+<script src="ui/modules/menu.js"></script>
+<script src="ui/modules/members.js"></script>
+<script src="ui/modules/reports.js"></script>
+<script src="ui/modules/shift.js"></script>
+<script src="ui/modules/settings.js"></script>
+<script src="ui/i18n.js"></script>
+<script src="ui/app.js"></script>

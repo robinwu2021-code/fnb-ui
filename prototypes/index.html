@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dining POS 原型</title>
+<style>
+  :root { --bg: #f6f6f7; --fg: #111113; --fg2: #5b5c61; --card: #ffffff; --line: #e3e3e6; }
+  body { margin: 0; padding: 40px max(16px, env(safe-area-inset-left, 0px)); background: var(--bg); color: var(--fg); font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; display: grid; gap: 12px; }
+  h1 { margin: 0 0 8px; font-size: 22px; }
+  p { margin: 0 0 8px; color: var(--fg2); font-size: 14px; }
+  a { display: block; padding: 16px 18px; border-radius: 8px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); color: inherit; text-decoration: none; }
+  a:hover { box-shadow: inset 0 0 0 1px var(--fg2); }
+  a b { display: block; font-size: 16px; }
+  a span { color: var(--fg2); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dining POS 原型</h1>
+  <p>当前唯一的产品产出。方案说明见 docs/全线点餐POS-UI组件方案.md，布局与组件清单见 docs/全线点餐POS-布局与组件清单.md；此前的原型和文档都收在 bak/ 里。</p>
+  <a href="bapp/pos-ui-v1.6.html"><b>UI 原型 v1.6</b><span>按钮、选中、当前桌和状态都不用黑色：选中和当前用松绿浅底加松绿描边</span></a>
+  <a href="bapp/pos-ui-v1.5.html"><b>UI 原型 v1.5</b><span>同一套交互和数据，换成组件方案 v1.5 的样式：黑白灰 + 松绿</span></a>
+  <a href="bapp/pos-ui.html"><b>UI 原型 v1</b><span>黑白灰、白底少灰；九个工作台：桌台（11 态）· 点餐（快捷操作、扫码直达）· 结账（两栏五步、会员与优惠、组合支付、完成页）· 订单 · 菜品管理（分类、规格、套餐、渠道同步）· 会员与营销（标签、储值、活动、券）· 报表 · 班次 · 设置；中文 / English</span></a>
+  <a href="bapp/pos-colors.html"><b>色彩体系</b><span>基本色黑白灰；7 个主题色系；4 个状态色系；4 个辅助色系与 9 组业务状态（81 个状态，带图标）；11 个分类色。由 tools/gen-colors.py 生成</span></a>
+  <a href="bapp/pos-components-v1.6.html"><b>UI 组件方案 v1.6</b><span>在 v1.5 上去掉黑色的选中、当前和状态；规格选项改回圆角块；皮肤去掉墨黑</span></a>
+  <a href="bapp/pos-components-v1.5.html"><b>UI 组件方案 v1.5</b><span>按组件库评审改出的新版本：黑白灰 + 松绿，选中不用实心，形状按角色固定；v1 保留在下一项</span></a>
+  <a href="bapp/pos-components.html"><b>UI 组件方案 v1</b><span>69 个组件按 ai-shop B 端 App 设计语言 1:1 画出；可切换中英文、面感、字体、形状（框架 × 按钮）、密度、皮肤</span></a>
+</main>
+</body>
+</html>

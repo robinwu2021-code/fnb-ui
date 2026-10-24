@@ -1,0 +1,136 @@
+/* ══ 全线点餐 POS · UI 组件方案 v1.6（2026-10-24）══════════════════════════════════════════════════════════
+ * 只被 pos-components-v1.6.html、pos-ui-v1.6.html 加载，叠在 proto.css 与 pos-colors.css 之后；全部规则挂在 :root[data-ver="1.6"] 下。
+ * 前半段与 v1.5（pos-v15.css）相同，只把选择器换成 1.6；文末「v1.6 变更」一段覆盖前面的取值。v1.5 文件不改。
+ * 拍板与说明：docs/全线点餐POS-UI组件方案-v1.6.md。
+ * v1.6 的方向：按钮、选中、当前对象、状态都不用黑色。墨色只留给正文文字；选中和当前用主题色浅底 + 主题色描边；浮层改白底或深灰。 */
+
+/* ── 1 色系 ─────────────────────────────────────────────────────────────────────────────── */
+:root[data-ver="1.6"]{
+  --c-canvas:var(--gray-100);                       /* 画布：对白 1.15，三栏能分开 */
+  --c-faint:var(--gray-150);
+  --c-wash:var(--gray-150);                         /* 控件、卡片底：对白 1.24（原 gray-50 只有 1.08） */
+  --c-wash-strong:var(--gray-200);                  /* 按下、导航选中：对白 1.35 */
+  --c-sel-bg:var(--gray-200); --c-sel-fg:var(--gray-900);
+  --v15-ring:var(--gray-900);                       /* 选择类选中：墨色内圈 */
+  --v15-edge:var(--gray-500);                       /* 表单控件边：对白 3.65，满足 WCAG 1.4.11 */
+  --c-sub:color-mix(in srgb,var(--gray-600) 60%,var(--gray-700));   /* 次要文字压暗：gray-600 在 gray-150 上只有 4.45:1，改后 gray-150 上约 5.2、gray-200 上约 4.8 */
+  --c-hint:var(--c-sub);
+}
+/* 皮肤不再给中性面上色：任何皮肤下中性面都是灰，选中都是墨，主题色只留在主按钮、份数角标、已点、开关和勾选 */
+:root[data-ver="1.6"][data-skin]{--c-wash:var(--gray-150);--c-wash-strong:var(--gray-200);--c-sel-bg:var(--gray-200);--c-sel-fg:var(--gray-900)}
+/* 待处理文字加深一档：琥珀 700 / 200 底只有 4.51:1；常态状态里 gray-600 的文字在 gray-150 卡上只有 4.45:1，统一改用次要字色，已关闭的图标改 gray-600（≥ 3:1） */
+:root[data-ver="1.6"][data-tone="quiet"]{--c-st-action-text:var(--warning-800);
+  --c-st-done-text:var(--c-sub);--c-st-trace-text:var(--c-sub);--c-st-closed-text:var(--c-sub);--c-st-done-dot:var(--c-sub);--c-st-trace-dot:var(--c-sub);--c-st-closed-dot:var(--gray-600)}
+
+/* 选择类：白底 + 2px 墨色内圈 + 勾 */
+:root[data-ver="1.6"] .pc :is(.sh-filter,.sh-option,.dn-pay,.dn-coupon,.dn-layout).is-on{background:var(--sh-card);color:var(--sh-ink);box-shadow:inset 0 0 0 2px var(--v15-ring)}
+:root[data-ver="1.6"] .pc :is(.dn-pay,.dn-coupon).is-on :is(small,svg,.v){color:inherit;opacity:1}
+:root[data-ver="1.6"] .pc .sh-panel .dn-paylist--h .dn-pay--row.is-on{background:var(--sh-card)}
+:root[data-ver="1.6"] .pc :is(.sh-filter,.sh-option).is-on::after{content:"";width:14px;height:14px;flex:none;background:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/contain no-repeat;
+          mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/contain no-repeat}
+:root[data-ver="1.6"] .pc .sh-filter.is-on::after{order:-1}
+:root[data-ver="1.6"] .pc .sh-option{position:relative}
+:root[data-ver="1.6"] .pc .sh-option.is-on::after{position:absolute;top:6px;right:6px;width:12px;height:12px}
+/* 导航类：gray-200 + 墨字 600，不用实心 */
+:root[data-ver="1.6"] .pc :is(.dn-wbtabs span,.dn-rail span,.sh-subnav>span).is-on{background:var(--c-sel-bg);color:var(--c-sel-fg)}
+:root[data-ver="1.6"] .pc .dn-rail span.is-on .sh-biname small{color:var(--sh-sub);opacity:1}
+/* 分段：灰轨道 + 白滑块 */
+:root[data-ver="1.6"] .pc .sh-seg span.is-on{background:var(--sh-card);color:var(--sh-ink)}
+/* 当前桌、选中的订单卡：保留墨底白字（当前对象，全屏只有一个） */
+:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on).is-cur,:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on).is-on{background:var(--c-ink);color:var(--c-on-inverse,#fff)}
+/* 待处理的桌台卡、订单卡：琥珀块（《黑白灰色系方案》3.1，原实现退回了灰底） */
+:root[data-ver="1.6"] .pc :is(.dn-table,.dn-ocard).is-alert:not(.is-cur):not(.is-on){background:var(--bks,var(--c-st-action-block-strong))}
+/* 不可用的对象（沽清菜、离线支付方式、不可选规格）：文字仍要读得清（原 gray-400 在 gray-150 上只有 1.99:1），靠标签和压淡的图片、图标表达不可用 */
+:root[data-ver="1.6"] .pc :is(.dn-dish.is-off,.sh-option.is-off,.dn-pay.is-off,.dn-promo.is-off),:root[data-ver="1.6"] .pc :is(.dn-dish.is-off,.sh-option.is-off,.dn-pay.is-off,.dn-promo.is-off) *{color:var(--c-sub)}
+:root[data-ver="1.6"] .pc .dn-dish.is-off .pic{opacity:.45}
+/* 作说明的占位字、分组小标题用次要字色（原 gray-400，对白 2.47:1）；纯示例的占位字才用 placeholder */
+:root[data-ver="1.6"] .pc :is(.sh-input.ph-,.ph-,.cap,.dn-rail .cap,.dn-paylist .cap){color:var(--c-sub)}
+/* 划线原价也是信息（赠送、改价前的价格），用次要字色 */
+:root[data-ver="1.6"] .pc s{color:var(--c-sub)}
+/* 操作菜单（墨底）里的危险项：红 400，墨底上 ≥ 4.5:1 */
+:root[data-ver="1.6"] .pc .sh-menu span.is-danger{color:var(--danger-400)}
+/* 表单控件：白底 + 1px gray-500 边；错误改为红边，不整块染红 */
+:root[data-ver="1.6"] .pc :is(.sh-input,.sh-search){background:var(--sh-card);box-shadow:inset 0 0 0 1px var(--v15-edge)}
+:root[data-ver="1.6"] .pc .sh-input.is-err{background:var(--sh-card);box-shadow:inset 0 0 0 1.5px var(--danger-700)}
+:root[data-ver="1.6"] .pc .sh-check:not(.is-on):not(.is-mixed){background:var(--sh-card);box-shadow:inset 0 0 0 1.5px var(--v15-edge)}
+:root[data-ver="1.6"] .pc :is(.sh-check.is-on,.sh-check.is-mixed){background:var(--sh-primary);box-shadow:none}
+/* 块色清单（结单区、结账左栏、桌台详情、订单详情、钱箱实盘）是面板里唯一的大块浅灰：保持 gray-50，不随控件底加深；里面的输入仍用白底，靠边线区分 */
+:root[data-ver="1.6"] .pc .sh-panel>.bd.dn-ledger{background:var(--gray-50)}
+:root[data-ver="1.6"] .pc :is(.dn-ledger,.sh-cells--sunk,.dn-group,.dn-mcard) :is(.sh-input,.sh-search){background:var(--sh-card)}
+
+/* ── 2 布局：间距放到 12 / 16 ─────────────────────────────────────────────────────────── */
+:root[data-ver="1.6"]{--pad:16px;--gap:12px}
+:root[data-ver="1.6"][data-density="standard"]{--pad:20px;--gap:16px}
+/* 左栏带图标的状态项（桌台的「超时未上菜」等）：项内边距 10 → 8、图标与文字间距 6 → 4，五个汉字加计数刚好放下；
+ * 更长的名称（英文）在文字上截断，计数始终保留 */
+:root[data-ver="1.6"] .pc .dn-rail>span:has(>.mlabel){padding-left:8px;padding-right:8px;gap:4px}
+:root[data-ver="1.6"] .pc .dn-rail .mlabel{gap:4px;min-width:0;overflow:hidden}
+:root[data-ver="1.6"] .pc .dn-rail .mlabel>span:last-child{overflow:hidden;text-overflow:ellipsis}
+:root[data-ver="1.6"] .pc .dn-rail>span>em{flex:none}
+
+/* ── 3 形状：按角色定圆角 ───────────────────────────────────────────────────────────────── */
+:root[data-ver="1.6"]{--rc:16px;--rt:12px;--rb:8px;--rk:8px}          /* 面板 16 · 卡片 12 · 按钮 8 · 输入与按键 8；弹窗 = rc + 4 = 20 */
+:root[data-ver="1.6"][data-frame],:root[data-ver="1.6"][data-btn]{--rc:16px;--rt:12px;--rb:8px;--rk:8px}
+/* 选择类：全圆胶囊，一眼区分「选一个」和「执行」 */
+:root[data-ver="1.6"] .pc :is(.sh-filter,.sh-option,.sh-seg,.sh-seg span,.dn-rail--h span){border-radius:999px}
+:root[data-ver="1.6"] .pc .sh-option{padding-left:calc(var(--px) + 2px);padding-right:calc(var(--px) + 2px)}
+:root[data-ver="1.6"] .pc .sh-option.is-on{padding-right:calc(var(--px) + 10px)}
+/* 静态标签：4，比可点控件方 */
+:root[data-ver="1.6"] .pc .sh-chip{border-radius:4px;height:20px;padding:0 6px}
+:root[data-ver="1.6"] .pc .st-tag{border-radius:4px}
+/* 勾选框 4（方），开关全圆（平台惯例） */
+:root[data-ver="1.6"] .pc .sh-check{border-radius:4px}
+:root[data-ver="1.6"] .pc .sh-switch,:root[data-ver="1.6"] .pc .sh-switch::after{border-radius:999px}
+
+/* ── 4 按钮：主 / 次 / 文字 / 危险 ──────────────────────────────────────────────────────── */
+:root[data-ver="1.6"] .pc :is(.sh-btn--soft,.sh-btn--muted){background:var(--gray-150);color:var(--sh-ink);font-weight:600}
+:root[data-ver="1.6"] .pc :is(.sh-btn--soft,.sh-btn--muted):hover{background:var(--gray-200)}
+:root[data-ver="1.6"] .pc :is(.sh-btn--soft,.sh-btn--muted):active{background:var(--gray-300)}
+:root[data-ver="1.6"] .pc .sh-btn--text{background:transparent;color:var(--sh-ink);font-weight:600}
+:root[data-ver="1.6"] .pc .sh-btn--text:hover{background:var(--gray-100)}
+/* 危险：页面上是红字文字按钮，悬停才出浅红底；红色实心只在二次确认里 */
+:root[data-ver="1.6"] .pc .sh-btn--danger{background:transparent;color:var(--c-danger-text,var(--sh-danger-text))}
+:root[data-ver="1.6"] .pc .sh-btn--danger:hover{background:var(--danger-100)}
+/* 不可用：不画灰按钮，改成一行说明 */
+:root[data-ver="1.6"] .pc .sh-btn--off{background:transparent;color:var(--sh-sub);font-weight:400;font-size:var(--fs-sm);padding:0;height:auto;min-height:var(--h-sm);cursor:default;transform:none}
+/* 小号按钮字号 13 → 14 */
+:root[data-ver="1.6"] .pc .sh-btn--sm{font-size:var(--fs)}
+/* 焦点：沿用 pos-colors.css 的 :focus-visible（主题色 2px 环 + 2px 间隙），v1.5 下即松绿 */
+
+
+/* ══ v1.6 变更 ══════════════════════════════════════════════════════════════════════════════════════════ */
+/* 1 选中：主题色浅底 + 主题色字；选择类再加 1.5px 主题色内圈和勾 */
+:root[data-ver="1.6"],:root[data-ver="1.6"][data-skin]{--c-sel-bg:var(--c-primary-tint);--c-sel-fg:var(--c-primary-text);--v15-ring:var(--c-primary)}
+:root[data-ver="1.6"] .pc :is(.sh-filter,.sh-option,.dn-pay,.dn-coupon,.dn-layout).is-on{background:var(--c-primary-tint);color:var(--c-primary-text);box-shadow:inset 0 0 0 1.5px var(--c-primary)}
+:root[data-ver="1.6"] .pc .sh-panel .dn-paylist--h .dn-pay--row.is-on{background:var(--c-primary-tint)}
+:root[data-ver="1.6"] .pc .sh-seg span.is-on{background:var(--sh-card);color:var(--c-primary-text)}
+/* 2 当前桌、选中的订单卡：主题色浅底 + 2px 主题色内圈，不再是墨色实心；卡里的状态保留自己的颜色 */
+:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on).is-cur,:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on).is-on{background:var(--c-primary-tint);color:var(--c-ink);box-shadow:inset 0 0 0 2px var(--c-primary)}
+:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on) b{color:var(--c-primary-text)}
+:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on) .st-tag{color:var(--t)}
+:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on) .st-tag svg{color:var(--d)}
+:root[data-ver="1.6"] .pc :is(.dn-table.is-cur,.dn-ocard.is-on) :is(small,.sh-help){color:var(--c-sub);opacity:1}
+/* 3 状态：进行中（用餐中、制作中、营业中）用主题色，表示「正在发生」；预约、暂存从墨改为 gray-700 */
+:root[data-ver="1.6"][data-tone="quiet"]{--c-st-progress-dot:var(--c-primary);--c-st-progress-text:var(--c-primary-text);
+  --c-st-booked-dot:var(--gray-700);--c-st-booked-text:var(--gray-700);--c-st-held-dot:var(--gray-700);--c-st-held-text:var(--gray-700)}
+/* 4 浮层：操作菜单改白底（浮在面板上，用一层浅阴影分开）；Toast 改深灰 gray-800；授权码圆点用主题色 */
+:root[data-ver="1.6"] .pc .sh-menu{background:var(--sh-card);color:var(--sh-ink);box-shadow:0 0 0 1px var(--gray-150),0 12px 32px rgba(24,26,28,.14)}
+:root[data-ver="1.6"] .pc .sh-menu span:hover{background:var(--gray-100)}
+:root[data-ver="1.6"] .pc .sh-menu span small{color:var(--c-sub);opacity:1}
+:root[data-ver="1.6"] .pc .sh-menu span.is-danger{color:var(--c-danger-text)}
+:root[data-ver="1.6"] .pc .sh-menu span.is-off{opacity:1;color:var(--c-sub)}
+:root[data-ver="1.6"] .pc .sh-menu hr{border-top-color:var(--gray-150)}
+:root[data-ver="1.6"] .pc .sh-toast{background:var(--gray-800)}
+:root[data-ver="1.6"] .pc .dn-pins i.on{background:var(--c-primary)}
+:root[data-ver="1.6"] .pc .dn-swatch.is-on{box-shadow:0 0 0 2px var(--sh-card),0 0 0 4px var(--c-primary)}   /* 色板选中：主题色外圈 */
+/* 5 按钮里的图标：系统栏入口、次按钮的图标用 gray-700，不用墨色；文字仍是墨色 */
+:root[data-ver="1.6"] .pc :is(.dn-entry,.dn-entry--icon){color:var(--gray-700)}
+:root[data-ver="1.6"] .pc :is(.sh-btn--soft,.sh-btn--muted,.sh-btn--text,.dn-quick-it,.dn-promo,.dn-keys .fn) svg{color:var(--gray-700)}
+/* 列表里选中的行（订单列表、批量勾选的订单行）：和其他选中一样用主题色浅底；gray-200 上的松绿状态字只有 4.37:1 */
+:root[data-ver="1.6"] .pc :is(.dn-orow.is-on,.dn-oline--ck.is-on){background:var(--c-primary-tint)}
+/* 6 形状：全圆只给单行的选择（筛选、分段、快捷金额、横排分类）；两行的规格选项改回 12 圆角块，勾放在右上 */
+:root[data-ver="1.6"] .pc .sh-option{border-radius:var(--rt);padding-left:calc(var(--px) - 2px);padding-right:calc(var(--px) + 6px)}
+:root[data-ver="1.6"] .pc .sh-option.is-on{padding-right:calc(var(--px) + 6px)}
+/* 7 搭配：已点菜品（松绿浅底）和选中筛选同色，靠形状区分；已点菜名改主题色字，份数角标保持实心 */
+:root[data-ver="1.6"] .pc .dn-dish.is-on .nm{color:var(--c-primary-text)}

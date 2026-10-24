@@ -1,0 +1,10 @@
+{
+  "pages": [
+    { "path": "pages/order/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/tables/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/orders/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/checkout/index", "style": { "navigationStyle": "custom" } },
+    { "path": "pages/shift/index", "style": { "navigationStyle": "custom" } }
+  ],
+  "globalStyle": { "navigationStyle": "custom", "backgroundColor": "#ECEDEF" }
+}

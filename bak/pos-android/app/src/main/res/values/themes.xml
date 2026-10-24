@@ -1,0 +1,7 @@
+<resources>
+    <!-- 只负责启动前的窗口底色；界面主题在 Compose 的 PosTheme 里 -->
+    <style name="Theme.Pos" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/pos_bg</item>
+    </style>
+    <color name="pos_bg">#ECEDEF</color>
+</resources>

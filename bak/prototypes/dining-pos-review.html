@@ -1,0 +1,1253 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dining POS 点餐原型（评审优化版）</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one POS app, then a component sheet, in a light review shell. Colour rule: black/white/grey for structure and "where I am"; the theme colour only for what is in the order (counts, chosen dishes, checkout); red only for failure and destructive steps. */
+:root {
+  --page-bg: #f6f6f7; --page-fg: #111113; --page-fg2: #5b5c61; --page-line: #e3e3e6; --page-card: #ffffff; --page-on: #ffffff;
+  --page-font: "Inter", "Noto Sans SC", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --page-bg: #0c0c0d; --page-fg: #f4f4f5; --page-fg2: #a8a9ae; --page-line: #26262a; --page-card: #161618; --page-on: #0c0c0d; color-scheme: dark; } }
+:root[data-theme="dark"] { --page-bg: #0c0c0d; --page-fg: #f4f4f5; --page-fg2: #a8a9ae; --page-line: #26262a; --page-card: #161618; --page-on: #0c0c0d; color-scheme: dark; }
+
+/* ---------- app tokens ----------
+   One palette: black / white / grey for structure, one theme colour (pine green, tokens.json sh-primary) for the order and the money.
+   Ink marks "where I am" and what is selected; amber marks what needs attention; red marks failure and destructive steps.
+   Greys: bg = page canvas, surface = panels, inset = large blocks inside a panel, s2 = controls, s3 = pressed / track. */
+.app, .kit {
+  --bg: #eceef0; --surface: #ffffff; --inset: #f4f5f7; --s2: #e7e8eb; --s3: #dcdee2;
+  --fg: #17181a; --fg2: #4b4f55; --fg3: #5b5f66; --fgd: #a6a9ae;
+  --ink: #17181a; --on-ink: #ffffff;
+  --brand: #216857; --on-brand: #ffffff; --brand-x: #1b5748;
+  --warn: #f79009; --warn-x: #b54708; --warn-on-ink: #fdb022;
+  --bad: #f04438; --bad-x: #b42318; --on-bad: #ffffff; --bad-on-ink: #f97066;
+  --mix-t: 12%;
+  --scrim: rgba(12, 14, 18, 0.5); --shadow-pop: 0 24px 56px rgba(12, 14, 18, 0.18);
+  --font: "Inter", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --r-panel: 16px; --r-tile: 12px; --r-ctl: 12px; --r-pill: 999px;
+  --rail-w: 112px; --order-w: 400px;
+}
+.app[data-dark="true"], .kit[data-dark="true"] {
+  --bg: #000000; --surface: #17181a; --inset: #1d1f22; --s2: #25282c; --s3: #2f3237;
+  --fg: #f3f4f6; --fg2: #c3c8cf; --fg3: #9aa1ac; --fgd: #5c6168;
+  --ink: #f3f4f6; --on-ink: #17181a;
+  --brand: #5cc0a0; --on-brand: #06201a; --brand-x: #6fd0b0;
+  --warn-x: #fdb022; --warn-on-ink: #b54708;
+  --bad: #f97066; --bad-x: #f97066; --on-bad: #1a0605; --bad-on-ink: #b42318;
+  --mix-t: 22%;
+  --scrim: rgba(0, 0, 0, 0.66); --shadow-pop: 0 24px 56px rgba(0, 0, 0, 0.55);
+}
+.app, .kit {
+  --brand-t: color-mix(in srgb, var(--brand) var(--mix-t), var(--surface));
+  --warn-t: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  --bad-t: color-mix(in srgb, var(--bad) 14%, var(--surface));
+}
+/* ---------- density ---------- */
+.app[data-density="compact"] { --ctl: 44px; --ctl-s: 36px; --tile-h: 104px; --gap: 14px; --pad: 14px; --fs: 14px; }
+.app[data-density="standard"] { --ctl: 48px; --ctl-s: 40px; --tile-h: 120px; --gap: 20px; --pad: 20px; --fs: 15px; }
+.app.mid { --order-w: 360px; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--page-bg); color: var(--page-fg); }
+body { margin: 0; font-family: var(--page-font); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; }
+button, input { font: inherit; color: inherit; }
+button { -webkit-tap-highlight-color: transparent; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--page-fg); outline-offset: 2px; }
+.app :focus-visible { outline-color: var(--ink); }
+.ic { width: 18px; height: 18px; flex: none; stroke-width: 1.75; }
+.ic-s { width: 15px; height: 15px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* ---------- review shell ---------- */
+.shell { max-width: 1480px; margin: 0 auto; display: grid; gap: 14px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.bar h1 { margin: 0 8px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.ctl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--page-fg2); }
+.pill { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--page-card); }
+.pill button { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--page-fg2); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.pill button[aria-pressed="true"] { background: var(--page-fg); color: var(--page-on); }
+.sw { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 999px; background: var(--page-card); }
+.sw button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 6px; border: 0; border-radius: 999px; background: transparent; color: var(--page-fg2); font-size: 13px; font-weight: 500; }
+.sw button i { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(90deg, var(--c) 50%, var(--n) 50%); }
+.sw button[aria-pressed="true"] { background: var(--page-fg); color: var(--page-on); }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.note { min-width: 0; padding: 18px 20px; border-radius: 16px; background: var(--page-card); font-size: 14px; line-height: 1.65; }
+.note h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.note ul { margin: 0; padding-left: 18px; }
+.note li + li { margin-top: 4px; }
+
+/* ---------- app frame ---------- */
+.app { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(640px, calc(100vh - 110px), 920px); border-radius: 16px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: var(--fs); line-height: 1.4; }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-variant-numeric: tabular-nums; }
+.card { background: var(--surface); border-radius: var(--r-panel); }
+
+/* Z1 system bar: sits on the page grey, entries are quiet text buttons */
+.sys { display: flex; align-items: center; gap: 4px; min-height: 64px; padding: 10px calc(var(--gap) + 6px) 0; }
+.store { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.store .mk { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--ink); color: var(--on-ink); font-weight: 700; font-size: 15px; }
+.store b { display: block; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.store small { display: block; color: var(--fg3); font-size: 12px; white-space: nowrap; }
+.entry { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--fg2); font-size: 14px; font-weight: 400; white-space: nowrap; }
+.entry:hover { background: var(--surface); color: var(--fg); }
+.entry[aria-pressed="true"] { background: var(--surface); color: var(--fg); }
+.entry .n { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--s3); color: var(--fg); font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.entry .pt { position: absolute; top: 9px; left: 25px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-x); box-shadow: 0 0 0 2px var(--bg); }
+.entry .pt.ok { display: none; }
+.entry.is-warn { color: var(--warn-x); }
+.clock { padding: 0 4px 0 12px; color: var(--fg3); font-size: 14px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.app.narrow .entry .lb, .app.narrow .clock, .app.narrow .store small { display: none; }
+
+/* main grid */
+.main { position: relative; display: grid; gap: var(--gap); padding: var(--gap); min-height: 0; }
+.z-rail { grid-area: rail; min-height: 0; min-width: 0; }
+.z-menu { grid-area: menu; display: flex; flex-direction: column; gap: var(--gap); min-height: 0; min-width: 0; }
+.z-order { grid-area: order; min-height: 0; min-width: 0; }
+.cartbar { grid-area: bar; display: none; }
+
+/* Z3 rail: white panel, active = ink block */
+.rail { display: flex; flex-direction: column; gap: 4px; height: 100%; padding: 8px; overflow: auto; scrollbar-width: none; }
+.cat { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 48px; padding: 0 12px 0 14px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg2); font-size: 14px; font-weight: 400; text-align: left; }
+.cat:hover { background: var(--s2); color: var(--fg); }
+.cat[aria-current="true"] { background: var(--ink); color: var(--on-ink); font-weight: 600; }
+.rail.h { flex-direction: row; height: auto; overflow-x: auto; }
+.rail.h .cat { flex: none; min-height: var(--ctl-s); padding: 0 14px; border-radius: var(--r-pill); white-space: nowrap; }
+.cat .has { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); flex: none; }
+.cat[aria-current="true"] .has { background: var(--on-ink); }
+.cnt { display: inline-block; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--brand); color: var(--on-brand); font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* Z4 menu: toolbar of white pills on grey, tiles are white blocks */
+.tools { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.search { position: relative; flex: 1 1 240px; min-width: 0; display: flex; align-items: center; }
+.search .ic { position: absolute; left: 14px; color: var(--fg3); pointer-events: none; }
+.search input { width: 100%; height: var(--ctl); padding: 0 44px 0 42px; border: 0; border-radius: var(--r-pill); background: var(--surface); color: var(--fg); font-size: var(--fs); }
+.search input::placeholder { color: var(--fg3); }
+.search input:focus { outline: none; box-shadow: 0 0 0 2px var(--ink); }
+.search .kbd { position: absolute; right: 14px; min-width: 20px; padding: 0 6px; border-radius: 6px; background: var(--s2); color: var(--fg3); font-size: 12px; line-height: 20px; text-align: center; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-s); padding: 0 14px; border: 0; border-radius: var(--r-pill); background: var(--surface); color: var(--fg2); font-size: 13px; font-weight: 400; white-space: nowrap; }
+.chip:hover { color: var(--fg); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+.vsw { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--r-pill); background: var(--surface); }
+.vsw button { display: inline-grid; place-items: center; width: 36px; height: calc(var(--ctl-s) - 6px); border: 0; border-radius: var(--r-pill); background: transparent; color: var(--fg3); }
+.vsw button[aria-pressed="true"] { background: var(--s3); color: var(--fg); }
+.grid-scroll { flex: 1; min-height: 0; overflow: auto; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 12px; align-content: start; }
+.tile { position: relative; display: grid; grid-template-rows: auto 1fr auto; gap: 4px; min-height: var(--tile-h); padding: 14px 16px; border: 0; border-radius: var(--r-tile); background: var(--surface); color: var(--fg); text-align: left; user-select: none; -webkit-user-select: none; touch-action: manipulation; transition: background-color .12s ease-out, transform .08s ease-out; }
+.tile:hover { background: color-mix(in srgb, var(--surface) 92%, var(--fg)); }
+.tile:active { transform: scale(0.985); }
+.tile .nm { font-size: 15px; font-weight: 600; line-height: 1.3; padding-right: 26px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tile .tg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; align-self: start; color: var(--fg3); font-size: 12px; }
+.tile .ft { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.tile .pr { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile .was { margin-left: 4px; color: var(--fg3); font-size: 12px; text-decoration: line-through; }
+.tile .cd { color: var(--fg3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tile > .cnt { position: absolute; top: 12px; right: 12px; }
+.tile[data-sel="true"] { background: var(--brand-t); }
+.tile[data-out="true"] { background: var(--s2); color: var(--fg3); cursor: not-allowed; }
+.tile[data-out="true"] .pr, .tile[data-out="true"] .tg { color: var(--fg3); }
+.tiles:not(.list) .tile .cd { display: none; }
+.tiles.list { grid-template-columns: 1fr; gap: 0; padding: 6px; background: var(--surface); border-radius: var(--r-panel); }
+.tiles.list .tile { display: flex; align-items: center; gap: 12px; min-height: var(--ctl); padding: 0 12px; border-radius: var(--r-ctl); background: transparent; }
+.tiles.list .tile .nm { flex: 1; padding: 0; -webkit-line-clamp: 1; }
+.tiles.list .tile > .cnt { position: static; order: 9; }
+.tiles.list .tile[data-sel="true"] { background: var(--brand-t); }
+.empty { display: grid; place-items: center; gap: 8px; padding: 40px 16px; color: var(--fg3); text-align: center; font-size: 14px; }
+
+/* labels: grey by default; theme for the order and money; amber for "needs attention"; red for failure */
+.bd { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: var(--r-pill); background: var(--s2); color: var(--fg2); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.bd .ic { width: 12px; height: 12px; }
+.bd.br { background: var(--brand-t); color: var(--brand-x); }
+.bd.ink { background: var(--ink); color: var(--on-ink); }
+.bd.bad { background: var(--bad-t); color: var(--bad-x); }
+.bd.warn { background: var(--warn-t); color: var(--warn-x); }
+.bd.ok, .bd.info { background: var(--s2); color: var(--fg2); }
+.tile .bd { height: 20px; padding: 0 7px; font-size: 12px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* buttons: pills; one theme solid per screen */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--ctl); padding: 0 18px; border: 0; border-radius: var(--r-pill); background: var(--s2); color: var(--fg); font-size: var(--fs); font-weight: 600; white-space: nowrap; transition: filter .12s ease-out, background-color .12s ease-out; }
+.btn:hover { filter: brightness(0.97); }
+.btn:active { transform: translateY(1px); }
+.btn.s { height: var(--ctl-s); padding: 0 12px; font-size: 13px; }
+.btn.l { height: 52px; font-size: 15px; }
+.btn.pri, .btn.pay { background: var(--brand); color: var(--on-brand); }
+.btn.send { background: var(--brand-t); color: var(--brand-x); }
+.btn.soft { background: var(--brand-t); color: var(--brand-x); }
+.btn.mut { background: var(--s2); color: var(--fg); }
+.btn.ghost { background: transparent; color: var(--fg2); }
+.btn.ghost:hover { background: var(--s2); color: var(--fg); }
+.btn.dng { background: var(--bad-t); color: var(--bad-x); }
+.btn.dng-s { background: var(--bad); color: var(--on-bad); }
+.btn[disabled] { background: var(--s2); color: var(--fgd); cursor: not-allowed; transform: none; filter: none; box-shadow: none; }
+.btn .meta { font-weight: 400; font-variant-numeric: tabular-nums; }
+.ib { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--fg2); }
+.ib:hover { background: var(--s2); color: var(--fg); }
+
+/* Z5 dock: header, notices, lines, totals, actions. Lines read like a receipt (qty · name · amount); pending lines are
+   bold, sent lines are regular so the eye lands on what still has to go to the kitchen. */
+.dock { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.ctx { display: grid; gap: 4px; padding: 14px 12px 10px 20px; }
+.ctx-1 { display: flex; align-items: center; gap: 8px; }
+.ctx-1 .tbl { font-size: 24px; font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.ctx-1 .tbl small { margin-left: 4px; color: var(--fg3); font-size: 13px; font-weight: 400; letter-spacing: 0; }
+.ctx-1 .no { color: var(--fg3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ctx-1 .sp { flex: 1; }
+.ctx-2 { display: flex; align-items: center; gap: 12px; padding-right: 8px; }
+.ctx-2 .meta { flex: 1; min-width: 0; overflow: hidden; color: var(--fg3); font-size: 12px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.onote { display: flex; align-items: center; gap: 6px; margin-right: 8px; color: var(--fg2); font-size: 12px; }
+.onote .ic { color: var(--fg3); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--r-pill); background: var(--s2); }
+.seg button { height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--fg3); font-size: 13px; font-weight: 400; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.notices { display: grid; gap: 6px; padding: 0 14px 8px; }
+.selbar { display: flex; align-items: center; gap: 8px; margin: 0 14px 8px; padding: 6px 6px 6px 14px; border-radius: var(--r-tile); background: var(--ink); color: var(--on-ink); font-size: 13px; font-weight: 400; }
+.selbar span { flex: 1; }
+.selbar .btn.ghost { color: var(--on-ink); }
+.selbar .btn.ghost:hover { background: transparent; text-decoration: underline; }
+.list { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 12px; }
+.sec { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 8px 6px; background: var(--surface); color: var(--fg3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sec b { color: var(--fg); font-size: 13px; font-weight: 600; }
+.ln { position: relative; display: grid; grid-template-columns: auto 32px minmax(0, 1fr) auto; align-items: baseline; align-content: center; gap: 2px 0; min-height: 44px; padding: 8px; border-radius: var(--r-ctl); cursor: pointer; }
+.ln + .ln { margin-top: 2px; }
+.ln:hover, .ln[aria-expanded="true"] { background: var(--inset); }
+.ln .q { color: var(--fg2); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ln .q i { margin-left: 1px; color: var(--fg3); font-size: 12px; font-style: normal; font-weight: 400; }
+.ln .nm { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.ln .pr { padding-left: 12px; font-size: 14px; font-weight: 700; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ln .pr s { margin-right: 4px; color: var(--fg3); font-size: 12px; font-weight: 400; }
+.ln .md { grid-column: 3 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--fg3); font-size: 12px; }
+.ln .ex { grid-column: 3 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; }
+.ln[data-st="sent"] .nm, .ln[data-st="sent"] .q { font-weight: 400; }
+.ln[data-st="void"] .nm, .ln[data-st="void"] .pr, .ln[data-st="void"] .q { color: var(--fg3); text-decoration: line-through; }
+.ln > .ck { grid-row: span 2; align-self: center; }
+.ln.flash { animation: flash .9s ease-out; }
+@keyframes flash { from { background: var(--brand-t); } }
+.ck { margin-right: 10px; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: var(--s3); color: transparent; }
+.ck[aria-checked="true"] { background: var(--ink); color: var(--on-ink); }
+.ck[aria-disabled="true"] { opacity: 0.35; }
+.stp { display: inline-flex; align-items: center; height: var(--ctl-s); border-radius: var(--r-pill); background: var(--s2); }
+.stp button { display: grid; place-items: center; width: var(--ctl-s); height: 100%; border: 0; background: transparent; color: var(--fg); border-radius: var(--r-pill); }
+.stp button[disabled] { color: var(--fgd); cursor: not-allowed; }
+.stp .v { min-width: 26px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stp.l { height: var(--ctl); }
+.stp.l button { width: var(--ctl); }
+.foot { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 0 14px 14px; }
+.sum { display: grid; gap: 8px; padding: 12px 14px 14px; border-radius: var(--r-tile); background: var(--inset); }
+.disc { display: flex; align-items: center; gap: 6px; }
+.disc .chip { height: 32px; padding: 0 12px; font-size: 12px; background: var(--surface); }
+.disc .chip[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+.sum-t { position: relative; display: inline-flex; align-items: center; gap: 2px; height: 32px; margin-left: auto; padding: 0 2px 0 8px; border: 0; background: transparent; color: var(--fg2); font-size: 12px; }
+.brief { overflow: hidden; color: var(--fg3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kvs { display: grid; gap: 4px; }
+.kv { display: flex; justify-content: space-between; color: var(--fg2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.kv.off > :last-child { color: var(--brand-x); }
+.tot { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.tot .tl { display: grid; gap: 2px; min-width: 0; }
+.tot > :first-child { color: var(--fg2); font-size: 13px; font-weight: 400; }
+.tot > :last-child { font-size: 30px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.acts-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px; }
+.acts-row.no-send { grid-template-columns: 52px minmax(0, 1fr); }
+.acts-row .btn { height: 52px; padding: 0 10px; font-size: 15px; }
+.dock-empty { display: grid; place-items: center; align-content: center; gap: 8px; height: 100%; padding: 24px; color: var(--fg3); text-align: center; font-size: 13px; }
+.dock-empty .ic { width: 28px; height: 28px; color: var(--fgd); }
+
+/* notices: an inline bar that stays until the problem is gone; toasts confirm a result and leave */
+.notice { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 6px 6px 12px; border-radius: var(--r-ctl); background: var(--inset); color: var(--fg); font-size: 13px; line-height: 1.4; }
+.notice > .ic { color: var(--fg3); }
+.notice > span { flex: 1; min-width: 0; }
+.notice.warn { background: var(--warn-t); } .notice.warn > .ic { color: var(--warn-x); }
+.notice.bad { background: var(--bad-t); } .notice.bad > .ic { color: var(--bad-x); }
+.notice.ok { background: var(--brand-t); } .notice.ok > .ic { color: var(--brand-x); }
+.notice .btn.s { flex: none; background: color-mix(in srgb, var(--surface) 70%, transparent); color: var(--fg); }
+
+/* narrow */
+.app.narrow .cartbar { display: flex; }
+.app.narrow .cartbar .btn { flex: 1; justify-content: space-between; }
+.app.narrow .z-order { position: absolute; left: 0; right: 0; bottom: 0; height: 88%; z-index: 20; padding: 0 var(--gap) var(--gap); transform: translateY(105%); transition: transform .22s cubic-bezier(.16, 1, .3, 1); }
+.app.narrow .z-order .card { box-shadow: var(--shadow-pop); }
+.app.narrow.cart-open .z-order { transform: none; }
+.dock-close { display: none; }
+.app.narrow .dock-close { display: inline-grid; }
+
+/* zone annotations */
+.app.zones [data-zone] { position: relative; outline: 2px dashed var(--brand); outline-offset: -2px; }
+.app.zones [data-zone]::after { content: attr(data-zone); position: absolute; z-index: 15; top: 6px; right: 6px; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font: 600 11px/18px var(--font); pointer-events: none; }
+
+/* Z7 overlays */
+.ov { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
+.ov.side { place-items: stretch end; padding: 10px; }
+.md-box { display: flex; flex-direction: column; width: min(520px, 100%); max-height: 100%; border-radius: var(--r-panel); background: var(--surface); color: var(--fg); box-shadow: var(--shadow-pop); overflow: hidden; animation: pop .18s cubic-bezier(.16, 1, .3, 1); }
+.md-box.sm { width: min(380px, 100%); }
+.ov.side .md-box { width: min(var(--side-w, 500px), 100%); height: 100%; max-height: none; border-radius: var(--r-panel); animation: slide .22s cubic-bezier(.16, 1, .3, 1); }
+@keyframes pop { from { opacity: 0; transform: scale(.98); } }
+@keyframes slide { from { opacity: 0; transform: translateX(28px); } }
+.mh { display: flex; align-items: center; gap: 10px; padding: 18px 14px 10px 22px; }
+.mh .t { flex: 1; min-width: 0; }
+.mh h3 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.mh .sub { margin-top: 2px; color: var(--fg3); font-size: 13px; }
+.mb { flex: 1; min-height: 0; overflow: auto; padding: 8px 22px 18px; }
+.mf { display: flex; align-items: center; gap: 8px; padding: 12px 14px 14px; }
+.mf .btn { flex: 1; height: 52px; }
+.mf .btn.split { justify-content: space-between; padding: 0 20px; }
+.grp + .grp { margin-top: 18px; }
+.grp-t { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.grp-t small { color: var(--fg3); font-weight: 400; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; min-width: 78px; min-height: var(--ctl); padding: 4px 14px; border: 0; border-radius: var(--r-ctl); background: var(--s2); color: var(--fg); font-size: 14px; font-weight: 400; line-height: 1.25; }
+.opt small { color: var(--fg3); font-size: 12px; font-weight: 400; }
+.opt[aria-checked="true"] { background: var(--ink); color: var(--on-ink); }
+.opt[aria-checked="true"] small { color: var(--on-ink); opacity: 0.8; }
+.opt[disabled] { color: var(--fgd); cursor: not-allowed; }
+.opt.row { flex-direction: row; justify-content: flex-start; gap: 12px; width: 100%; min-height: 52px; padding: 0 14px; text-align: left; }
+.opt.row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.in { width: 100%; height: var(--ctl); padding: 0 14px; border: 0; border-radius: var(--r-ctl); background: var(--s2); color: var(--fg); font-size: var(--fs); }
+.in:focus { outline: none; box-shadow: 0 0 0 2px var(--ink); }
+.err { margin-top: 8px; color: var(--bad); font-size: 13px; }
+.hint { color: var(--fg3); font-size: 13px; line-height: 1.5; }
+.menu-list { display: grid; gap: 4px; }
+.menu-list .opt.row { background: transparent; }
+.menu-list .opt.row:hover { background: var(--s2); }
+.menu-list .opt.row small { display: block; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.stat { padding: 10px 12px; border-radius: var(--r-ctl); background: var(--s2); }
+.stat small { display: block; color: var(--fg3); font-size: 12px; }
+.stat b { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tbls { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.tb { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 10px 12px; border: 0; border-radius: var(--r-tile); background: var(--s2); color: var(--fg); text-align: left; }
+.tb .bd { margin-bottom: 4px; }
+.tb b { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tb small { color: var(--fg3); font-size: 12px; }
+.tb .amt { margin-top: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tb[data-s="free"] b { color: var(--fg2); }
+.tb[data-s="dining"] { background: var(--brand-t); }
+.tb[data-s="dining"] b, .tb[data-s="dining"] .amt { color: var(--brand-x); }
+.tb[data-s="billing"] { background: var(--warn-t); }
+.tb[data-s="billing"] .bd { background: var(--surface); }
+.tb[data-s="reserved"] .bd { background: var(--surface); }
+.tb[data-s="merged"], .tb[data-s="merged"] b { color: var(--fg3); }
+.tb[data-cur="true"] { box-shadow: inset 0 0 0 2px var(--brand); }
+.tb[disabled] { opacity: 0.35; cursor: not-allowed; }
+.pick { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 8px 8px 8px 14px; border-radius: var(--r-tile); background: var(--ink); color: var(--on-ink); font-size: 13px; font-weight: 400; }
+.pick span { flex: 1; }
+.pick .btn.ghost { color: var(--on-ink); }
+.rows { display: grid; gap: 4px; }
+.row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--s2); }
+.row .t b { font-weight: 600; }
+.row .t small { display: block; color: var(--fg3); font-size: 12px; }
+.row .r { display: flex; align-items: center; gap: 6px; }
+.row .btn.mut { background: var(--surface); }
+.row .ck { margin-right: 0; background: var(--surface); }
+.row .ck[aria-checked="true"] { background: var(--ink); }
+.mcard { padding: 16px; border-radius: var(--r-tile); background: var(--ink); color: var(--on-ink); }
+.mcard b { font-size: 17px; }
+.mcard small { display: block; opacity: 0.7; font-size: 12px; }
+.mcard .figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.mcard .figs b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+.pad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.key { height: 56px; border: 0; border-radius: var(--r-ctl); background: var(--s2); color: var(--fg); font-size: 24px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.key:active { background: var(--s3); }
+.disp { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--s2); }
+.disp > :last-child { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.pay { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 16px; }
+.pay .methods { display: grid; gap: 6px; align-content: start; }
+.due { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.due > :last-child { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.quick .chip { background: var(--s2) !important; }
+.chg { display: flex; justify-content: space-between; margin-top: 12px; padding: 0 4px; }
+.chg b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.scan { display: grid; place-items: center; gap: 8px; padding: 28px 12px; border-radius: var(--r-tile); background: var(--s2); color: var(--fg2); text-align: center; font-size: 14px; }
+.scan .ic { width: 34px; height: 34px; color: var(--fg); }
+.done { display: grid; place-items: center; gap: 8px; padding: 24px 0; text-align: center; }
+.done .ring { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%; background: var(--brand-t); color: var(--brand-x); }
+.done .ring .ic { width: 30px; height: 30px; }
+.done strong { font-size: 30px; font-variant-numeric: tabular-nums; }
+.pr-st { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--s2); }
+.pr-st + .pr-st { margin-top: 4px; }
+.pr-st .t { flex: 1; min-width: 0; }
+.pr-st .t small { display: block; color: var(--fg3); font-size: 12px; }
+.pr-st .btn.mut, .pr-st .btn.soft { background: var(--surface); color: var(--fg); }
+.toggle { position: relative; width: 44px; height: 26px; border: 0; border-radius: 13px; background: var(--s3); flex: none; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: transform .15s ease-out; }
+.toggle[aria-checked="true"] { background: var(--ink); }
+.toggle[aria-checked="true"]::after { transform: translateX(18px); }
+.set-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.set-row > span { flex: 1; font-size: 14px; }
+.set-row small { display: block; color: var(--fg3); font-size: 12px; }
+.skins { display: flex; gap: 12px; flex-wrap: wrap; }
+.skins button { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--fg2); font-size: 12px; }
+.skins i { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(90deg, var(--c) 50%, var(--n) 50%); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--s3); }
+.skins button[aria-pressed="true"] i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
+.toast { position: absolute; left: 50%; bottom: 22px; z-index: 60; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); min-height: 44px; padding: 0 18px; border-radius: var(--r-pill); background: var(--ink); color: var(--on-ink); font-size: 14px; font-weight: 400; box-shadow: var(--shadow-pop); transform: translateX(-50%); animation: fade .18s ease-out; }
+.toast .ic { opacity: 0.85; }
+.toast.warn .ic { color: var(--warn-on-ink); opacity: 1; }
+.toast.bad .ic { color: var(--bad-on-ink); opacity: 1; }
+@keyframes fade { from { opacity: 0; } }
+
+/* ---------- component sheet ---------- */
+.kit { --ctl: 44px; --ctl-s: 36px; --fs: 14px; display: grid; gap: 20px; padding: 24px; border-radius: 16px; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; line-height: 1.4; }
+.kit-h h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.kit-h p { max-width: 72ch; margin: 0; color: var(--fg2); font-size: 13px; line-height: 1.6; }
+.kit-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.kit-c { display: grid; align-content: start; gap: 20px; min-width: 0; padding: 20px; border-radius: var(--r-panel); background: var(--surface); }
+.kit-c h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.kit-i { display: grid; gap: 8px; }
+.kit-i > small { color: var(--fg3); font-size: 12px; line-height: 1.5; }
+.kit-r { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.kit .toast { position: static; transform: none; animation: none; box-shadow: none; }
+.kit .in { max-width: 280px; }
+.kit .in.is-err { box-shadow: inset 0 0 0 1.5px var(--bad); }
+.kit .empty { padding: 20px 12px; border-radius: var(--r-ctl); background: var(--inset); }
+
+/* touch: controls drawn smaller than 44px keep a 44px hit area */
+.chip, .seg button, .vsw button, .ck, .btn.s, .sum-t { position: relative; }
+.chip::before, .seg button::before, .vsw button::before, .ck::before, .btn.s::before, .toggle::before, .sum-t::before { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%); }
+.need { flex: 1; display: flex; align-items: center; min-height: 52px; padding: 0 6px; color: var(--fg2); font-size: 14px; }
+
+/* ================= 方案 B · 犀利（shape="sharp"）=================
+   Same colour blocks as A, only the geometry changes: corners drop to 8px, pills become squared controls,
+   and the system bar becomes an ink block so the zones read as four blocks: bar, rail, menu, dock. No rules or outlines. */
+.kit[data-shape="sharp"] { --r-panel: 8px; --r-tile: 8px; --r-ctl: 8px; --r-pill: 8px; }
+.app[data-shape="sharp"] { --r-panel: 8px; --r-tile: 8px; --r-ctl: 8px; --r-pill: 8px; border-radius: 12px; }
+.app[data-shape="sharp"] .sys { min-height: 52px; margin: var(--gap) var(--gap) 0; padding: 0 8px 0 10px; border-radius: 8px; background: var(--ink); color: var(--on-ink); }
+/* in dark mode ink is the light colour, so the ink bar would glare: the bar takes the panel colour instead */
+.app[data-shape="sharp"][data-dark="true"] .sys { --ink: var(--surface); --on-ink: var(--n-fg); --warn-on-ink: #fdb022; }
+.app[data-shape="sharp"] .store .mk { width: 30px; height: 30px; border-radius: 6px; background: var(--on-ink); color: var(--ink); font-size: 14px; }
+.app[data-shape="sharp"] .store small, .app[data-shape="sharp"] .clock, .app[data-shape="sharp"] .entry { color: color-mix(in srgb, var(--on-ink) 66%, transparent); }
+.app[data-shape="sharp"] .entry { height: 44px; }
+.app[data-shape="sharp"] .entry:hover, .app[data-shape="sharp"] .entry[aria-pressed="true"], .app[data-shape="sharp"] .entry.is-warn { background: color-mix(in srgb, var(--on-ink) 12%, transparent); color: var(--on-ink); }
+.app[data-shape="sharp"] .entry .pt { box-shadow: 0 0 0 2px var(--ink); background: var(--warn-on-ink); }
+.app[data-shape="sharp"] .entry.is-warn { color: var(--warn-on-ink); }
+.app[data-shape="sharp"] .cat[aria-current="true"] { background: var(--s3); color: var(--fg); }
+.app[data-shape="sharp"] .cat[aria-current="true"] .has { background: var(--brand); }
+.app[data-shape="sharp"] .cnt, .app[data-shape="sharp"] .bd, .app[data-shape="sharp"] .ck { border-radius: 4px; }
+.app[data-shape="sharp"] .seg { padding: 2px; }
+.app[data-shape="sharp"] .seg button, .app[data-shape="sharp"] .vsw button { border-radius: 4px; }
+.app[data-shape="sharp"] .md-box, .app[data-shape="sharp"] .ov.side .md-box { border-radius: 8px; }
+.app[data-shape="sharp"] .toast { border-radius: 8px; }
+.app[data-shape="sharp"] .mcard, .app[data-shape="sharp"] .scan, .app[data-shape="sharp"] .stat, .app[data-shape="sharp"] .row, .app[data-shape="sharp"] .pr-st, .app[data-shape="sharp"] .disp, .app[data-shape="sharp"] .pick, .app[data-shape="sharp"] .selbar, .app[data-shape="sharp"] .tb { border-radius: 8px; }
+.app[data-shape="sharp"].zones [data-zone]::after { border-radius: 4px; }
+
+@media (max-width: 640px) {
+  .bar h1 { width: 100%; }
+  .app { height: clamp(640px, calc(100vh - 200px), 860px); }
+  .pay { grid-template-columns: 1fr; }
+  .pay .methods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>
+
+<div class="shell">
+  <div class="bar" id="bar">
+    <h1>Dining POS 点餐原型 · 评审优化版</h1>
+    <div class="ctl">形状<div class="pill" role="group" aria-label="形状方案" id="b-shape"></div></div>
+    <div class="ctl">结单<div class="pill" role="group" aria-label="结单区位置" id="b-order"></div></div>
+    <div class="ctl">分类<div class="pill" role="group" aria-label="分类区位置" id="b-cat"></div></div>
+    <div class="ctl">外观<div class="pill" role="group" aria-label="外观" id="b-look"></div></div>
+    <div class="ctl"><div class="pill" role="group" aria-label="评审"><button id="b-zones" data-set="zones" aria-pressed="false">标注功能区</button></div></div>
+  </div>
+  <div class="app" id="app" data-scheme="sh" data-skin="forest" data-dark="false" data-density="compact">
+    <header class="sys" id="sys" data-zone="Z1 系统栏"></header>
+    <div class="main" id="main">
+      <nav class="z-rail" aria-label="菜品分类"><div class="card" style="height:100%" data-zone="Z3 分类区"><div class="rail" id="rail"></div></div></nav>
+      <section class="z-menu" aria-label="菜单" data-zone="Z4 菜单区">
+        <div class="tools">
+          <label class="search"><i data-lucide="search" class="ic"></i><input id="q" type="search" placeholder="菜名、拼音首字母或编号" autocomplete="off" aria-label="搜索菜品"><span class="kbd">/</span></label>
+          <div class="chips" id="filters"></div>
+          <div class="vsw" role="group" aria-label="菜单视图" id="vsw">
+            <button data-act="view" data-v="grid" aria-label="卡片视图"><i data-lucide="layout-grid" class="ic ic-s"></i></button>
+            <button data-act="view" data-v="list" aria-label="列表视图"><i data-lucide="list" class="ic ic-s"></i></button>
+          </div>
+        </div>
+        <div class="grid-scroll"><div class="tiles" id="tiles"></div></div>
+      </section>
+      <aside class="z-order" aria-label="当前订单"><div class="card dock" id="dock" data-zone="Z5 结单区"></div></aside>
+      <div class="cartbar" id="cartbar"></div>
+    </div>
+    <div id="layer" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </div>
+
+  <section class="kit" id="kit" aria-label="组件">
+    <div class="kit-h"><h2>组件 · 黑白灰 + 松绿</h2><p>界面只有一组主题色。墨色表示当前位置和选中项，松绿表示订单里的东西和钱，橙色表示需要注意，红色表示失败和危险操作。下面的组件和上方原型用同一套变量，切换形状、外观会一起变。</p></div>
+    <div class="kit-g">
+      <div class="kit-c"><h3>按钮 · 层级</h3>
+        <div class="kit-i"><div class="kit-r"><button class="btn pay">结账</button><button class="btn pri">开台</button></div><small>主按钮：松绿实心。一屏只放一个，放在拇指区。</small></div>
+        <div class="kit-i"><div class="kit-r"><button class="btn send"><i data-lucide="chef-hat" class="ic"></i>送厨 · 2</button><button class="btn soft">充值</button></div><small>次按钮：松绿浅底。和主按钮并排时用它，不再用第二个实心。</small></div>
+        <div class="kit-i"><div class="kit-r"><button class="btn mut">取消</button><button class="btn mut"><i data-lucide="pencil" class="ic ic-s"></i>备注</button><button class="btn ghost">清除</button></div><small>中性按钮：灰块；幽灵按钮：无底色，用在弹层头部和提示条里。</small></div>
+        <div class="kit-i"><div class="kit-r"><button class="btn dng"><i data-lucide="undo-2" class="ic ic-s"></i>退菜</button><button class="btn dng-s">确认退菜</button></div><small>危险：入口用红色浅底；红色实心只出现在二次确认的最后一步。</small></div>
+      </div>
+      <div class="kit-c"><h3>按钮 · 尺寸</h3>
+        <div class="kit-i"><div class="kit-r"><button class="btn l pay split" style="min-width:240px;justify-content:space-between;padding:0 20px"><span>确认收款</span><span class="meta">¥203.50</span></button></div><small>L · 52px：结单区和弹层底部的主操作，带金额时金额靠右。</small></div>
+        <div class="kit-i"><div class="kit-r"><button class="btn mut">改人数</button><button class="btn mut">换桌</button><button class="ib" aria-label="更多"><i data-lucide="ellipsis" class="ic"></i></button></div><small>M · 44px：默认尺寸；图标按钮 44 × 44，必须有 aria-label。</small></div>
+        <div class="kit-i"><div class="kit-r"><button class="btn s mut"><i data-lucide="zap" class="ic ic-s"></i>催菜</button><button class="btn s mut"><i data-lucide="gift" class="ic ic-s"></i>赠送</button><button class="btn s dng"><i data-lucide="trash-2" class="ic ic-s"></i>删除</button></div><small>S · 36px：订单行展开后的行内操作，点按区补足到 44px。</small></div>
+      </div>
+      <div class="kit-c"><h3>选择</h3>
+        <div class="kit-i"><div class="kit-r"><button class="chip" aria-pressed="true">全部</button><button class="chip" aria-pressed="false" style="background:var(--s2)">辣</button><button class="chip" aria-pressed="false" style="background:var(--s2)">素食</button></div><small>筛选：选中是墨色块，不用主题色。</small></div>
+        <div class="kit-i"><div class="kit-r"><div class="seg" role="group" aria-label="就餐方式示例"><button aria-pressed="true">堂食</button><button aria-pressed="false">外带</button><button aria-pressed="false">外卖</button></div><span class="stp"><button aria-label="减少"><i data-lucide="minus" class="ic ic-s"></i></button><span class="v">2</span><button aria-label="增加"><i data-lucide="plus" class="ic ic-s"></i></button></span><button class="toggle" role="switch" aria-checked="true" aria-label="开关示例"></button></div><small>分段、步进器、开关。</small></div>
+        <div class="kit-i"><div class="kit-r"><button class="opt" role="radio" aria-checked="true">大份<small>+¥30</small></button><button class="opt" role="radio" aria-checked="false">小份</button></div><small>规格选项：选中是墨色块。</small></div>
+      </div>
+      <div class="kit-c"><h3>标签</h3>
+        <div class="kit-i"><div class="kit-r"><span class="bd"><i data-lucide="check" class="ic"></i>已下单</span><span class="bd">外带</span><span class="bd">已挂起</span></div><small>中性：常态信息，不需要颜色。</small></div>
+        <div class="kit-i"><div class="kit-r"><span class="bd br">特价</span><span class="bd br">赠送</span><span class="bd br">当前</span></div><small>松绿：和订单、优惠有关。</small></div>
+        <div class="kit-i"><div class="kit-r"><span class="bd warn"><span class="dot"></span>催菜中</span><span class="bd warn"><span class="dot"></span>剩 3</span><span class="bd warn"><span class="dot"></span>待结账</span><span class="bd warn"><span class="dot"></span>缺纸</span></div><small>橙色：需要有人处理，一律圆点加文字。</small></div>
+        <div class="kit-i"><div class="kit-r"><span class="bd bad"><span class="dot"></span>失败</span><span class="bd bad"><span class="dot"></span>断开</span></div><small>红色：失败。已沽清不是失败，用中性标签。</small></div>
+      </div>
+      <div class="kit-c"><h3>提示 · 轻提示（Toast）</h3>
+        <div class="kit-i"><div class="kit-r"><div class="toast" role="presentation"><i data-lucide="chef-hat" class="ic"></i><span>已送厨 3 道菜</span></div></div><small>结果：写做了什么，2.6 秒后消失。</small></div>
+        <div class="kit-i"><div class="kit-r"><div class="toast warn" role="presentation"><i data-lucide="wifi-off" class="ic"></i><span>离线中，送厨单已存入队列</span></div></div><small>注意：操作成功但有附带情况。</small></div>
+        <div class="kit-i"><div class="kit-r"><div class="toast bad" role="presentation"><i data-lucide="printer" class="ic"></i><span>凉菜打印失败，到打印面板重打</span></div></div><small>失败：写原因和下一步。</small></div>
+      </div>
+      <div class="kit-c"><h3>提示 · 提示条与表单</h3>
+        <div class="kit-i"><div class="notice warn"><i data-lucide="printer" class="ic"></i><span>厨房 · 凉菜缺纸，送到这台的菜不会出单</span><button class="btn s">去处理</button></div><small>提示条：问题没解决前一直在，放在受影响的区域顶部，带一个处理入口。</small></div>
+        <div class="kit-i"><div class="notice bad"><i data-lucide="circle-alert" class="ic"></i><span>微信收款失败：顾客付款码已过期</span><button class="btn s">重新扫码</button></div></div>
+        <div class="kit-i"><div class="notice"><i data-lucide="info" class="ic"></i><span>还有 2 道菜未送厨，收款后自动送厨</span></div></div>
+        <div class="kit-i"><input class="in is-err" value="1380013" aria-label="手机号示例" aria-invalid="true"><div class="err" style="margin-top:0">手机号要 11 位，以 1 开头</div><small>字段错误：红色描边加一句原因，就近显示。</small></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="notes">
+    <section class="note"><h2>这一版改了什么</h2><ul>
+      <li>去掉配色方案：只有黑白灰加一组主题色（松绿 #216857），深色模式下主题色提亮为 #5CC0A0。</li>
+      <li>原型下方新增组件页：按钮的层级和尺寸、选择控件、标签、轻提示、提示条和表单错误，和原型共用同一套变量。</li>
+      <li>整体留白加大：分区间距 14px，菜品卡 152px 起、内边距 14 / 16px，系统栏 64px。</li></ul></section>
+    <section class="note"><h2>结单区</h2><ul>
+      <li>宽度 400px（1000–1279 宽时 360px）。订单行改成小票式三列：份数、菜名、金额，单行高 44px；已下单的行用常规字重，待下单的行加粗。</li>
+      <li>头部两行：桌号、单号、操作；区域、人数、时长、开台时间和就餐方式。整单备注单独一行。</li>
+      <li>打印缺纸、离线以提示条显示在结单区顶部，带处理入口。</li>
+      <li>金额区默认只显示一行小计摘要和应收，点「明细」展开，列表因此多出约 3 行。</li></ul></section>
+  </div>
+</div>
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>
+(function () {
+  /* ================= data ================= */
+  var CATS = [
+    { id: 'hot', n: '热销', c: 'var(--c-hot)' }, { id: 'sig', n: '招牌菜', c: 'var(--c-sig)' }, { id: 'cold', n: '凉菜', c: 'var(--c-cold)' },
+    { id: 'wok', n: '热菜', c: 'var(--c-wok)' }, { id: 'staple', n: '主食', c: 'var(--c-staple)' }, { id: 'soup', n: '汤羹', c: 'var(--c-soup)' },
+    { id: 'drink', n: '饮品', c: 'var(--c-drink)' }, { id: 'set', n: '套餐', c: 'var(--c-set)' }
+  ];
+  var SPICE = { n: '辣度', o: [['不辣', 0], ['微辣', 0], ['中辣', 0], ['特辣', 0]], d: 1 };
+  var SPECS = {
+    fish: [{ n: '规格', req: 1, o: [['小份', 0], ['大份', 3000]], d: 0 }, { n: '辣度', o: [['微辣', 0], ['中辣', 0], ['特辣', 0]], d: 1 }, { n: '加料', multi: 1, o: [['豆芽', 500], ['宽粉', 600], ['午餐肉', 800]] }],
+    spicy: [SPICE],
+    veg: [{ n: '品种', req: 1, o: [['菜心', 0], ['油麦菜', 0], ['西兰花', 400]], d: 0 }],
+    noodle: [{ n: '规格', o: [['小碗', 0], ['大碗', 400]], d: 0 }, SPICE],
+    plum: [{ n: '规格', o: [['杯', 0], ['扎', 2600]], d: 0 }, { n: '温度', o: [['冰', 0], ['常温', 0]], d: 0 }],
+    juice: [{ n: '冰度', o: [['去冰', 0], ['少冰', 0], ['正常冰', 0]], d: 2 }],
+    set2: [{ n: '主菜', req: 1, o: [['水煮鱼', 0], ['酸菜鱼', 0], ['毛血旺', 1000]], d: 0 }, { n: '小炒', req: 1, o: [['宫保鸡丁', 0], ['鱼香肉丝', 0], ['麻婆豆腐', 0]], d: 0 }, { n: '饮品', req: 1, o: [['酸梅汤', 0], ['可乐', 0]], d: 0 }]
+  };
+  var NOTES = ['少盐', '少油', '不要香菜', '不要葱', '打包'];
+  function D(id, n, py, cat, p, x) { x = x || {}; return { id: id, n: n, py: py, cat: cat, p: p, tags: x.t || [], hot: !!x.h, stock: x.s, was: x.w, spec: x.sp }; }
+  var DISHES = [
+    D('101', '水煮鱼', 'szy', 'sig', 6800, { t: ['辣'], h: 1, sp: 'fish' }), D('102', '毛血旺', 'mxw', 'sig', 5800, { h: 1, t: ['辣'], sp: 'spicy' }),
+    D('103', '东坡肉', 'dpr', 'sig', 4800, { s: 0 }), D('104', '酸菜鱼', 'scy', 'sig', 6200, { t: ['新品'], h: 1, sp: 'spicy' }), D('105', '香辣蟹', 'xlx', 'sig', 12800, { t: ['辣'], s: 3 }),
+    D('201', '拍黄瓜', 'phg', 'cold', 1200, { t: ['素'] }), D('202', '口水鸡', 'ksj', 'cold', 3200, { t: ['辣'], h: 1 }), D('203', '夫妻肺片', 'fqfp', 'cold', 3600, { h: 1, t: ['辣'] }),
+    D('204', '凉拌木耳', 'lbme', 'cold', 1600, { t: ['素'] }), D('205', '皮蛋豆腐', 'pddf', 'cold', 1400, { t: ['素'] }),
+    D('301', '宫保鸡丁', 'gbjd', 'wok', 3800, { t: ['辣'], h: 1, sp: 'spicy' }), D('302', '麻婆豆腐', 'mpdf', 'wok', 2600, { h: 1, t: ['辣'] }), D('303', '鱼香肉丝', 'yxrs', 'wok', 3200, { t: ['辣'] }),
+    D('304', '回锅肉', 'hgr', 'wok', 3600, { h: 1, t: ['辣'] }), D('305', '清炒时蔬', 'qcss', 'wok', 2200, { t: ['素'], sp: 'veg' }), D('306', '干煸四季豆', 'gbsjd', 'wok', 2600, { t: ['素', '特价'], w: 3200 }),
+    D('307', '番茄炒蛋', 'fqcd', 'wok', 2200, { h: 1, t: ['素'] }),
+    D('401', '米饭', 'mf', 'staple', 300, { h: 1 }), D('402', '蛋炒饭', 'dcf', 'staple', 1800), D('403', '担担面', 'ddm', 'staple', 2200, { h: 1, t: ['辣'], sp: 'noodle' }),
+    D('404', '红糖糍粑', 'htcb', 'staple', 1800, { t: ['新品'] }), D('405', '钟水饺', 'zsj', 'staple', 2000),
+    D('501', '酸辣汤', 'slt', 'soup', 1800, { t: ['辣'] }), D('502', '番茄蛋花汤', 'fqdht', 'soup', 1600, { t: ['素'] }), D('503', '老鸭汤', 'lyt', 'soup', 4800, { h: 1, s: 5 }),
+    D('601', '酸梅汤', 'smt', 'drink', 1200, { h: 1, s: 8, sp: 'plum' }), D('602', '冰粉', 'bf', 'drink', 1000, { h: 1, t: ['素', '新品'] }), D('603', '可乐', 'kl', 'drink', 600),
+    D('604', '鲜榨橙汁', 'xzcz', 'drink', 1800, { sp: 'juice' }), D('605', '青岛啤酒', 'qdpj', 'drink', 1000),
+    D('701', '双人套餐', 'srtc', 'set', 12800, { t: ['特价'], h: 1, w: 14800, sp: 'set2' }), D('702', '单人工作餐', 'drgzc', 'set', 3800, { sp: 'spicy' })
+  ];
+  var byId = {}; DISHES.forEach(function (d) { byId[d.id] = d; });
+  var catOf = {}; CATS.forEach(function (c) { catOf[c.id] = c; });
+  var LAYOUTS = { 'left-right': 'L1', 'top-right': 'L2', 'top-left': 'L3', 'right-left': 'L4', 'left-left': 'L5', 'right-right': 'L6' };
+  var STATION = { cold: 'cold', drink: 'bar' };
+  var MIN = 60000, NOW = Date.now();
+
+  /* ================= state ================= */
+  var uid = 1;
+  function L(did, qty, st, x) { var d = byId[did]; return Object.assign({ uid: uid++, did: did, name: d.n, spec: '', unit: d.p, qty: qty, note: '', st: st, gift: false, rush: false, sentAt: st === 'sent' ? '18:12' : '' }, x || {}); }
+  function O(no, table, guests, mins, lines, x) { return Object.assign({ no: no, table: table, type: table ? 'dine' : 'take', guests: guests, opened: NOW - mins * MIN, lines: lines, member: null, coupon: null, roundOff: false, status: 'open' }, x || {}); }
+  var ORDERS = [
+    O(1024, 'A08', 4, 38, [L('201', 1, 'sent'), L('202', 1, 'sent', { rush: true }), L('203', 1, 'sent'), L('301', 1, 'sent', { spec: '微辣' }), L('302', 1, 'sent'), L('601', 2, 'sent', { spec: '杯 · 冰' }), L('101', 1, 'new', { spec: '大份 · 中辣 · 豆芽', unit: 10300, note: '少油' }), L('401', 4, 'new'), L('605', 4, 'new')], { note: '不要香菜，凉菜先上' }),
+    O(1021, 'A02', 2, 52, [L('307', 1, 'sent'), L('401', 2, 'sent'), L('502', 1, 'sent')]),
+    O(1022, 'A05', 4, 25, [L('104', 1, 'sent', { spec: '微辣' }), L('201', 1, 'sent'), L('605', 2, 'sent')]),
+    O(1018, 'A09', 3, 86, [L('102', 1, 'sent', { spec: '中辣' }), L('401', 3, 'sent'), L('603', 3, 'sent')], { status: 'billing' }),
+    O(1023, 'B01', 8, 41, [L('105', 1, 'sent'), L('203', 1, 'sent'), L('503', 1, 'sent'), L('605', 6, 'sent')]),
+    O(1031, null, 1, 6, [L('403', 1, 'new', { spec: '大碗 · 微辣', unit: 2600 }), L('603', 1, 'new')], { status: 'held', heldAt: '18:44' }),
+    O(1019, 'A03', 2, 95, [L('302', 1, 'sent'), L('401', 2, 'sent')], { status: 'paid', paidAt: '18:30', paid: 3720 })
+  ];
+  var TABLES = [];
+  ['A', 'B'].forEach(function (z) { for (var i = 1; i <= (z === 'A' ? 12 : 4); i++) { var id = z + String(i).padStart(2, '0'); TABLES.push({ id: id, area: z === 'A' ? '大厅' : '包间', seats: z === 'B' ? 10 : (i <= 4 ? 2 : 4), status: 'free', order: null, merged: null }); } });
+  function T(id) { return TABLES.filter(function (t) { return t.id === id; })[0]; }
+  ORDERS.forEach(function (o) { if (o.table && o.status !== 'paid') { var t = T(o.table); t.status = o.status === 'billing' ? 'billing' : 'dining'; t.order = o.no; } });
+  T('A11').status = 'reserved'; T('A11').note = '19:00 · 陈先生 · 6 人';
+  var PRINTERS = [{ id: 'front', n: '前台小票', st: 'ok' }, { id: 'hot', n: '厨房 · 热菜', st: 'ok' }, { id: 'cold', n: '厨房 · 凉菜', st: 'paper' }, { id: 'bar', n: '吧台', st: 'ok' }];
+  var JOBS = [{ at: '18:12', p: 'hot', what: '#1024 厨房单 · 1 道', ok: true }, { at: '18:12', p: 'cold', what: '#1024 厨房单 · 1 道', ok: false }];
+  var COUPONS = [{ id: 'c1', n: '满 200 减 20', min: 20000, off: 2000 }, { id: 'c2', n: '满 100 减 8', min: 10000, off: 800 }];
+
+  var SET = { shape: 'soft', scheme: 'sh', skin: 'forest', order: 'right', cat: 'left', appearance: 'auto', density: 'compact', view: 'grid', zones: false };
+  try { var raw = localStorage.getItem('dining-pos-review-set'); if (raw) Object.assign(SET, JSON.parse(raw)); } catch (e) {}
+  var S = { sumOpen: false, cur: 1024, seq: 1032, cat: 'hot', filter: 'all', q: '', exp: null, flash: null, sel: null, online: true, queue: 0, lastSync: '18:46', narrow: false, cartOpen: false };
+  var M = null; /* active overlay state */
+
+  /* ================= helpers ================= */
+  var app = document.getElementById('app');
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function money(c) { return (c < 0 ? '−' : '') + '¥' + (Math.abs(c) / 100).toFixed(2); }
+  function mp(c) { return '¥' + (c % 100 ? (c / 100).toFixed(2) : c / 100); }
+  function hhmm(d) { d = d || new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+  function icons() { if (window.lucide) window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } }); }
+  function ic(n, s) { return '<i data-lucide="' + n + '" class="ic' + (s ? ' ic-s' : '') + '"></i>'; }
+  function save() { try { localStorage.setItem('dining-pos-review-set', JSON.stringify(SET)); } catch (e) {} }
+  function ord(no) { return ORDERS.filter(function (o) { return o.no === no; })[0]; }
+  function cur() { return ord(S.cur); }
+  function live(o) { return o.lines.filter(function (l) { return l.st !== 'void'; }); }
+  function pending(o) { return o.lines.filter(function (l) { return l.st === 'new'; }); }
+  function lineBy(u) { return cur().lines.filter(function (l) { return l.uid === +u; })[0]; }
+  function totals(o) {
+    var sub = 0, gifts = 0, items = 0;
+    live(o).forEach(function (l) { items += l.qty; if (l.gift) gifts += l.unit * l.qty; else sub += l.unit * l.qty; });
+    var service = o.type === 'dine' ? Math.round(sub * 0.1) : 0;
+    var pack = o.type !== 'dine' && items ? 200 : 0;
+    var member = o.member ? Math.round(sub * 0.05) : 0;
+    var coupon = o.coupon && sub >= o.coupon.min ? o.coupon.off : 0;
+    var gross = Math.max(0, sub + service + pack - member - coupon);
+    var round = o.roundOff ? gross % 100 : 0;
+    return { sub: sub, gifts: gifts, items: items, service: service, pack: pack, member: member, coupon: coupon, round: round, due: gross - round };
+  }
+  function openOrders() { return ORDERS.filter(function (o) { return o.status === 'open' || o.status === 'billing' || o.status === 'held'; }); }
+  function label(o) { return o.table ? o.table : (o.type === 'deliv' ? '外卖' : '外带') + ' #' + o.no; }
+  function isDark() {
+    if (SET.appearance !== 'auto') return SET.appearance === 'dark';
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t) return t === 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function toast(msg, icon, kind) {
+    var t = $('toast'); t.className = 'toast' + (kind ? ' ' + (kind === true ? 'warn' : kind) : '');
+    t.innerHTML = ic(icon || 'check') + '<span>' + esc(msg) + '</span>'; t.hidden = false; icons();
+    clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 2600);
+  }
+
+  /* ================= layout ================= */
+  function applyLayout() {
+    var main = $('main'), R = 'var(--rail-w)', Ow = 'var(--order-w)', F = 'minmax(0,1fr)';
+    var key = SET.cat + '-' + SET.order, top = SET.cat === 'top' || S.narrow, cols, areas;
+    if (S.narrow) { cols = F; areas = '"rail" "menu" "bar"'; main.style.gridTemplateRows = 'auto minmax(0,1fr) auto'; }
+    else {
+      var map = {
+        'left-right': [R + ' ' + F + ' ' + Ow, '"rail menu order"'], 'right-right': [F + ' ' + R + ' ' + Ow, '"menu rail order"'],
+        'left-left': [Ow + ' ' + R + ' ' + F, '"order rail menu"'], 'right-left': [Ow + ' ' + F + ' ' + R, '"order menu rail"'],
+        'top-right': [F + ' ' + Ow, '"rail order" "menu order"'], 'top-left': [Ow + ' ' + F, '"order rail" "order menu"']
+      };
+      cols = map[key][0]; areas = map[key][1];
+      main.style.gridTemplateRows = SET.cat === 'top' ? 'auto minmax(0,1fr)' : 'minmax(0,1fr)';
+    }
+    main.style.gridTemplateColumns = cols; main.style.gridTemplateAreas = areas;
+    $('rail').classList.toggle('h', top);
+    document.querySelector('.z-rail .card').style.height = top ? 'auto' : '100%';
+  }
+  function applyLook() {
+    app.dataset.scheme = SET.scheme; app.dataset.shape = SET.shape;
+    $('b-shape').innerHTML = [['soft', 'A 圆润'], ['sharp', 'B 犀利']].map(function (s) { return '<button data-set="shape" data-v="' + s[0] + '" aria-pressed="' + (SET.shape === s[0]) + '">' + s[1] + '</button>'; }).join(''); app.dataset.density = SET.density;
+    app.dataset.dark = String(isDark()); app.classList.toggle('zones', SET.zones);
+    $('b-order').innerHTML = [['left', '左'], ['right', '右']].map(function (s) { return '<button data-set="order" data-v="' + s[0] + '" aria-pressed="' + (SET.order === s[0]) + '">' + s[1] + '</button>'; }).join('');
+    $('b-cat').innerHTML = [['top', '上'], ['left', '左'], ['right', '右']].map(function (s) { return '<button data-set="cat" data-v="' + s[0] + '" aria-pressed="' + (SET.cat === s[0]) + '">' + s[1] + '</button>'; }).join('');
+    $('b-look').innerHTML = [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']].map(function (s) { return '<button data-set="appearance" data-v="' + s[0] + '" aria-pressed="' + (SET.appearance === s[0]) + '">' + s[1] + '</button>'; }).join('');
+    var kit = $('kit'); kit.dataset.dark = app.dataset.dark; kit.dataset.shape = SET.shape;
+    $('b-zones').setAttribute('aria-pressed', String(SET.zones));
+    applyLayout();
+  }
+
+  /* ================= render ================= */
+  function renderSys() {
+    var dining = TABLES.filter(function (t) { return t.status === 'dining' || t.status === 'billing'; }).length;
+    var opens = openOrders().length, o = cur();
+    var prErr = PRINTERS.some(function (p) { return p.st !== 'ok'; });
+    $('sys').innerHTML = '<div class="store"><span class="mk" aria-hidden="true">松</span><span><b>松间小馆 · 南山店</b><small>收银员 小王 · 2 号机</small></span></div>' +
+      '<button class="entry" data-act="sheet" data-v="tables">' + ic('layout-grid') + '<span class="lb">桌台</span></button>' +
+      '<button class="entry" data-act="sheet" data-v="orders">' + ic('receipt') + '<span class="lb">订单</span></button>' +
+      '<button class="entry" data-act="sheet" data-v="member" aria-pressed="' + !!(o && o.member) + '">' + ic('user-round') + '<span class="lb">' + (o && o.member ? o.member.n : '会员') + '</span></button>' +
+      '<button class="entry' + (prErr ? ' is-warn' : '') + '" data-act="sheet" data-v="print">' + ic('printer') + '<span class="pt ' + (prErr ? 'warn' : 'ok') + '"></span><span class="lb">' + (prErr ? '打印异常' : '打印') + '</span></button>' +
+      '<button class="entry' + (S.online ? '' : ' is-warn') + '" data-act="sheet" data-v="net">' + ic(S.online ? 'wifi' : 'wifi-off') + '<span class="pt ' + (S.online ? 'ok' : 'warn') + '"></span><span class="lb">' + (S.online ? '在线' : '离线 · ' + S.queue) + '</span></button>' +
+      '<button class="entry" data-act="sheet" data-v="settings">' + ic('settings') + '<span class="lb">设置</span></button>' +
+      '<span class="clock">' + hhmm() + '</span>';
+  }
+  function qtyIn(cat) { var n = 0, o = cur(); if (!o) return 0; live(o).forEach(function (l) { if (byId[l.did].cat === cat) n += l.qty; }); return n; }
+  function qtyOf(did) { var n = 0, o = cur(); if (!o) return 0; live(o).forEach(function (l) { if (l.did === did) n += l.qty; }); return n; }
+  function renderRail() {
+    $('rail').innerHTML = CATS.map(function (c) {
+      var n = c.id === 'hot' ? 0 : qtyIn(c.id);
+      return '<button class="cat" style="--c:' + c.c + '" data-act="cat" data-v="' + c.id + '" aria-current="' + (S.cat === c.id && !S.q) + '"><span>' + c.n + '</span>' + (n ? '<span class="has" aria-label="有已点菜品"></span>' : '') + '</button>';
+    }).join('');
+  }
+  function visible() {
+    var q = S.q.trim().toLowerCase();
+    var list = q ? DISHES.filter(function (d) { return d.n.indexOf(q) > -1 || d.py.indexOf(q) === 0 || d.id.indexOf(q) === 0; }) : DISHES.filter(function (d) { return S.cat === 'hot' ? d.hot : d.cat === S.cat; });
+    if (S.filter !== 'all') list = list.filter(function (d) { return d.tags.indexOf(S.filter) > -1; });
+    return list;
+  }
+  function tile(d) {
+    var out = d.stock === 0, n = qtyOf(d.id), tg = '';
+    var words = d.tags.filter(function (t) { return t !== '特价'; });
+    if (d.spec) words.push(d.spec === 'set2' ? '套餐' : '可选规格');
+    if (out) tg += '<span class="bd">' + ic('circle-slash', 1) + '已沽清</span>';
+    else { if (d.tags.indexOf('特价') > -1) tg += '<span class="bd br">特价</span>'; if (d.stock) tg += '<span class="bd warn"><span class="dot"></span>剩 ' + d.stock + '</span>'; }
+    if (words.length && !out) tg += '<span>' + words.join(' · ') + '</span>';
+    return '<button class="tile" style="--c:' + catOf[d.cat].c + '" data-id="' + d.id + '" data-sel="' + (n > 0) + '" data-out="' + out + '" aria-label="' + d.n + ' ' + mp(d.p) + '">' + (n ? '<span class="cnt">' + n + '</span>' : '') +
+      '<span class="nm">' + d.n + '</span><span class="tg">' + tg + '</span><span class="ft"><span><span class="pr">' + mp(d.p) + '</span>' + (d.was ? '<span class="was">' + mp(d.was) + '</span>' : '') + '</span><span class="cd">' + d.id + '</span></span></button>';
+  }
+  function renderMenu() {
+    var list = visible();
+    $('filters').innerHTML = [['all', '全部'], ['辣', '辣'], ['素', '素食'], ['特价', '特价'], ['新品', '新品']].map(function (f) { return '<button class="chip" data-act="filter" data-v="' + f[0] + '" aria-pressed="' + (S.filter === f[0]) + '">' + f[1] + '</button>'; }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#vsw button'), function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === SET.view)); });
+    var el = $('tiles'); el.classList.toggle('list', SET.view === 'list');
+    el.innerHTML = list.length ? list.map(tile).join('') : '<div class="empty" style="grid-column:1/-1">' + ic('search-x') + '<div>没有匹配的菜品。试试拼音首字母，比如 gbjd。</div><button class="btn s mut" data-act="clear-q">清除搜索</button></div>';
+  }
+  function lineHTML(l) {
+    var exp = S.exp === l.uid && !S.sel, md = [];
+    if (l.st === 'sent' && l.rush) md.push('<span class="bd warn"><span class="dot"></span>催菜中</span>');
+    if (l.st === 'void') md.push('<span class="bd">已退</span>' + (l.reason ? '<span>' + esc(l.reason) + '</span>' : ''));
+    if (l.moved) md.push('<span class="bd">' + esc(l.moved) + '</span>');
+    if (l.gift) md.push('<span class="bd br">赠送</span>');
+    var txt = [l.spec, l.note].filter(Boolean).join(' · '); if (txt) md.push('<span>' + esc(txt) + '</span>');
+    var canSel = S.sel && l.st !== 'void' && (S.sel.mode === 'split' || l.st === 'sent' || l.st === 'new');
+    var h = '<div class="ln' + (S.flash === l.uid ? ' flash' : '') + '" data-act="line" data-uid="' + l.uid + '" data-st="' + l.st + '" tabindex="0" role="button" aria-expanded="' + exp + '">' +
+      (S.sel ? '<span class="ck" aria-checked="' + (S.sel.ids.indexOf(l.uid) > -1) + '"' + (canSel ? '' : ' aria-disabled="true"') + '>' + ic('check', 1) + '</span>' : '<span></span>') +
+      '<span class="q">' + l.qty + '<i>×</i></span><span class="nm">' + esc(l.name) + '</span>' +
+      '<span class="pr">' + (l.gift ? '<s>' + money(l.unit * l.qty) + '</s>' : '') + money(l.gift ? 0 : l.unit * l.qty) + '</span>' +
+      (md.length ? '<span class="md">' + md.join('') + '</span>' : '');
+    if (exp && l.st === 'new') {
+      h += '<div class="ex" data-stop="1"><span class="stp"><button data-act="qty" data-d="-1" data-uid="' + l.uid + '" aria-label="减少">' + ic('minus', 1) + '</button><span class="v">' + l.qty + '</span><button data-act="qty" data-d="1" data-uid="' + l.uid + '" aria-label="增加">' + ic('plus', 1) + '</button></span>' +
+        '<button class="btn s mut" data-act="note" data-uid="' + l.uid + '">' + ic('pencil', 1) + '备注</button><button class="btn s mut" data-act="gift" data-uid="' + l.uid + '">' + ic('gift', 1) + (l.gift ? '取消赠送' : '赠送') + '</button><button class="btn s dng" data-act="del" data-uid="' + l.uid + '">' + ic('trash-2', 1) + '删除</button></div>';
+    } else if (exp && l.st === 'sent') {
+      h += '<div class="ex" data-stop="1"><button class="btn s mut" data-act="rush" data-uid="' + l.uid + '">' + ic('zap', 1) + '催菜</button><button class="btn s mut" data-act="gift" data-uid="' + l.uid + '">' + ic('gift', 1) + (l.gift ? '取消赠送' : '赠送') + '</button><button class="btn s dng" data-act="void" data-uid="' + l.uid + '">' + ic('undo-2', 1) + '退菜</button></div>';
+    }
+    return h + '</div>';
+  }
+  function units(ls) { return ls.reduce(function (n, l) { return n + (l.st === 'void' ? 0 : l.qty); }, 0); }
+  function renderDock() {
+    var o = cur(), t = totals(o), np = pending(o), sent = o.lines.filter(function (l) { return l.st !== 'new'; });
+    var mins = Math.max(0, Math.round((Date.now() - o.opened) / MIN));
+    var tb = o.table ? T(o.table) : null;
+    var merged = TABLES.filter(function (x) { return x.merged === o.table && o.table; }).map(function (x) { return x.id; });
+    var meta = [tb ? tb.area : (o.type === 'deliv' ? '外卖' : '外带'), o.guests + (tb ? '/' + tb.seats : '') + ' 人', mins + ' 分钟', hhmm(new Date(o.opened)) + ' 开台'];
+    var seg = '<div class="seg" role="group" aria-label="就餐方式">' + [['dine', '堂食'], ['take', '外带'], ['deliv', '外卖']].map(function (m) { return '<button data-act="mode" data-v="' + m[0] + '" aria-pressed="' + (o.type === m[0]) + '">' + m[1] + '</button>'; }).join('') + '</div>';
+    var ctx = '<div class="ctx" data-zone="Z2 桌台订单条"><div class="ctx-1"><b class="tbl">' + (o.table ? o.table + (merged.length ? '<small>+ ' + merged.join(' + ') + '</small>' : '') : label(o)) + '</b>' +
+      (o.table ? '<span class="no">#' + o.no + '</span>' : '') + '<span class="sp"></span>' + seg +
+      '<button class="ib" data-act="ops" aria-label="桌台操作" title="桌台操作">' + ic('ellipsis') + '</button>' +
+      '<button class="ib dock-close" data-act="cart-close" aria-label="收起订单">' + ic('chevron-down') + '</button></div>' +
+      '<div class="ctx-2"><span class="meta">' + meta.join(' · ') + '</span></div>' +
+      (o.note ? '<div class="onote">' + ic('notebook-pen', 1) + '<span>整单备注：' + esc(o.note) + '</span></div>' : '') + '</div>';
+    var nts = '', paper = PRINTERS.filter(function (p) { return p.st !== 'ok'; });
+    if (paper.length) nts += '<div class="notice warn">' + ic('printer') + '<span>' + paper.map(function (p) { return p.n; }).join('、') + '缺纸，送到这台的菜不会出单</span><button class="btn s" data-act="sheet" data-v="print">去处理</button></div>';
+    if (!S.online) nts += '<div class="notice warn">' + ic('wifi-off') + '<span>离线中' + (S.queue ? '，' + S.queue + ' 张送厨单待同步' : '，可以继续点菜和收现金') + '</span><button class="btn s" data-act="sheet" data-v="net">查看</button></div>';
+    var sel = '';
+    if (S.sel) {
+      var n = S.sel.ids.length;
+      sel = '<div class="selbar"><span>' + (S.sel.mode === 'move' ? '选择要转出的菜品' : '选择要拆出的菜品') + ' · 已选 ' + n + '</span><button class="btn s ghost" data-act="sel-cancel">取消</button>' + (n ? '<button class="btn s pri" data-act="sel-next">' + (S.sel.mode === 'move' ? '选目标桌' : '拆出新单') + '</button>' : '') + '</div>';
+    }
+    var list = '';
+    if (!o.lines.length) list = '<div class="dock-empty">' + ic('receipt') + '<div>点左侧菜品开始下单</div></div>';
+    else {
+      var last = sent.reduce(function (m, l) { return l.sentAt > m ? l.sentAt : m; }, '');
+      if (np.length) list += '<div class="sec"><b>待下单</b><span>' + np.length + ' 项 · ' + units(np) + ' 份</span></div>' + np.map(lineHTML).join('');
+      if (sent.length) list += '<div class="sec"><b>已下单</b><span>' + sent.length + ' 项 · ' + units(sent) + ' 份' + (last ? ' · ' + last + ' 送厨' : '') + '</span></div>' + sent.map(lineHTML).join('');
+    }
+    var off = t.member + t.coupon + t.round;
+    var rows = '<div class="kv"><span>小计</span><span>' + money(t.sub) + '</span></div>';
+    if (t.service) rows += '<div class="kv"><span>服务费 10%</span><span>' + money(t.service) + '</span></div>';
+    if (t.pack) rows += '<div class="kv"><span>打包费</span><span>' + money(t.pack) + '</span></div>';
+    if (t.gifts) rows += '<div class="kv off"><span>赠送</span><span>' + money(-t.gifts) + '</span></div>';
+    if (t.member) rows += '<div class="kv off"><span>会员 9.5 折</span><span>' + money(-t.member) + '</span></div>';
+    if (o.coupon) rows += '<div class="kv off"><span>' + o.coupon.n + (t.coupon ? '' : '（未满足）') + '</span><span>' + money(-t.coupon) + '</span></div>';
+    if (t.round) rows += '<div class="kv off"><span>抹零</span><span>' + money(-t.round) + '</span></div>';
+    var brief = ['小计 ' + money(t.sub)];
+    if (t.service) brief.push('服务费 ' + money(t.service)); if (t.pack) brief.push('打包费 ' + money(t.pack)); if (off) brief.push('优惠 ' + money(-off)); if (t.gifts) brief.push('赠送 ' + money(-t.gifts));
+    var foot = !o.lines.length ? '' : '<div class="foot" data-zone="Z6 金额与操作区"><div class="sum"><div class="disc">' +
+      '<button class="chip" data-act="sheet" data-v="member" aria-pressed="' + !!o.member + '">' + ic('user-round', 1) + (o.member ? o.member.n : '会员') + '</button>' +
+      '<button class="chip" data-act="sheet" data-v="member" aria-pressed="' + !!o.coupon + '">' + ic('ticket', 1) + (o.coupon ? '已用券' : '优惠券') + '</button>' +
+      '<button class="chip" data-act="round" aria-pressed="' + o.roundOff + '">抹零</button>' +
+      '<button class="sum-t" data-act="sum" aria-expanded="' + S.sumOpen + '">明细' + ic(S.sumOpen ? 'chevron-up' : 'chevron-down', 1) + '</button></div>' +
+      (S.sumOpen ? '<div class="kvs">' + rows + '</div>' : '') +
+      '<div class="tot"><div class="tl"><span>应收 · ' + t.items + ' 件</span>' + (S.sumOpen ? '' : '<span class="brief">' + brief.join(' · ') + '</span>') + '</div><span class="amt">' + money(t.due) + '</span></div></div>' +
+      '<div class="acts-row' + (np.length ? '' : ' no-send') + '"><button class="btn mut" data-act="hold" aria-label="挂单">' + ic('pause') + '</button>' +
+      (np.length ? '<button class="btn send" data-act="send">' + ic('chef-hat') + '送厨 · ' + np.length + '</button>' : '') +
+      (live(o).length ? '<button class="btn pay" data-act="pay">结账</button>' : '') + '</div></div>';
+    $('dock').innerHTML = ctx + (nts ? '<div class="notices">' + nts + '</div>' : '') + sel + '<div class="list" id="list">' + list + '</div>' + foot;
+    $('cartbar').innerHTML = '<button class="btn l pay" data-act="cart-open"><span>' + label(o) + ' · ' + t.items + ' 件</span><span class="meta">' + money(t.due) + '</span></button>';
+    if (S.flash) { var f = document.querySelector('.ln.flash'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest' }); }
+  }
+  function render() {
+    renderSys(); renderRail(); renderMenu(); renderDock();
+    if (M && M.redraw) M.redraw(); else icons();
+    S.flash = null;
+  }
+
+  /* ================= overlays ================= */
+  var layer = $('layer');
+  function open(html, opt) {
+    opt = opt || {};
+    layer.className = 'ov' + (opt.side ? ' side' : '');
+    layer.innerHTML = '<div class="md-box' + (opt.sm ? ' sm' : '') + '" role="dialog" aria-modal="true" style="' + (opt.w ? '--side-w:' + opt.w + 'px' : '') + '">' + html + '</div>';
+    layer.hidden = false; icons();
+  }
+  function close() { layer.hidden = true; layer.innerHTML = ''; M = null; }
+  function head(t, sub) { return '<div class="mh"><div class="t"><h3>' + t + '</h3>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div><button class="ib" data-act="close" aria-label="关闭">' + ic('x') + '</button></div>'; }
+  function keypad(extra) { return '<div class="pad">' + ['1', '2', '3', '4', '5', '6', '7', '8', '9', extra || '', '0', 'del'].map(function (k) { return k === '' ? '<span></span>' : '<button class="key" data-act="key" data-k="' + k + '"' + (k === 'del' ? ' aria-label="删除"' : '') + '>' + (k === 'del' ? ic('delete') : k) + '</button>'; }).join('') + '</div>'; }
+  function sheet(name, draw, opt) { M = { type: 'sheet', name: name, opt: opt || {} }; M.redraw = function () { open(draw(), Object.assign({ side: true }, M.opt)); }; M.redraw(); }
+
+  /* --- spec --- */
+  function openSpec(d) {
+    var groups = SPECS[d.spec] || [];
+    M = { type: 'spec', d: d, groups: groups, sel: groups.map(function (g) { return g.multi ? [] : g.d; }), notes: [], text: '', qty: 1 };
+    M.redraw = drawSpec; drawSpec();
+  }
+  function specPrice() { var p = M.d.p; M.groups.forEach(function (g, i) { var s = M.sel[i]; if (g.multi) s.forEach(function (k) { p += g.o[k][1]; }); else p += g.o[s][1]; }); return p; }
+  function specText() { var a = []; M.groups.forEach(function (g, i) { var s = M.sel[i]; if (g.multi) s.forEach(function (k) { a.push(g.o[k][0]); }); else a.push(g.o[s][0]); }); return a.join(' · '); }
+  function drawSpec() {
+    var d = M.d, b = '';
+    M.groups.forEach(function (g, i) {
+      b += '<div class="grp"><div class="grp-t">' + g.n + (g.req ? ' <span class="bd br">必选</span>' : '') + (g.multi ? ' <small>可多选</small>' : '') + '</div><div class="opts">' +
+        g.o.map(function (o, k) { var on = g.multi ? M.sel[i].indexOf(k) > -1 : M.sel[i] === k; return '<button class="opt" role="' + (g.multi ? 'checkbox' : 'radio') + '" aria-checked="' + on + '" data-act="opt" data-g="' + i + '" data-k="' + k + '">' + o[0] + (o[1] ? '<small>+' + mp(o[1]) + '</small>' : '') + '</button>'; }).join('') + '</div></div>';
+    });
+    b += '<div class="grp"><div class="grp-t">备注</div><div class="opts">' + NOTES.map(function (n) { return '<button class="opt" style="min-width:0" role="checkbox" aria-checked="' + (M.notes.indexOf(n) > -1) + '" data-act="mnote" data-v="' + n + '">' + n + '</button>'; }).join('') + '</div>' +
+      '<input class="in" id="spec-note" style="margin-top:8px" placeholder="其他要求，例如：分两盘装" value="' + esc(M.text) + '"></div>';
+    open(head(d.n, d.id + ' · ' + catOf[d.cat].n + ' · ' + mp(d.p)) + '<div class="mb">' + b + '</div><div class="mf"><span class="stp l"><button data-act="mqty" data-d="-1" aria-label="减少"' + (M.qty <= 1 ? ' disabled' : '') + '>' + ic('minus') + '</button><span class="v">' + M.qty + '</span><button data-act="mqty" data-d="1" aria-label="增加">' + ic('plus') + '</button></span>' +
+      '<button class="btn l pri split" data-act="spec-add"><span>加入订单</span><span class="meta">' + money(specPrice() * M.qty) + '</span></button></div>');
+  }
+  /* --- confirm / auth / guests --- */
+  function confirmBox(title, text, ok, fn, extra) {
+    M = { type: 'confirm', ok: fn, reason: null };
+    open(head(title) + '<div class="mb"><p class="hint" style="margin:0 0 12px;font-size:14px;color:var(--fg2)">' + text + '</p>' + (extra || '') + '</div><div class="mf"><button class="btn mut" data-act="close">取消</button><button class="btn dng-s" data-act="confirm-ok">' + ok + '</button></div>', { sm: true });
+  }
+  function auth(reason, fn) {
+    M = { type: 'auth', pin: '', fn: fn, reason: reason, err: '' };
+    M.redraw = function () {
+      open(head('主管授权', reason) + '<div class="mb"><div class="disp"><span class="hint">授权码</span><span>' + ('●●●●'.slice(0, M.pin.length) + '○○○○'.slice(M.pin.length)) + '</span></div>' + keypad() +
+        (M.err ? '<div class="err">' + M.err + '</div>' : '<div class="hint" style="margin-top:8px">演示授权码 1234</div>') + '</div>', { sm: true });
+    };
+    M.redraw();
+  }
+  function guestsBox(title, initial, okLabel, fn) {
+    M = { type: 'guests', g: initial, fn: fn };
+    M.redraw = function () {
+      open(head(title) + '<div class="mb"><div class="grp-t">就餐人数</div><span class="stp l"><button data-act="gq" data-d="-1" aria-label="减少"' + (M.g <= 1 ? ' disabled' : '') + '>' + ic('minus') + '</button><span class="v">' + M.g + '</span><button data-act="gq" data-d="1" aria-label="增加">' + ic('plus') + '</button></span></div>' +
+        '<div class="mf"><button class="btn mut" data-act="close">取消</button><button class="btn pri" data-act="guests-ok">' + okLabel + '</button></div>', { sm: true });
+    };
+    M.redraw();
+  }
+  /* --- table ops menu --- */
+  function opsMenu() {
+    var o = cur(), dine = !!o.table;
+    var items = [
+      ['guests', 'users', '改人数', '当前 ' + o.guests + ' 人', true],
+      ['switch', 'arrow-right-left', '换桌', '整单迁到一张空闲桌', dine],
+      ['merge', 'merge', '并台', '把另一张就餐中的桌并进来，一起结账', dine],
+      ['move', 'forward', '转菜', '勾选菜品转到另一张桌', true],
+      ['split', 'split', '拆单', '勾选菜品拆成一张新订单', true],
+      ['combine', 'layers', '合单', '把挂起单、外带单或其他桌的订单并入当前单', true],
+      ['prebill', 'file-text', '打印预结单', '给顾客核对的账单', true],
+      ['clear-table', 'eraser', '清台', '空订单才能清台', dine]
+    ];
+    M = { type: 'ops' };
+    open(head('桌台操作', label(o) + ' · #' + o.no) + '<div class="mb"><div class="menu-list">' + items.map(function (x) {
+      return '<button class="opt row" data-act="op" data-v="' + x[0] + '"' + (x[4] ? '' : ' disabled') + '>' + ic(x[1]) + '<span class="grow"><span>' + x[2] + '</span><small>' + (x[4] ? x[3] : '外带、外卖订单没有桌台') + '</small></span>' + ic('chevron-right', 1) + '</button>';
+    }).join('') + '</div></div>', { sm: true });
+  }
+  /* --- tables sheet --- */
+  function tablesSheet(pick) {
+    var area = 'all';
+    var st = { free: '空闲', dining: '就餐中', billing: '待结账', reserved: '已预订', merged: '已并台' };
+    sheet('tables', function () {
+      var counts = { free: 0, dining: 0, billing: 0, reserved: 0 };
+      TABLES.forEach(function (t) { if (counts[t.status] != null) counts[t.status]++; });
+      var tip = pick ? { switch: '选择要换到的空闲桌', merge: '选择要并入 ' + cur().table + ' 的就餐桌', move: '选择转菜的目标桌（就餐中）' }[pick] : '';
+      var list = TABLES.filter(function (t) { return area === 'all' || t.area === area; });
+      return head('桌台', '大厅 12 桌 · 包间 4 间') + '<div class="mb">' +
+        (pick ? '<div class="pick">' + ic('mouse-pointer-click') + '<span>' + tip + '</span><button class="btn s ghost" data-act="pick-cancel">取消</button></div>' : '') +
+        '<div class="stats">' + [['空闲', counts.free], ['就餐中', counts.dining], ['待结账', counts.billing], ['已预订', counts.reserved]].map(function (s) { return '<div class="stat"><small>' + s[0] + '</small><b>' + s[1] + '</b></div>'; }).join('') + '</div>' +
+        '<div class="chips" style="margin-bottom:12px">' + [['all', '全部'], ['大厅', '大厅'], ['包间', '包间']].map(function (a) { return '<button class="chip" data-act="area" data-v="' + a[0] + '" aria-pressed="' + (area === a[0]) + '" style="background:' + (area === a[0] ? '' : 'var(--s2)') + '">' + a[1] + '</button>'; }).join('') + '</div>' +
+        '<div class="tbls">' + list.map(function (t) {
+          var o = t.order ? ord(t.order) : null, tt = o ? totals(o) : null;
+          var ok = !pick || (pick === 'switch' ? t.status === 'free' : (t.status === 'dining' || t.status === 'billing') && t.id !== cur().table);
+          var s = t.merged ? 'merged' : t.status;
+          var cls = { free: '', dining: 'br', billing: 'warn', reserved: 'br', merged: '' }[s];
+          return '<button class="tb" data-act="tb" data-v="' + t.id + '" data-s="' + s + '" data-cur="' + (t.id === cur().table) + '"' + (ok ? '' : ' disabled') + '>' +
+            '<span class="bd ' + cls + '"><span class="dot"></span>' + (t.merged ? '并入 ' + t.merged : st[s]) + '</span><b>' + t.id + '</b>' +
+            '<small>' + (o ? o.guests + '/' + t.seats + ' 人 · ' + Math.round((Date.now() - o.opened) / MIN) + ' 分钟' : t.note ? esc(t.note) : t.seats + ' 座') + '</small>' +
+            (tt ? '<span class="amt">' + money(tt.due) + '</span>' : '') + '</button>';
+        }).join('') + '</div></div>';
+    }, { w: 640 });
+    M.pick = pick; M.setArea = function (a) { area = a; M.redraw(); };
+  }
+  /* --- orders sheet --- */
+  function ordersSheet() {
+    var tab = 'open', picked = [];
+    sheet('orders', function () {
+      var list = ORDERS.filter(function (o) { return tab === 'open' ? (o.status === 'open' || o.status === 'billing') : o.status === tab; });
+      var stl = { open: ['就餐中', ''], billing: ['待结账', 'warn'], held: ['已挂起', ''], paid: ['已结账', ''] };
+      return head('订单', '进行中 ' + openOrders().length + ' 单') + '<div class="mb"><div class="chips" style="margin-bottom:8px">' +
+        [['open', '进行中'], ['held', '挂起'], ['paid', '已结账']].map(function (a) { return '<button class="chip" data-act="otab" data-v="' + a[0] + '" aria-pressed="' + (tab === a[0]) + '" style="background:' + (tab === a[0] ? '' : 'var(--s2)') + '">' + a[1] + '</button>'; }).join('') + '</div>' +
+        '<p class="hint" style="margin:0 0 4px">勾选订单可以合并到当前订单 ' + label(cur()) + '。</p>' +
+        '<div class="rows">' + (list.length ? list.map(function (o) {
+          var t = totals(o), isCur = o.no === S.cur, can = !isCur && o.status !== 'paid';
+          return '<div class="row"><span class="ck" data-act="opick" data-v="' + o.no + '" role="checkbox" aria-checked="' + (picked.indexOf(o.no) > -1) + '"' + (can ? '' : ' aria-disabled="true"') + '>' + ic('check', 1) + '</span>' +
+            '<span class="t"><b>' + label(o) + '</b> <span class="bd ' + stl[o.status][1] + '">' + stl[o.status][0] + '</span>' + (isCur ? ' <span class="bd br">当前</span>' : '') +
+            '<small class="mono">#' + o.no + ' · ' + t.items + ' 件 · ' + (o.status === 'paid' ? '结账 ' + o.paidAt : o.heldAt ? '挂起 ' + o.heldAt : '开单 ' + hhmm(new Date(o.opened))) + '</small></span>' +
+            '<span class="r"><b class="num">' + money(o.status === 'paid' ? o.paid : t.due) + '</b>' + (o.status === 'paid' ? '<button class="btn s mut" data-act="reprint" data-v="' + o.no + '">补打</button>' : isCur ? '' : '<button class="btn s mut" data-act="oopen" data-v="' + o.no + '">打开</button>') + '</span></div>';
+        }).join('') : '<div class="empty">' + ic('inbox') + '<div>这里没有订单</div></div>') + '</div></div>' +
+        (picked.length ? '<div class="mf"><button class="btn pri" data-act="combine">' + ic('layers') + '合并到当前订单 · ' + picked.length + '</button></div>' : '');
+    }, { w: 560 });
+    M.setTab = function (t) { tab = t; picked = []; M.redraw(); };
+    M.toggle = function (no) { var i = picked.indexOf(no); if (i > -1) picked.splice(i, 1); else picked.push(no); M.redraw(); };
+    M.picked = function () { return picked; };
+  }
+  /* --- member sheet --- */
+  function memberSheet() {
+    var phone = '', err = '';
+    sheet('member', function () {
+      var o = cur();
+      if (!o.member) {
+        return head('会员', '识别后享会员价，可用优惠券') + '<div class="mb"><div class="disp"><span class="hint">手机号</span><span class="mono">' + (phone ? phone.replace(/(\d{3})(\d{0,4})(\d{0,4})/, function (m, a, b, c) { return [a, b, c].filter(Boolean).join(' '); }) : '—') + '</span></div>' + keypad() +
+          (err ? '<div class="err">' + err + '</div>' : '') + '<p class="hint">也可以让顾客出示会员码，用扫码枪扫描。示例：13800138821。</p></div>' +
+          '<div class="mf"><button class="btn mut" data-act="m-sample">填入示例</button><button class="btn pri" data-act="m-find">识别会员</button></div>';
+      }
+      var t = totals(o), m = o.member;
+      return head('会员', '已绑定到 ' + label(o)) + '<div class="mb"><div class="mcard"><b>' + m.n + '</b> · 金卡会员<small class="mono">' + m.ph + '</small><div class="figs"><span><small>余额</small><b>' + money(m.bal) + '</b></span><span><small>积分</small><b>' + m.pts.toLocaleString() + '</b></span><span><small>本单折扣</small><b>9.5 折</b></span></div></div>' +
+        '<div class="grp" style="margin-top:16px"><div class="grp-t">优惠券 <small>每单限用一张</small></div><div class="menu-list">' + COUPONS.map(function (c) {
+          var ok = t.sub >= c.min, on = o.coupon && o.coupon.id === c.id;
+          return '<button class="opt row" role="radio" aria-checked="' + on + '" data-act="coupon" data-v="' + c.id + '"' + (ok ? '' : ' disabled') + '>' + ic('ticket') + '<span class="grow"><span>' + c.n + '</span><small>' + (ok ? '有效期至 11 月 30 日' : '还差 ' + money(c.min - t.sub) + ' 可用') + '</small></span></button>';
+        }).join('') + '</div></div></div>' +
+        '<div class="mf"><button class="btn mut" data-act="m-unbind">解除绑定</button><button class="btn soft" data-act="m-topup">充值</button><button class="btn pri" data-act="close">完成</button></div>';
+    }, { w: 460 });
+    M.key = function (k) { err = ''; if (k === 'del') phone = phone.slice(0, -1); else if (phone.length < 11 && k !== '.') phone += k; M.redraw(); };
+    M.sample = function () { phone = '13800138821'; err = ''; M.redraw(); };
+    M.find = function () { if (!/^1\d{10}$/.test(phone)) { err = '手机号要 11 位，以 1 开头'; M.redraw(); return; } cur().member = { n: '王女士', ph: phone.slice(0, 3) + '****' + phone.slice(7), bal: 126000, pts: 3280 }; render(); toast('已识别会员 王女士 · 9.5 折', 'user-round'); };
+  }
+  /* --- network sheet --- */
+  function netSheet() {
+    sheet('net', function () {
+      return head('网络', S.online ? '已连接门店服务器' : '离线模式') + '<div class="mb">' +
+        '<div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="stat"><small>状态</small><b style="font-size:18px;color:' + (S.online ? 'var(--fg)' : 'var(--bad)') + '">' + (S.online ? '在线' : '离线') + '</b></div><div class="stat"><small>待同步</small><b>' + S.queue + '</b></div><div class="stat"><small>最近同步</small><b style="font-size:18px">' + S.lastSync + '</b></div></div>' +
+        '<div class="set-row"><span>模拟断网<small>离线时仍可点菜、送厨（存入队列）和收现金、刷卡；扫码支付不可用。</small></span><button class="toggle" role="switch" data-act="net-toggle" aria-checked="' + !S.online + '" aria-label="模拟断网"></button></div>' +
+        '<div class="pr-st"><span class="t">门店服务器<small>192.168.1.20 · ' + (S.online ? '延迟 28ms' : '无法连接') + '</small></span><span class="bd ' + (S.online ? '' : 'bad') + '"><span class="dot"></span>' + (S.online ? '正常' : '断开') + '</span></div>' +
+        '<div class="pr-st"><span class="t">云端支付网关<small>微信 / 支付宝</small></span><span class="bd ' + (S.online ? '' : 'bad') + '"><span class="dot"></span>' + (S.online ? '正常' : '不可用') + '</span></div></div>' +
+        (S.online && S.queue ? '<div class="mf"><button class="btn pri" data-act="net-sync">' + ic('refresh-cw') + '立即同步</button></div>' : '');
+    }, { w: 440 });
+  }
+  /* --- print sheet --- */
+  function printSheet() {
+    sheet('print', function () {
+      var stl = { ok: ['正常', ''], paper: ['缺纸', 'warn'], off: ['离线', 'warn'] };
+      return head('打印', PRINTERS.length + ' 台打印机') + '<div class="mb"><div class="grp-t">打印机</div>' + PRINTERS.map(function (p) {
+        return '<div class="pr-st">' + ic('printer') + '<span class="t">' + p.n + '<small>' + (p.id === 'front' ? '结账单、预结单' : p.id === 'bar' ? '饮品' : p.id === 'cold' ? '凉菜' : '热菜、主食、汤') + '</small></span><span class="bd ' + stl[p.st][1] + '"><span class="dot"></span>' + stl[p.st][0] + '</span>' +
+          (p.st === 'paper' ? '<button class="btn s soft" data-act="p-fix" data-v="' + p.id + '">已换纸</button>' : '<button class="btn s mut" data-act="p-test" data-v="' + p.id + '">测试</button>') + '</div>';
+      }).join('') +
+        '<div class="grp"><div class="grp-t">当前订单 ' + label(cur()) + '</div><div class="opts"><button class="btn s mut" data-act="op" data-v="prebill">' + ic('file-text', 1) + '打印预结单</button><button class="btn s mut" data-act="p-kitchen">' + ic('chef-hat', 1) + '补打厨房单</button></div></div>' +
+        '<div class="grp"><div class="grp-t">最近打印</div>' + JOBS.slice().reverse().slice(0, 8).map(function (j, i) {
+          var p = PRINTERS.filter(function (x) { return x.id === j.p; })[0];
+          return '<div class="pr-st"><span class="t">' + esc(j.what) + '<small class="mono">' + j.at + ' · ' + p.n + '</small></span>' + (j.ok ? '<span class="bd">已打印</span>' : '<span class="bd bad">失败</span><button class="btn s mut" data-act="p-retry" data-v="' + (JOBS.length - 1 - i) + '">重打</button>') + '</div>';
+        }).join('') + '</div></div>';
+    }, { w: 480 });
+  }
+  /* --- settings sheet --- */
+  function settingsSheet() {
+    sheet('settings', function () {
+      function g(key, opts) { return '<div class="opts">' + opts.map(function (x) { return '<button class="opt" role="radio" aria-checked="' + (SET[key] === x[0]) + '" data-set="' + key + '" data-v="' + x[0] + '">' + x[1] + (x[2] ? '<small>' + x[2] + '</small>' : '') + '</button>'; }).join('') + '</div>'; }
+      return head('设置', '只影响本机显示，不影响订单数据') + '<div class="mb">' +
+        '<div class="grp"><div class="grp-t">布局 <small>当前 ' + LAYOUTS[SET.cat + '-' + SET.order] + '</small></div><div class="hint" style="margin-bottom:6px">结单区</div>' + g('order', [['left', '左侧'], ['right', '右侧']]) +
+        '<div class="hint" style="margin:10px 0 6px">分类区</div>' + g('cat', [['top', '上方'], ['left', '左侧'], ['right', '右侧']]) + '</div>' +
+                '<div class="grp"><div class="grp-t">形状</div>' + g('shape', [['soft', 'A 圆润', '16 / 12px · 胶囊按钮'], ['sharp', 'B 犀利', '8px 圆角 · 墨色顶栏']]) + '</div>' +
+        '<div class="grp"><div class="grp-t">外观</div>' + g('appearance', [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']]) + '</div>' +
+        '<div class="grp"><div class="grp-t">密度</div>' + g('density', [['compact', '紧凑', '控件 44px'], ['standard', '标准', '控件 48px']]) + '</div>' +
+        '<div class="grp"><div class="grp-t">菜单视图</div>' + g('view', [['grid', '卡片'], ['list', '列表']]) + '</div>' +
+        '<div class="grp"><div class="set-row"><span>标注功能区<small>评审用：显示 Z1–Z6 的边界</small></span><button class="toggle" role="switch" data-set="zones" aria-checked="' + SET.zones + '" aria-label="标注功能区"></button></div></div>' +
+        '</div>';
+    }, { w: 460 });
+  }
+  /* --- pay --- */
+  function paySheet() {
+    M = { type: 'pay', method: S.online ? 'wechat' : 'cash', cash: '', done: false };
+    M.redraw = drawPay; drawPay();
+  }
+  function drawPay() {
+    var o = cur(), t = totals(o);
+    if (M.done) {
+      open(head('收款完成', '#' + M.no + ' · ' + M.label) + '<div class="mb"><div class="done"><span class="ring">' + ic('check') + '</span><div class="hint">' + M.label + ' 收款</div><strong>' + money(M.paid) + '</strong>' + (M.change > 0 ? '<div>找零 <b class="num">' + money(M.change) + '</b></div>' : '') +
+        '<div class="hint">' + (M.freed.length ? M.freed.join('、') + ' 已释放为空闲' : '') + '</div></div></div><div class="mf"><button class="btn l pri" data-act="after-pay">打开桌台</button></div>', { side: true, w: 520 });
+      return;
+    }
+    var methods = [['wechat', '微信', 'message-circle', 1], ['alipay', '支付宝', 'smartphone', 1], ['cash', '现金', 'banknote', 0], ['card', '银行卡', 'credit-card', 0], ['member', '会员余额', 'wallet', 0]];
+    var right = '<div class="due"><span class="hint">应收</span><span>' + money(t.due) + '</span></div>', ready = true, need = '';
+    if (M.method === 'cash') {
+      var cash = Math.round(parseFloat(M.cash || '0') * 100) || 0;
+      var q = [t.due, Math.ceil(t.due / 5000) * 5000, Math.ceil(t.due / 10000) * 10000].filter(function (v, i, a) { return a.indexOf(v) === i; });
+      right += '<div class="disp"><span class="hint">实收现金</span><span>' + money(cash) + '</span></div><div class="quick">' + q.map(function (v) { return '<button class="chip" style="background:var(--s2)" data-act="cash-set" data-v="' + (v / 100) + '">' + money(v) + '</button>'; }).join('') + '</div>' + keypad('.') +
+        '<div class="chg"><span>' + (cash >= t.due ? '找零' : '还差') + '</span><b>' + money(Math.abs(cash - t.due)) + '</b></div>';
+      ready = cash >= t.due; need = '还差 ' + money(t.due - cash) + '，收够现金后再确认';
+    } else if (M.method === 'member') {
+      var m = o.member;
+      right += m ? '<div class="scan">' + ic('wallet') + '<div>' + m.n + ' · 余额 ' + money(m.bal) + '</div><div>' + (m.bal >= t.due ? '扣款后余额 ' + money(m.bal - t.due) : '余额不足，请换一种方式') + '</div></div>' : '<div class="scan">' + ic('user-round') + '<div>当前订单还没绑定会员</div><button class="btn s soft" data-act="sheet" data-v="member">识别会员</button></div>';
+      ready = !!(m && m.bal >= t.due); need = m ? '会员余额不足，换一种支付方式' : '先识别会员，或换一种支付方式';
+    } else {
+      right += '<div class="scan">' + ic(M.method === 'card' ? 'credit-card' : 'scan-line') + '<div>' + (M.method === 'card' ? '请顾客在刷卡器上刷卡或挥卡' : '扫描顾客出示的付款码') + '</div></div>';
+    }
+    var np = pending(o).length;
+    if (np) right += '<p class="hint" style="color:var(--fg2);display:flex;gap:6px;align-items:center;margin:10px 0 0"><span class="dot"></span>还有 ' + np + ' 道菜未送厨，收款后自动送厨</p>';
+    open(head('结账', label(o) + ' · #' + o.no + ' · ' + t.items + ' 件') + '<div class="mb"><div class="pay"><div class="methods" role="radiogroup">' + methods.map(function (x) {
+      var off = x[3] && !S.online;
+      return '<button class="opt row" role="radio" aria-checked="' + (M.method === x[0]) + '" data-act="method" data-v="' + x[0] + '"' + (off ? ' disabled' : '') + '>' + ic(x[2]) + '<span class="grow"><span>' + x[1] + '</span>' + (off ? '<small>离线不可用</small>' : '') + '</span></button>';
+    }).join('') + '</div><div>' + right + '</div></div></div><div class="mf">' + (ready ? '<button class="btn l pay split" data-act="pay-ok"><span>确认收款</span><span class="meta">' + money(t.due) + '</span></button>' : '<div class="need">' + need + '</div>') + '</div>', { side: true, w: 600 });
+  }
+
+  /* ================= order ops ================= */
+  function addLine(d, spec, unit, qty, note) {
+    var o = cur(), hit = o.lines.filter(function (l) { return l.st === 'new' && l.did === d.id && l.spec === spec && l.note === note && !l.gift; })[0];
+    if (hit) { hit.qty += qty; S.flash = hit.uid; } else { var l = L(d.id, qty, 'new', { spec: spec, unit: unit, note: note }); o.lines.push(l); S.flash = l.uid; }
+    if (d.stock) d.stock = Math.max(0, d.stock - qty);
+    S.exp = null; render();
+  }
+  function station(l) { return STATION[byId[l.did].cat] || 'hot'; }
+  function printKitchen(lines, tag) {
+    var groups = {}; lines.forEach(function (l) { var s = station(l); groups[s] = (groups[s] || 0) + 1; });
+    var fails = [];
+    Object.keys(groups).forEach(function (s) {
+      var p = PRINTERS.filter(function (x) { return x.id === s; })[0], ok = p.st === 'ok';
+      JOBS.push({ at: hhmm(), p: s, what: '#' + cur().no + ' ' + (tag || '厨房单') + ' · ' + groups[s] + ' 道', ok: ok });
+      if (!ok) fails.push(p.n);
+    });
+    return fails;
+  }
+  function send() {
+    var o = cur(), np = pending(o); if (!np.length) return;
+    var at = hhmm(); np.forEach(function (l) { l.st = 'sent'; l.sentAt = at; });
+    o.lines = o.lines.filter(function (l) { return l.st === 'new'; }).concat(o.lines.filter(function (l) { return l.st !== 'new'; }));
+    S.exp = null;
+    if (!S.online) { S.queue++; render(); toast('离线中，送厨单已存入队列，联网后自动发送', 'wifi-off', true); return; }
+    var fails = printKitchen(np);
+    render();
+    if (fails.length) toast('已送厨 ' + np.length + ' 道，' + fails.join('、') + ' 打印失败，请到打印面板重打', 'printer', 'bad');
+    else toast('已送厨 ' + np.length + ' 道菜', 'chef-hat');
+  }
+  function newWalkIn() { var o = O(S.seq++, null, 1, 0, []); ORDERS.push(o); S.cur = o.no; return o; }
+  function freeTable(id) { var t = T(id); t.status = 'free'; t.order = null; t.merged = null; TABLES.forEach(function (x) { if (x.merged === id) { x.status = 'free'; x.order = null; x.merged = null; } }); }
+
+  /* ================= events ================= */
+  var press = null, tilesEl = $('tiles');
+  tilesEl.addEventListener('pointerdown', function (e) { var t = e.target.closest('.tile'); if (!t) return; press = { long: false, timer: setTimeout(function () { press.long = true; var d = byId[t.dataset.id]; if (d.stock !== 0) openSpec(d); }, 480) }; });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { tilesEl.addEventListener(ev, function () { if (press) clearTimeout(press.timer); }); });
+  tilesEl.addEventListener('contextmenu', function (e) { if (e.target.closest('.tile')) e.preventDefault(); });
+  tilesEl.addEventListener('click', function (e) {
+    var t = e.target.closest('.tile'); if (!t) return;
+    if (press && press.long) { press = null; return; }
+    var d = byId[t.dataset.id];
+    if (d.stock === 0) { toast(d.n + ' 已沽清', 'circle-slash', true); return; }
+    if (d.spec) openSpec(d); else addLine(d, '', d.p, 1, '');
+  });
+
+  function setSetting(k, v) {
+    if (k === 'zones') SET.zones = !SET.zones; else SET[k] = v;
+    save(); applyLook(); render();
+  }
+
+  document.addEventListener('click', function (e) {
+    var s = e.target.closest('[data-set]');
+    if (s) { setSetting(s.dataset.set, s.dataset.v); return; }
+    if (e.target === layer) { if (M && M.type !== 'spec' && M.type !== 'pay') close(); return; }
+    var a = e.target.closest('[data-act]'); if (!a || !app.contains(a)) return;
+    var act = a.dataset.act, v = a.dataset.v, o = cur(), l;
+    switch (act) {
+      case 'sheet':
+        if (v === 'tables') tablesSheet(); else if (v === 'orders') ordersSheet(); else if (v === 'member') memberSheet(); else if (v === 'net') netSheet(); else if (v === 'print') printSheet(); else if (v === 'settings') settingsSheet();
+        app.classList.remove('cart-open'); break;
+      case 'close': close(); break;
+      case 'cat': S.cat = v; S.q = ''; $('q').value = ''; render(); break;
+      case 'filter': S.filter = v; render(); break;
+      case 'view': SET.view = v; save(); render(); break;
+      case 'clear-q': S.q = ''; $('q').value = ''; render(); break;
+      case 'mode': o.type = v; render(); break;
+      case 'line':
+        l = lineBy(a.dataset.uid); if (!l) break;
+        if (S.sel) { if (l.st === 'void') break; var i = S.sel.ids.indexOf(l.uid); if (i > -1) S.sel.ids.splice(i, 1); else S.sel.ids.push(l.uid); renderDock(); icons(); break; }
+        if (e.target.closest('[data-stop]') || l.st === 'void') break;
+        S.exp = S.exp === l.uid ? null : l.uid; renderDock(); icons(); break;
+      case 'qty':
+        l = lineBy(a.dataset.uid); l.qty += +a.dataset.d;
+        if (l.qty < 1) { l.qty = 1; confirmBox('删除这道菜？', esc(l.name) + ' 还没送厨，删除后不会通知厨房。', '删除', function () { o.lines = o.lines.filter(function (x) { return x !== l; }); S.exp = null; }); break; }
+        render(); break;
+      case 'del': l = lineBy(a.dataset.uid); o.lines = o.lines.filter(function (x) { return x !== l; }); S.exp = null; render(); toast('已删除 ' + l.name, 'trash-2'); break;
+      case 'note':
+        l = lineBy(a.dataset.uid); M = { type: 'note', uid: l.uid };
+        open(head('备注', esc(l.name)) + '<div class="mb"><div class="opts">' + NOTES.map(function (n) { return '<button class="opt" style="min-width:0" data-act="note-chip" data-v="' + n + '">' + n + '</button>'; }).join('') + '</div><input class="in" id="line-note" style="margin-top:10px" value="' + esc(l.note) + '" placeholder="例如：先上这道"></div><div class="mf"><button class="btn pri" data-act="note-ok">保存</button></div>', { sm: true });
+        break;
+      case 'note-chip': var inp = $('line-note'); inp.value = inp.value ? inp.value + ' · ' + v : v; break;
+      case 'note-ok': lineBy(M.uid).note = $('line-note').value.trim(); close(); render(); break;
+      case 'gift':
+        l = lineBy(a.dataset.uid);
+        if (l.gift) { l.gift = false; render(); toast('已取消赠送', 'gift'); break; }
+        auth('赠送 ' + l.name + ' ×' + l.qty, function () { l.gift = true; S.exp = null; render(); toast('已赠送 ' + l.name, 'gift'); });
+        break;
+      case 'rush': l = lineBy(a.dataset.uid); l.rush = true; S.exp = null; render(); toast('已通知厨房催 ' + l.name, 'zap'); break;
+      case 'void':
+        l = lineBy(a.dataset.uid);
+        auth('退菜 ' + l.name + ' ×' + l.qty, function () {
+          confirmBox('退菜', esc(l.name) + ' ×' + l.qty + ' 已送厨，退菜会通知厨房，并记入退菜报表。选择原因：', '确认退菜', function (m) { l.st = 'void'; l.reason = m.reason; S.exp = null; },
+            '<div class="opts">' + ['上错菜', '客人退菜', '菜品质量', '等待太久'].map(function (r, i) { return '<button class="opt" style="min-width:0" role="radio" aria-checked="' + (i === 1) + '" data-act="reason" data-v="' + r + '">' + r + '</button>'; }).join('') + '</div>');
+          M.reason = '客人退菜';
+        });
+        break;
+      case 'reason': M.reason = v; Array.prototype.forEach.call(layer.querySelectorAll('[data-act="reason"]'), function (b) { b.setAttribute('aria-checked', String(b === a)); }); break;
+      case 'confirm-ok': var m = M; close(); m.ok(m); render(); break;
+      case 'key':
+        var k = a.dataset.k;
+        if (M.type === 'auth') {
+          if (k === 'del') M.pin = M.pin.slice(0, -1); else if (M.pin.length < 4) M.pin += k;
+          M.err = '';
+          if (M.pin.length === 4) { if (M.pin === '1234') { var fn = M.fn; close(); fn(); break; } M.err = '授权码不对，再试一次'; M.pin = ''; }
+          M.redraw();
+        } else if (M.type === 'pay') {
+          if (k === 'del') M.cash = M.cash.slice(0, -1);
+          else if (k === '.' && M.cash.indexOf('.') > -1) break;
+          else if (/\.\d\d$/.test(M.cash) || M.cash.length >= 8) break;
+          else M.cash = (M.cash === '0' && k !== '.' ? '' : M.cash) + k;
+          drawPay();
+        } else if (M.name === 'member') M.key(k);
+        break;
+      case 'round': o.roundOff = !o.roundOff; render(); break;
+      case 'sum': S.sumOpen = !S.sumOpen; render(); break;
+      case 'hold':
+        if (!live(o).length) { toast('订单是空的，不需要挂单', 'info'); break; }
+        if (o.table) { toast('堂食订单留在桌台上，不需要挂单。外带和外卖订单才能挂起', 'info'); break; }
+        o.status = 'held'; o.heldAt = hhmm(); toast('已挂单 ' + label(o), 'pause'); newWalkIn(); S.exp = null; render(); break;
+      case 'send': send(); break;
+      case 'pay': app.classList.remove('cart-open'); paySheet(); break;
+      case 'method': M.method = v; M.cash = ''; drawPay(); break;
+      case 'cash-set': M.cash = v; drawPay(); break;
+      case 'pay-ok':
+        var t = totals(o), cash = Math.round(parseFloat(M.cash || '0') * 100) || 0;
+        var labels = { wechat: '微信', alipay: '支付宝', cash: '现金', card: '银行卡', member: '会员余额' };
+        var np = pending(o); np.forEach(function (x) { x.st = 'sent'; x.sentAt = '结账'; });
+        if (np.length && S.online) printKitchen(np);
+        if (M.method === 'member') o.member.bal -= t.due;
+        JOBS.push({ at: hhmm(), p: 'front', what: '#' + o.no + ' 结账单', ok: true });
+        o.status = 'paid'; o.paidAt = hhmm(); o.paid = t.due;
+        var freed = [];
+        if (o.table) { freed = [o.table].concat(TABLES.filter(function (x) { return x.merged === o.table; }).map(function (x) { return x.id; })); freeTable(o.table); }
+        M.done = true; M.no = o.no; M.paid = t.due; M.label = labels[M.method]; M.change = M.method === 'cash' ? cash - t.due : 0; M.freed = freed;
+        newWalkIn(); render(); break;
+      case 'after-pay': close(); tablesSheet(); break;
+      case 'opt':
+        var gi = +a.dataset.g, ki = +a.dataset.k, g = M.groups[gi];
+        if (g.multi) { var arr = M.sel[gi], p = arr.indexOf(ki); if (p > -1) arr.splice(p, 1); else arr.push(ki); } else M.sel[gi] = ki;
+        M.text = $('spec-note').value; drawSpec(); break;
+      case 'mnote': var ni = M.notes.indexOf(v); if (ni > -1) M.notes.splice(ni, 1); else M.notes.push(v); M.text = $('spec-note').value; drawSpec(); break;
+      case 'mqty': M.qty = Math.max(1, M.qty + +a.dataset.d); M.text = $('spec-note').value; drawSpec(); break;
+      case 'spec-add':
+        var txt = $('spec-note').value.trim(), note = M.notes.concat(txt ? [txt] : []).join(' · ');
+        var dd = M.d, sp = specText(), pr = specPrice(), qq = M.qty; close(); addLine(dd, sp, pr, qq, note); break;
+      case 'gq': M.g = Math.max(1, M.g + +a.dataset.d); M.redraw(); break;
+      case 'guests-ok': var gf = M.fn, gv = M.g; close(); gf(gv); break;
+      /* table ops */
+      case 'ops': opsMenu(); break;
+      case 'op':
+        if (v === 'guests') { close(); guestsBox('改人数', o.guests, '保存', function (n) { o.guests = n; render(); toast('已改为 ' + n + ' 人', 'users'); }); }
+        else if (v === 'switch' || v === 'merge') { close(); tablesSheet(v); }
+        else if (v === 'move' || v === 'split') {
+          close();
+          if (!live(o).length) { toast('订单里还没有菜品', 'info'); break; }
+          S.sel = { mode: v, ids: [] }; S.exp = null; app.classList.add('cart-open'); render();
+        }
+        else if (v === 'combine') { close(); ordersSheet(); }
+        else if (v === 'prebill') { JOBS.push({ at: hhmm(), p: 'front', what: '#' + o.no + ' 预结单', ok: true }); if (M && M.name !== 'print') close(); render(); toast('预结单已发送到前台小票机', 'printer'); }
+        else if (v === 'clear-table') {
+          close();
+          if (live(o).length) { toast('还有未结账的菜品，不能清台。先结账或退菜', 'info', true); break; }
+          var id = o.table; freeTable(id); o.status = 'paid'; o.paid = 0; o.paidAt = hhmm(); newWalkIn(); render(); toast(id + ' 已清台', 'eraser');
+        }
+        break;
+      case 'sel-cancel': S.sel = null; render(); break;
+      case 'sel-next':
+        if (S.sel.mode === 'split') {
+          var ids = S.sel.ids, moved = o.lines.filter(function (x) { return ids.indexOf(x.uid) > -1; });
+          o.lines = o.lines.filter(function (x) { return ids.indexOf(x.uid) < 0; });
+          var no = O(S.seq++, null, 1, 0, moved, { status: 'held', heldAt: hhmm() }); no.type = o.type; ORDERS.push(no);
+          S.sel = null; render(); toast('已拆出新订单 #' + no.no + '（' + moved.length + ' 道），在订单面板的「挂起」里', 'split');
+        } else { tablesSheet('move'); }
+        break;
+      case 'tb':
+        var tb = T(v);
+        if (M && M.pick) {
+          var pk = M.pick; close();
+          if (pk === 'switch') { var from = o.table; tb.status = T(from).status; tb.order = o.no; TABLES.forEach(function (x) { if (x.merged === from) x.merged = v; }); T(from).status = 'free'; T(from).order = null; o.table = v; render(); toast('已从 ' + from + ' 换到 ' + v, 'arrow-right-left'); }
+          else if (pk === 'merge') { var other = ord(tb.order); other.lines.forEach(function (x) { x.moved = '来自 ' + v; }); o.lines = o.lines.concat(other.lines); o.guests += other.guests; other.lines = []; other.status = 'paid'; other.paid = 0; other.paidAt = hhmm(); tb.merged = o.table; tb.order = null; render(); toast(v + ' 已并入 ' + o.table + '，一起结账', 'merge'); }
+          else if (pk === 'move') { var tgt = ord(tb.order), ids2 = S.sel.ids, mv = o.lines.filter(function (x) { return ids2.indexOf(x.uid) > -1; }); o.lines = o.lines.filter(function (x) { return ids2.indexOf(x.uid) < 0; }); mv.forEach(function (x) { x.moved = '转自 ' + (o.table || '#' + o.no); }); tgt.lines = tgt.lines.concat(mv); S.sel = null; render(); toast('已把 ' + mv.length + ' 道菜转到 ' + v, 'forward'); }
+          break;
+        }
+        if (tb.merged) { toast(v + ' 已并入 ' + tb.merged, 'merge'); break; }
+        if (tb.status === 'free' || tb.status === 'reserved') {
+          guestsBox('开台 · ' + v, tb.status === 'reserved' ? 6 : Math.min(tb.seats, 2), '开台', function (n) { var no = O(S.seq++, v, n, 0, []); ORDERS.push(no); tb.status = 'dining'; tb.order = no.no; tb.note = ''; S.cur = no.no; S.sel = null; render(); toast(v + ' 已开台 · ' + n + ' 人', 'utensils'); });
+        } else { S.cur = tb.order; S.sel = null; S.exp = null; close(); render(); toast('已切换到 ' + v, 'layout-grid'); }
+        break;
+      case 'area': M.setArea(v); break;
+      case 'pick-cancel': close(); if (S.sel) { S.sel = null; render(); } break;
+      case 'otab': M.setTab(v); break;
+      case 'opick': if (a.getAttribute('aria-disabled') === 'true') break; M.toggle(+v); break;
+      case 'oopen':
+        var target = ord(+v); if (target.status === 'held') target.status = 'open';
+        S.cur = target.no; close(); render(); toast('已打开 ' + label(target), 'receipt'); break;
+      case 'combine':
+        var picked = M.picked().slice(), n2 = 0;
+        picked.forEach(function (no) { var x = ord(no); x.lines.forEach(function (ln) { ln.moved = '合自 ' + label(x); }); n2 += x.lines.length; o.lines = o.lines.concat(x.lines); x.lines = []; x.status = 'paid'; x.paid = 0; x.paidAt = hhmm(); if (x.table) freeTable(x.table); });
+        close(); render(); toast('已合并 ' + picked.length + ' 张订单（' + n2 + ' 道）到 ' + label(o), 'layers'); break;
+      case 'reprint': JOBS.push({ at: hhmm(), p: 'front', what: '#' + v + ' 结账单（补打）', ok: true }); toast('已补打 #' + v + ' 结账单', 'printer'); break;
+      case 'm-sample': M.sample(); break;
+      case 'm-find': M.find(); break;
+      case 'm-unbind': o.member = null; o.coupon = null; render(); toast('已解除会员绑定', 'user-round'); break;
+      case 'm-topup': toast('充值在会员中心办理，原型未包含', 'info'); break;
+      case 'coupon': var c = COUPONS.filter(function (x) { return x.id === v; })[0]; o.coupon = o.coupon && o.coupon.id === v ? null : c; render(); break;
+      case 'net-toggle':
+        S.online = !S.online;
+        if (S.online && S.queue) { var qn = S.queue; S.queue = 0; S.lastSync = hhmm(); render(); toast('已恢复联网，' + qn + ' 张送厨单已发送', 'wifi'); }
+        else { render(); toast(S.online ? '已恢复联网' : '已断网，进入离线模式', S.online ? 'wifi' : 'wifi-off', !S.online); }
+        break;
+      case 'net-sync': S.queue = 0; S.lastSync = hhmm(); render(); toast('同步完成', 'refresh-cw'); break;
+      case 'p-fix':
+        PRINTERS.forEach(function (p) { if (p.id === v) p.st = 'ok'; }); render(); toast('已标记为正常，可以重打失败的单据', 'printer'); break;
+      case 'p-test': var pp = PRINTERS.filter(function (x) { return x.id === v; })[0]; JOBS.push({ at: hhmm(), p: v, what: '测试页', ok: pp.st === 'ok' }); render(); toast(pp.st === 'ok' ? pp.n + ' 测试页已打印' : pp.n + ' 打印失败', 'printer', pp.st !== 'ok'); break;
+      case 'p-retry':
+        var j = JOBS[+v], pj = PRINTERS.filter(function (x) { return x.id === j.p; })[0];
+        if (pj.st !== 'ok') { toast(pj.n + ' 仍然缺纸，换纸后再重打', 'printer', true); break; }
+        j.ok = true; j.at = hhmm(); render(); toast('已重打', 'printer'); break;
+      case 'p-kitchen':
+        var sent = live(o).filter(function (x) { return x.st === 'sent'; });
+        if (!sent.length) { toast('当前订单还没有已送厨的菜品', 'info'); break; }
+        var f2 = printKitchen(sent, '厨房单（补打）'); render(); toast(f2.length ? f2.join('、') + ' 打印失败' : '已补打厨房单', 'printer', !!f2.length); break;
+      case 'cart-open': app.classList.add('cart-open'); break;
+      case 'cart-close': app.classList.remove('cart-open'); break;
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('q').focus(); }
+    if (e.key === 'Escape' && !layer.hidden) close();
+    if ((e.key === 'Enter' || e.key === ' ') && document.activeElement.classList.contains('ln')) { e.preventDefault(); document.activeElement.click(); }
+  });
+  $('q').addEventListener('input', function (e) { S.q = e.target.value; renderRail(); renderMenu(); icons(); });
+
+  /* ================= boot ================= */
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    var w = app.clientWidth, n = w < 960, mid = w < 1280;
+    app.classList.toggle('mid', mid);
+    if (n !== S.narrow) { S.narrow = n; app.classList.toggle('narrow', n); if (!n) app.classList.remove('cart-open'); applyLayout(); }
+  }).observe(app);
+  new MutationObserver(function () { app.dataset.dark = String(isDark()); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (window.matchMedia) { var mq = window.matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', function () { app.dataset.dark = String(isDark()); }); }
+  setInterval(function () { renderSys(); icons(); }, 30000);
+  applyLook(); render();
+})();
+</script>

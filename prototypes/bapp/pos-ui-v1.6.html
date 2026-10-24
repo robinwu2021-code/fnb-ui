@@ -1,0 +1,63 @@
+<!doctype html><html lang="zh-CN" data-ver="1.6" data-skin="pine" data-font="inter" data-frame="f14" data-btn="b8" data-density="compact" data-colors="v2" data-tone="quiet"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>全线点餐 POS · UI 原型 v1.6</title>
+<!-- v1.6：在 v1（pos-ui.html）基础上叠加 pos-v16.css；脚本沿用 ui/*.js，本页只加三段补丁（存档分开、固定 v1.5 设置、收窄切换项），v1 文件不改。样式只在 proto.css：组件用「UI 组件方案」一段（sh-* / dn-*），外壳用「UI 原型」一段。本页只写内容和交互。 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="proto.css">
+<link rel="stylesheet" href="pos-colors.css">
+<link rel="stylesheet" href="pos-v16.css?v=20261024c">
+<script src="pos-states.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<div class="wrap wrap--wide">
+<header class="top">
+  <div class="eyebrow">全线点餐 POS · UI 原型 · v1.6 · 2026-10-24</div>
+  <h1>全线点餐 POS · UI 原型 v1.6</h1>
+  <p class="sub">用《UI 组件方案 v1.6》的组件拼成的收银平板，交互和数据与 v1（<a href="pos-ui.html">pos-ui.html</a>）、v1.5（<a href="pos-ui-v1.5.html">pos-ui-v1.5.html</a>）相同。黑白灰 + 松绿；按钮、选中、当前桌和状态都不用黑色。形状、字体、色系固定。所有数据都是本地示例。</p>
+  <div class="pd-switch" id="sw"></div>
+</header>
+<div class="ui-stage" id="stage"><div class="pc ui-dev" id="dev"></div></div>
+<p class="credits">图片来源 Photo credits（Wikimedia Commons，图片从 Wikimedia 服务器直接加载，未改动）：<a href="https://commons.wikimedia.org/wiki/File:Kung_Pao_Chicken_at_Yujiayan_Restaurant_(20230510123120).jpg">宫保鸡丁</a>：N509FZ，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:Shuizhuyu_at_Hamarkand_Silk_Road_Cuisine,_Beiqinglu_(20230121154615).jpg">水煮鱼</a>：N509FZ，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:%E6%B9%98%E8%8F%9C%E9%A6%86%E4%B9%8B%E5%B0%8F%E7%82%92%E9%BB%84%E7%89%9B%E8%82%89.jpg">小炒黄牛肉</a>：Liuxingy，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:Chen_Mapo_Tofu.jpg">麻婆豆腐</a>：ZhengZhou，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:%E9%85%B8%E8%8F%9C%E9%B1%BC_Preserved_Mustard_Green_with_Fish_-_Charming_Spice_AUD24.80_(4104355401).jpg">酸菜鱼</a>：Alpha from Melbourne, Australia，CC BY-SA 2.0 · <a href="https://commons.wikimedia.org/wiki/File:Fuqi_Feipian.jpg">夫妻肺片</a>：ZhengZhou，CC BY-SA 4.0 · <a href="https://commons.wikimedia.org/wiki/File:Dan-dan_noodles,_Shanghai.jpg">担担面</a>：Steven G. Johnson，CC BY-SA 3.0 · <a href="https://commons.wikimedia.org/wiki/File:Sour_plum_drink.jpg">酸梅汤</a>：用心阁/Yongxinge，CC BY-SA 3.0。</p>
+<footer>组件见 pos-components-v1.6.html · 方案见 docs/全线点餐POS-UI组件方案-v1.6.md · 样式见 proto.css + pos-v16.css · v1.5 见 pos-ui-v1.5.html · v1 见 pos-ui.html</footer>
+</div>
+<script>
+/* v1.6 补丁 1：存档和 v1 分开。core.js / app.js 固定读写 localStorage 的 'pos-ui'，这里把它映射到 'pos-ui-v16'。 */
+(function () {
+  var g = Storage.prototype.getItem, s = Storage.prototype.setItem;
+  Storage.prototype.getItem = function (k) { return g.call(this, k === 'pos-ui' ? 'pos-ui-v16' : k); };
+  Storage.prototype.setItem = function (k, v) { return s.call(this, k === 'pos-ui' ? 'pos-ui-v16' : k, v); };
+})();
+</script>
+<script src="ui/core.js"></script>
+<script>
+/* v1.6 补丁 2：固定字体、形状、色彩与色系；没存过皮肤时默认松绿 */
+(function () {
+  var saved = {}; try { saved = JSON.parse(localStorage.getItem('pos-ui') || '{}'); } catch (e) {}
+  if (!saved.skin || saved.skin === 'mono') S.skin = 'pine';
+  S.font = 'inter'; S.frame = 'f14'; S.btn = 'b8'; S.colors = 'v2'; S.tone = 'quiet';
+})();
+</script>
+<script src="ui/layout.js"></script>
+<script src="ui/modules/order.js"></script>
+<script src="ui/modules/tables.js"></script>
+<script src="ui/modules/checkout.js"></script>
+<script src="ui/modules/orders.js"></script>
+<script src="ui/modules/menu.js"></script>
+<script src="ui/modules/members.js"></script>
+<script src="ui/modules/reports.js"></script>
+<script src="ui/modules/shift.js"></script>
+<script src="ui/modules/settings.js"></script>
+<script src="ui/i18n.js"></script>
+<script src="ui/app.js"></script>
+<script>
+/* v1.6 补丁 3：皮肤列表加松绿；页首去掉已固定的开关（色彩、色系、字体、形状方案、框架圆角、按钮形状），重新渲染 */
+(function () {
+  SKINS.unshift(['pine', '松绿', '#306F5F']); for (var i = SKINS.length - 1; i >= 0; i--) if (SKINS[i][0] === 'mono') SKINS.splice(i, 1);   /* v1.6：不提供墨黑 */
+  var ts = translateStatic; translateStatic = function (en) { ts(en); document.title = (en ? 'Dining POS · UI Prototype' : '全线点餐 POS · UI 原型') + ' v1.6'; };
+  var FIXED = ['色彩', '色系', '字体', '形状方案', '框架圆角', '按钮形状'], base = switches;
+  switches = function () {
+    var box = document.createElement('div'); box.innerHTML = base();
+    Array.prototype.forEach.call(box.querySelectorAll(':scope > .row'), function (r) { var l = r.querySelector('span'); if (l && FIXED.indexOf(l.textContent.trim()) > -1) r.remove(); });
+    return box.innerHTML;
+  };
+  render();
+})();
+</script>

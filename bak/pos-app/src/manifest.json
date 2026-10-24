@@ -1,0 +1,12 @@
+{
+  "name": "餐饮 POS",
+  "appid": "",
+  "description": "餐饮 POS 骨架：布局切换与组件风格切换",
+  "versionName": "0.1.0",
+  "versionCode": "1",
+  "transformPx": false,
+  "h5": { "title": "餐饮 POS", "router": { "mode": "hash" } },
+  "app-plus": { "usingComponents": true, "compilerVersion": 3, "screenOrientation": ["landscape-primary", "landscape-secondary"] },
+  "mp-weixin": { "appid": "", "usingComponents": true, "setting": { "urlCheck": false } },
+  "vueVersion": "3"
+}

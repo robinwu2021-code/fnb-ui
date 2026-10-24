@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设计风格对比 · 点餐 POS</title>
+<!-- 独立对比稿：同一套点餐 POS 内容，用 6 种业界风格分别渲染。不引用、不修改 bapp/ 下的正式稿。
+     ?b=1..4 只显示单张对比图，供导出 PNG。 -->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e4e4e8;font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;color:#111;padding:32px}
+.board{width:1680px;margin:0 auto 40px;background:#fff;border-radius:20px;padding:36px 40px 40px}
+.board>h1{font-size:28px;font-weight:700;letter-spacing:-.01em}
+.board>p.lead{font-size:15px;color:#666;margin:6px 0 26px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:28px 24px}
+.label{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.label b{font-size:17px}
+.label span{font-size:13px;color:#777}
+.tags{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.tags i{font-style:normal;font-size:12px;padding:3px 8px;border-radius:6px;background:#f1f1f3;color:#444}
+body.single{padding:0;background:#fff}
+body.single .board{margin:0;border-radius:0}
+
+/* ── 风格 token ─────────────────────────────────────────── */
+.s-apple{--canvas:#f2f2f7;--panel:#fff;--card:#f2f2f7;--ink:#1c1c1e;--sub:#8e8e93;--line:#e5e5ea;
+  --pri:#007aff;--pri-fg:#fff;--sec-bg:#e9e9ee;--sec-fg:#007aff;--cat-on-bg:#e5e5ea;--cat-on-fg:#1c1c1e;
+  --r-panel:16px;--r-card:12px;--r-btn:12px;--r-chip:9px;--font:-apple-system,"SF Pro Text","PingFang SC",sans-serif;--fw-title:600;
+  --panel-bd:none;--panel-sh:0 1px 2px rgba(0,0,0,.04);--card-bd:none;--card-sh:0 0 #0000;--on-ring:0 0 0 2px #007aff;
+  --ok:#34c759;--warn:#ff9500;--bad:#ff3b30;--info:#007aff;--tag-style:soft}
+.s-m3{--canvas:#fef7ff;--panel:#f7f2fa;--card:#ece6f0;--ink:#1d1b20;--sub:#49454f;--line:#cac4d0;
+  --pri:#6750a4;--pri-fg:#fff;--sec-bg:#e8def8;--sec-fg:#1d192b;--cat-on-bg:#e8def8;--cat-on-fg:#1d192b;
+  --r-panel:24px;--r-card:16px;--r-btn:999px;--r-chip:8px;--font:Roboto,"PingFang SC",sans-serif;--fw-title:500;
+  --panel-bd:none;--panel-sh:none;--card-bd:none;--card-sh:0 0 #0000;--on-ring:0 0 0 2px #6750a4;
+  --ok:#386a20;--warn:#7d5700;--bad:#b3261e;--info:#6750a4}
+.s-uber{--canvas:#fff;--panel:#fff;--card:#f3f3f3;--ink:#000;--sub:#5e5e5e;--line:#e8e8e8;
+  --pri:#000;--pri-fg:#fff;--sec-bg:#eee;--sec-fg:#000;--cat-on-bg:#000;--cat-on-fg:#fff;
+  --r-panel:0px;--r-card:8px;--r-btn:8px;--r-chip:999px;--font:"Helvetica Neue","PingFang SC",sans-serif;--fw-title:700;
+  --panel-bd:none;--panel-sh:none;--card-bd:none;--card-sh:0 0 #0000;--on-ring:0 0 0 3px #000;
+  --ok:#05944f;--warn:#ffc043;--bad:#e11900;--info:#276ef1}
+.s-glass{--canvas:#8ea6ff;--panel:rgba(255,255,255,.26);--card:rgba(255,255,255,.34);--ink:#141433;--sub:rgba(20,20,51,.62);--line:rgba(255,255,255,.5);
+  --pri:linear-gradient(135deg,#7b5cff,#ff6fa8);--pri-fg:#fff;--sec-bg:rgba(255,255,255,.45);--sec-fg:#141433;--cat-on-bg:rgba(255,255,255,.7);--cat-on-fg:#141433;
+  --r-panel:22px;--r-card:16px;--r-btn:14px;--r-chip:12px;--font:-apple-system,"PingFang SC",sans-serif;--fw-title:600;
+  --panel-bd:1px solid rgba(255,255,255,.55);--panel-sh:0 8px 32px rgba(40,30,120,.18);--card-bd:1px solid rgba(255,255,255,.5);--card-sh:0 0 #0000;--on-ring:0 0 0 2px #fff;
+  --ok:#0f9d6b;--warn:#c76b00;--bad:#d6264f;--info:#4a3cd6}
+.s-brutal{--canvas:#fff1c9;--panel:#fff;--card:#fff;--ink:#000;--sub:#333;--line:#000;
+  --pri:#ff5c35;--pri-fg:#000;--sec-bg:#b8f0ff;--sec-fg:#000;--cat-on-bg:#c6f432;--cat-on-fg:#000;
+  --r-panel:8px;--r-card:6px;--r-btn:6px;--r-chip:6px;--font:"Arial Black","PingFang SC",sans-serif;--fw-title:900;
+  --panel-bd:2.5px solid #000;--panel-sh:4px 4px 0 #000;--card-bd:2px solid #000;--card-sh:3px 3px 0 #000;--on-ring:0 0 0 0 #000;
+  --ok:#2ed47a;--warn:#ffd23f;--bad:#ff5c35;--info:#7aa2ff}
+.s-dark{--canvas:#08080b;--panel:#111115;--card:#18181d;--ink:#ededf0;--sub:#8a8a95;--line:#26262d;
+  --pri:#5e6ad2;--pri-fg:#fff;--sec-bg:#1f1f25;--sec-fg:#ededf0;--cat-on-bg:#24242b;--cat-on-fg:#fff;
+  --r-panel:10px;--r-card:8px;--r-btn:7px;--r-chip:6px;--font:Inter,"PingFang SC",sans-serif;--fw-title:550;
+  --panel-bd:1px solid #22222a;--panel-sh:none;--card-bd:1px solid #24242b;--card-sh:0 0 #0000;--on-ring:0 0 0 1.5px #5e6ad2;
+  --ok:#4cb782;--warn:#f2c94c;--bad:#eb5757;--info:#5e6ad2}
+
+/* 玻璃态的彩色背景 */
+.s-glass.surface{background:
+  radial-gradient(circle at 15% 20%,#ff9bd0 0,transparent 38%),
+  radial-gradient(circle at 85% 15%,#7ee8fa 0,transparent 40%),
+  radial-gradient(circle at 70% 90%,#ffd36e 0,transparent 42%),
+  linear-gradient(135deg,#7b6cff,#a77bff)}
+.s-glass :is(.pnl,.dish,.chip,.btn-sec,.stepper,.pay,.modal){backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
+
+/* ── 通用骨架 ─────────────────────────────────────────── */
+.surface{background:var(--canvas);color:var(--ink);font-family:var(--font)}
+.pos{position:relative;width:100%;aspect-ratio:16/10.4;border-radius:14px;overflow:hidden;padding:10px;display:flex;flex-direction:column;gap:8px;font-size:11px}
+.s-uber.pos{padding:0;gap:0}
+.pnl{background:var(--panel);border-radius:var(--r-panel);border:var(--panel-bd);box-shadow:var(--panel-sh)}
+.top{height:38px;display:flex;align-items:center;gap:10px;padding:0 12px;flex:none}
+.top .brand{font-weight:var(--fw-title);font-size:13px}
+.top .tbl{padding:3px 8px;border-radius:var(--r-chip);background:var(--sec-bg);color:var(--sec-fg);font-weight:600}
+.top .search{margin-left:auto;width:120px;height:24px;border-radius:var(--r-btn);background:var(--card);border:var(--card-bd);display:flex;align-items:center;padding:0 8px;color:var(--sub)}
+.s-uber .top{border-bottom:1px solid var(--line);height:44px}
+.s-uber .top .brand{font-size:15px}
+.body{flex:1;min-height:0;display:grid;grid-template-columns:70px 1fr 152px;gap:8px}
+.s-uber .body{gap:0}
+.s-uber .cats{border-right:1px solid var(--line)}
+.s-uber .cart{border-left:1px solid var(--line);background:#fff}
+.cats{padding:8px 6px;display:flex;flex-direction:column;gap:4px}
+.cat{padding:8px 6px;border-radius:var(--r-chip);text-align:center;color:var(--sub);font-weight:500}
+.cat.on{background:var(--cat-on-bg);color:var(--cat-on-fg);font-weight:700}
+.s-brutal .cat.on{border:2px solid #000}
+.menu{padding:8px;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:7px}
+.dish{position:relative;background:var(--card);border-radius:var(--r-card);border:var(--card-bd);box-shadow:var(--card-sh);padding:8px;display:flex;flex-direction:column;justify-content:space-between}
+.dish .n{font-weight:600;font-size:11.5px;line-height:1.25}
+.dish .p{color:var(--sub);font-size:11px}
+.s-uber .dish .n{font-weight:700}
+.dish.on{box-shadow:var(--on-ring),var(--card-sh)}
+.s-brutal .dish.on{background:#c6f432}
+.badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--pri);color:var(--pri-fg);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.s-brutal .badge{border:2px solid #000}
+.cart{padding:10px;display:flex;flex-direction:column;gap:6px}
+.cart h4{font-size:12px;font-weight:var(--fw-title);display:flex;justify-content:space-between}
+.line{display:flex;justify-content:space-between;color:var(--ink)}
+.line em{font-style:normal;color:var(--sub)}
+.total{margin-top:auto;border-top:1px solid var(--line);padding-top:7px;display:flex;justify-content:space-between;align-items:baseline}
+.total b{font-size:16px;font-weight:var(--fw-title)}
+.s-brutal .total{border-top:2px solid #000}
+
+/* 按钮与控件 */
+.btn{height:34px;border-radius:var(--r-btn);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;padding:0 14px;border:0;white-space:nowrap}
+.btn-pri{background:var(--pri);color:var(--pri-fg)}
+.btn-sec{background:var(--sec-bg);color:var(--sec-fg)}
+.btn-txt{background:transparent;color:var(--sub)}
+.s-apple .btn-txt,.s-m3 .btn-txt{color:var(--pri)}
+.s-brutal .btn-pri,.s-brutal .btn-sec{border:2px solid #000;box-shadow:3px 3px 0 #000;font-weight:900}
+.s-glass .btn-pri{box-shadow:0 6px 18px rgba(123,92,255,.4)}
+.s-glass .btn-sec{border:1px solid rgba(255,255,255,.6)}
+.s-dark .btn-sec{border:1px solid #2c2c34}
+.s-uber .btn{font-weight:700}
+.chip{padding:6px 12px;border-radius:var(--r-chip);background:var(--card);color:var(--sub);font-weight:500;border:var(--card-bd)}
+.chip.on{background:var(--cat-on-bg);color:var(--cat-on-fg);font-weight:700}
+.s-m3 .chip{background:transparent;border:1px solid var(--line)}
+.s-m3 .chip.on{border-color:transparent}
+.s-m3 .chip.on::before{content:"✓ "}
+.s-uber .chip{background:#eee;color:#000}
+.s-brutal .chip.on{box-shadow:2px 2px 0 #000}
+.stepper{display:inline-flex;align-items:center;border-radius:var(--r-btn);background:var(--sec-bg);height:34px;border:var(--card-bd);overflow:hidden}
+.stepper span{width:34px;text-align:center;font-weight:700;font-size:15px;color:var(--sec-fg)}
+.stepper b{width:28px;text-align:center;font-size:13px}
+.s-m3 .stepper{background:transparent;border:1px solid var(--line)}
+.s-uber .stepper{background:#000}.s-uber .stepper span,.s-uber .stepper b{color:#fff}
+.pay{flex:1;height:54px;border-radius:var(--r-card);background:var(--card);border:var(--card-bd);box-shadow:var(--card-sh);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-weight:600;position:relative}
+.pay small{font-size:10px;color:var(--sub);font-weight:400}
+.pay.on{box-shadow:var(--on-ring),var(--card-sh)}
+.pay.on::after{content:"✓";position:absolute;top:4px;right:6px;font-size:10px;font-weight:800;color:var(--pri)}
+.s-glass .pay.on::after,.s-uber .pay.on::after{color:var(--ink)}
+.s-brutal .pay.on{background:#c6f432}
+.s-uber .pay.on{background:#fff}
+.st{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:var(--r-chip);font-size:11px;font-weight:600}
+.st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.st.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.st.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.st.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 13%,transparent)}
+.st.info{color:var(--info);background:color-mix(in srgb,var(--info) 13%,transparent)}
+.s-uber .st{border-radius:4px}.s-uber .st.warn{color:#7a5a00}
+.s-brutal .st{color:#000!important;border:2px solid #000;border-radius:4px}
+.s-brutal .st::before{background:#000}
+.s-brutal .st.ok{background:var(--ok)}.s-brutal .st.warn{background:var(--warn)}.s-brutal .st.bad{background:var(--bad)}.s-brutal .st.info{background:var(--info)}
+.s-glass .st{background:rgba(255,255,255,.55)}
+
+/* 结账弹窗 */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.38);display:flex;align-items:center;justify-content:center}
+.s-glass .scrim{background:rgba(40,20,90,.18);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.s-dark .scrim{background:rgba(0,0,0,.6)}
+.s-uber .scrim{align-items:flex-end}
+.modal{width:300px;background:var(--panel);border-radius:calc(var(--r-panel) + 4px);border:var(--panel-bd);box-shadow:0 18px 50px rgba(0,0,0,.25);padding:16px;display:flex;flex-direction:column;gap:12px}
+.s-uber .modal{width:100%;border-radius:16px 16px 0 0;padding:18px 22px}
+.s-m3 .modal{background:#ece6f0;border-radius:28px}
+.s-glass .modal{background:rgba(255,255,255,.4)}
+.s-brutal .modal{box-shadow:6px 6px 0 #000}
+.modal .hd{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:var(--fw-title)}
+.modal .hd span{font-size:11px;color:var(--sub);font-weight:400}
+.modal .amt{font-size:28px;font-weight:var(--fw-title);letter-spacing:-.02em}
+.modal .amt small{font-size:12px;color:var(--sub);font-weight:400;margin-left:6px}
+.s-uber .modal .amt{font-size:34px;font-weight:800}
+.row{display:flex;gap:7px;align-items:center}
+.modal .btn{height:38px}
+.modal .row .btn-pri{flex:1}
+
+/* ── 组件矩阵 ─────────────────────────────────────────── */
+.matrix{display:grid;grid-template-columns:110px repeat(6,1fr);gap:8px}
+.matrix .ch{font-weight:700;font-size:15px;padding:0 4px 6px}
+.matrix .ch span{display:block;font-size:12px;color:#888;font-weight:400}
+.matrix .rh{font-size:13px;font-weight:600;color:#444;display:flex;align-items:center}
+.cell{border-radius:12px;padding:14px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;align-content:center;min-height:96px;font-size:12px}
+.cell .dish{width:calc(50% - 4px);height:62px}
+.cell .row{width:100%}
+.cell{background:var(--panel)}
+.s-brutal.cell{background:var(--canvas)}
+.cell .btn{padding:0 11px}
+
+/* ── 评分表 ─────────────────────────────────────────── */
+table.score{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+.score th,.score td{padding:13px 12px;text-align:center;border-bottom:1px solid #eee}
+.score th{font-size:13px;color:#666;font-weight:600;background:#fafafa}
+.score th:first-child,.score td:first-child{text-align:left}
+.score td:first-child b{font-size:15px;display:block}
+.score td:first-child span{font-size:12px;color:#888}
+.dots{display:inline-flex;gap:3px}
+.dots i{width:9px;height:9px;border-radius:50%;background:#e2e2e6}
+.dots i.f{background:#1f6f5c}
+.dots.lo i.f{background:#d9822b}
+.sum{font-size:20px;font-weight:700}
+.verdict{display:inline-block;padding:5px 10px;border-radius:8px;font-size:13px;font-weight:600;text-align:left}
+.v1{background:#1f6f5c;color:#fff}.v2{background:#dceee8;color:#1f6f5c}.v3{background:#fff1dc;color:#9a5a0c}.v4{background:#fde4e4;color:#a12a2a}
+.swatch{width:22px;height:22px;border-radius:6px;display:inline-block;vertical-align:middle;margin-right:8px;border:1px solid rgba(0,0,0,.08)}
+.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+.notes div{background:#f6f6f8;border-radius:12px;padding:16px 18px;font-size:14px;line-height:1.6;color:#333}
+.notes b{display:block;font-size:15px;margin-bottom:4px;color:#111}
+</style>
+</head>
+<body>
+
+<section class="board" id="b1">
+  <h1>① 整屏对比：同一个点餐页，六种风格</h1>
+  <p class="lead">内容完全一致（A12 桌 · 热菜分类 · 已点 3 道），只换视觉语言。看层级怎么分、选中态怎么表达、主按钮有多醒目。</p>
+  <div class="grid3" data-fill="pos"></div>
+</section>
+
+<section class="board" id="b2">
+  <h1>② 组件级对比：同一组 POS 高频组件</h1>
+  <p class="lead">按钮层级、分类选中、菜品卡（含份数角标）、步进器、支付方式选中、订单状态标签。每列是同一风格，每行是同一组件。</p>
+  <div class="matrix" id="matrix"></div>
+</section>
+
+<section class="board" id="b3">
+  <h1>③ 弹窗对比：结账收款</h1>
+  <p class="lead">遮罩、弹窗容器、金额主信息、选择类控件和主操作的组合。Uber 的底部 Sheet 和其他风格的居中弹窗是两种不同思路。</p>
+  <div class="grid3" data-fill="modal"></div>
+</section>
+
+<section class="board" id="b4">
+  <h1>④ 评分：放到餐饮 POS 场景里</h1>
+  <p class="lead">5 分制，分数越高越好（性能和实现成本已经换算成“越轻 / 越容易越高分”）。场景假设：前台触屏收银、白天强光、低端安卓一体机也要能跑。</p>
+  <table class="score" id="score"></table>
+  <div class="notes">
+    <div><b>主骨架：Uber Base</b>黑白高对比、大号粗体、单一主操作、底部 Sheet。强光下扫一眼就能看懂，性能也最省，最贴合收银台“快、准、不出错”的要求。</div>
+    <div><b>组件规范：Material 3</b>状态层（按下 / 选中 / 禁用）、选择类控件“带勾 + 色块”的规范最完整，可以直接借来给步进器、支付方式、筛选标签定规则。</div>
+    <div><b>局部借用</b>Apple 的圆角体系和留白节奏用来提升质感；深色极简适合后厨 KDS 和夜间模式；玻璃态只用在顶栏、浮层和营销页；新粗野主义适合活动海报和券面。</div>
+  </div>
+</section>
+
+<script>
+const STYLES=[
+  {k:'apple', n:'Apple HIG',        d:'内容优先 · 克制 · 质感', tags:['系统蓝','大圆角','分组列表','轻阴影']},
+  {k:'m3',    n:'Material 3',       d:'Google · 个性化色板',     tags:['Tonal 色','胶囊按钮','带勾 Chip','无阴影']},
+  {k:'uber',  n:'Uber Base',        d:'功能主义 · 黑白',         tags:['纯黑主色','粗体排版','分隔线','底部 Sheet']},
+  {k:'glass', n:'玻璃态 Glassmorphism', d:'毛玻璃 · 半透明',      tags:['backdrop-blur','彩色背景','细白描边','柔光']},
+  {k:'brutal',n:'新粗野主义 Neo-Brutalism', d:'粗描边 · 硬投影', tags:['2px 黑边','硬阴影','撞色','超粗字']},
+  {k:'dark',  n:'深色极简 Linear / Stripe', d:'精致 · 高密度',    tags:['深色','1px 描边','小字号','单一强调色']},
+];
+const DISHES=[['宫保鸡丁',48],['麻婆豆腐',32,2],['水煮鱼',88],['小炒黄牛肉',68,1],['酸菜鱼',78],['夫妻肺片',42],['担担面',22],['酸梅汤',12],['回锅肉',46]];
+
+const label=s=>`<div class="label"><b>${s.n}</b><span>${s.d}</span></div>`;
+const tags=s=>`<div class="tags">${s.tags.map(t=>`<i>${t}</i>`).join('')}</div>`;
+
+function pos(s,overlay=''){
+  const cats=['热菜','凉菜','主食','饮品','酒水'].map((c,i)=>`<div class="cat${i?'':' on'}">${c}</div>`).join('');
+  const menu=DISHES.map(([n,p,q])=>`<div class="dish${q?' on':''}">${q?`<span class="badge">${q}</span>`:''}<div class="n">${n}</div><div class="p">¥${p}</div></div>`).join('');
+  return `<div class="pos surface s-${s.k}">
+    <div class="pnl top"><span class="brand">全线点餐</span><span class="tbl">A12 · 4 人</span><span class="search">搜索菜品</span></div>
+    <div class="body">
+      <nav class="pnl cats">${cats}</nav>
+      <div class="pnl menu">${menu}</div>
+      <aside class="pnl cart">
+        <h4>已点 <span>3 道</span></h4>
+        <div class="line"><span>麻婆豆腐 ×2</span><em>¥64</em></div>
+        <div class="line"><span>小炒黄牛肉</span><em>¥68</em></div>
+        <div class="line"><span>米饭 ×4</span><em>¥12</em></div>
+        <div class="total"><em style="font-style:normal;color:var(--sub)">合计</em><b>¥144</b></div>
+        <div class="row"><div class="btn btn-sec" style="padding:0 10px">挂单</div><div class="btn btn-pri" style="flex:1">结账</div></div>
+      </aside>
+    </div>${overlay}
+  </div>`;
+}
+function modal(s){
+  return pos(s,`<div class="scrim"><div class="modal">
+    <div class="hd">结账 · A12<span>3 道菜 · 4 人</span></div>
+    <div class="amt">¥144.00<small>已减 ¥12 会员价</small></div>
+    <div class="row"><div class="pay on">微信<small>扫码</small></div><div class="pay">支付宝<small>扫码</small></div><div class="pay">现金<small>找零</small></div><div class="pay">银行卡<small>刷卡</small></div></div>
+    <div class="row"><div class="btn btn-txt">取消</div><div class="btn btn-sec">拆单</div><div class="btn btn-pri">确认收款 ¥144</div></div>
+  </div></div>`);
+}
+
+document.querySelectorAll('[data-fill]').forEach(el=>{
+  const fn=el.dataset.fill==='pos'?pos:modal;
+  el.innerHTML=STYLES.map(s=>`<div>${label(s)}${fn(s)}${el.dataset.fill==='pos'?tags(s):''}</div>`).join('');
+});
+
+const ROWS=[
+  ['按钮层级',()=>`<div class="btn btn-pri">结账 ¥144</div><div class="btn btn-sec">挂单</div><div class="btn btn-txt">清空</div>`],
+  ['分类选中',()=>`<div class="chip on">热菜</div><div class="chip">凉菜</div><div class="chip">饮品</div>`],
+  ['菜品卡',()=>`<div class="dish on"><span class="badge">2</span><div class="n">麻婆豆腐</div><div class="p">¥32</div></div><div class="dish"><div class="n">水煮鱼</div><div class="p">¥88</div></div>`],
+  ['步进器',()=>`<div class="stepper"><span>−</span><b>2</b><span>+</span></div><div class="btn btn-sec">备注</div>`],
+  ['支付选择',()=>`<div class="row"><div class="pay on">微信</div><div class="pay">支付宝</div><div class="pay">现金</div></div>`],
+  ['订单状态',()=>`<span class="st info">已下单</span><span class="st warn">待上菜</span><span class="st ok">已结清</span><span class="st bad">退菜</span>`],
+];
+document.getElementById('matrix').innerHTML='<div></div>'+STYLES.map(s=>`<div class="ch">${s.n.split(' ')[0]}<span>${s.d}</span></div>`).join('')
+  +ROWS.map(([h,f])=>`<div class="rh">${h}</div>`+STYLES.map(s=>`<div class="cell surface s-${s.k}">${f(s)}</div>`).join('')).join('');
+
+const DIMS=['可读性','触屏友好','强光环境','信息密度','性能负担轻','实现容易','品牌个性'];
+const SC={apple:[5,4,4,3,4,2,4],m3:[4,5,4,3,5,5,3],uber:[5,5,5,2,5,4,4],glass:[2,3,1,2,1,3,4],brutal:[4,4,4,3,5,4,5],dark:[4,2,2,5,4,2,4]};
+const VERD={apple:['v2','局部借用：质感与圆角'],m3:['v1','组件规范'],uber:['v1','主骨架'],glass:['v4','仅浮层 / 营销点缀'],brutal:['v3','活动页 / 券面'],dark:['v2','后厨 KDS / 夜间']};
+const SW={apple:'#007aff',m3:'#6750a4',uber:'#000',glass:'linear-gradient(135deg,#7b5cff,#ff6fa8)',brutal:'#ff5c35',dark:'#111115'};
+const dots=v=>`<span class="dots${v<=2?' lo':''}">${[1,2,3,4,5].map(i=>`<i class="${i<=v?'f':''}"></i>`).join('')}</span>`;
+document.getElementById('score').innerHTML=`<tr><th>风格</th>${DIMS.map(d=>`<th>${d}</th>`).join('')}<th>合计</th><th>在 POS 里的定位</th></tr>`
+  +STYLES.map(s=>{const v=SC[s.k];return `<tr><td><span class="swatch" style="background:${SW[s.k]}"></span><b style="display:inline">${s.n}</b><br><span style="margin-left:30px">${s.d}</span></td>${v.map(x=>`<td>${dots(x)}</td>`).join('')}<td class="sum">${v.reduce((a,b)=>a+b)}</td><td><span class="verdict ${VERD[s.k][0]}">${VERD[s.k][1]}</span></td></tr>`}).join('');
+
+const b=new URLSearchParams(location.search).get('b');
+if(b){document.body.classList.add('single');document.querySelectorAll('.board').forEach(x=>{if(x.id!=='b'+b)x.remove()});document.body.dataset.h=document.querySelector('.board').offsetHeight}
+</script>
+</body>
+</html>

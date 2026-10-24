@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POS 框架草图</title>
+<!-- 全线点餐 POS · 原型框架草图：按 docs/全线点餐POS-功能区清单.md 的 27 个功能区搭线框。
+     工作台、浮层、布局（L1–L6）、风格（主题色、形状、深浅、密度）、功能区标注都写在 <html> 的属性上，本地记住选择。 -->
+<style>
+:root {
+  /* 黑白灰与语义色按 docs/POS配色方案.md；主题色、辅助色由 data-skin 给出 -l（浅）/ -d（深）两组值 */
+  --bg: #E4E6EA; --surface: #FFFFFF; --s2: #E8EBEF; --s3: #DADDE0; --s4: #D3D6DA;
+  --fg: #181A1C; --fg2: #616367; --fg3: #9C9FA2;
+  --warn: #B54708; --warn-tint: #FEEFDD; --danger: #B42318; --danger-tint: #FAE2E0; --ok: #067647;
+  --brand: var(--p-l); --on-brand: var(--on-l); --brand-text: var(--pt-l); --tint: var(--ti-l); --aux: var(--a-l); --aux-tint: var(--at-l);
+  --annot: #FF6A00; --scrim: rgba(15, 16, 18, .42);
+  --r-card: 13px; --r-btn: 999px; --r-tag: 999px; --r-ctl: 10px;
+  --ctl: 44px; --tile: 88px; --gap: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  color: var(--fg);
+}
+:root[data-mode="dark"] {
+  --bg: #07080B; --surface: #15171A; --s2: #242729; --s3: #313336; --s4: #37393C;
+  --fg: #EDF0F4; --fg2: #A8ABAF; --fg3: #727578;
+  --warn: #FDB022; --warn-tint: #3E2D17; --danger: #F97066; --danger-tint: #3C1F1F; --ok: #47CD89;
+  --scrim: rgba(0, 0, 0, .6);
+  --brand: var(--p-d); --on-brand: var(--on-d); --brand-text: var(--pt-d); --tint: var(--ti-d); --aux: var(--a-d); --aux-tint: var(--at-d);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-mode="auto"] {
+    --bg: #07080B; --surface: #15171A; --s2: #242729; --s3: #313336; --s4: #37393C;
+    --fg: #EDF0F4; --fg2: #A8ABAF; --fg3: #727578;
+    --warn: #FDB022; --warn-tint: #3E2D17; --danger: #F97066; --danger-tint: #3C1F1F; --ok: #47CD89;
+    --scrim: rgba(0, 0, 0, .6);
+    --brand: var(--p-d); --on-brand: var(--on-d); --brand-text: var(--pt-d); --tint: var(--ti-d); --aux: var(--a-d); --aux-tint: var(--at-d);
+  }
+}
+/* 8 套主题：主色 p、实心上的字 on、主色文字 pt、主色 tint ti、辅助色 a、辅助 tint at */
+[data-skin="pine"] { --p-l: #1D6E58; --p-d: #67A993; --on-l: #FFFFFF; --on-d: #00140C; --pt-l: #005E49; --pt-d: #90CBB5; --ti-l: #E4EEEB; --ti-d: #253432; --a-l: #3F6789; --a-d: #98BEDF; --at-l: #E8EDF1; --at-d: #2F3841; }
+[data-skin="indigo"] { --p-l: #485FA2; --p-d: #829BDB; --on-l: #FFFFFF; --on-d: #070D1F; --pt-l: #3A4F90; --pt-d: #A7BEF9; --ti-l: #E9ECF4; --ti-d: #2B3141; --a-l: #276E6C; --a-d: #86C3C0; --at-l: #E5EEED; --at-d: #2C393B; }
+[data-skin="teal"] { --p-l: #276B80; --p-d: #69A4B8; --on-l: #FFFFFF; --on-d: #00121B; --pt-l: #105A6F; --pt-d: #93C7DA; --ti-l: #E5EDF0; --ti-d: #26333A; --a-l: #7B587C; --a-d: #D0ADD1; --at-l: #EFEBEF; --at-d: #3A353F; }
+[data-skin="tea"] { --p-l: #526932; --p-d: #8EA571; --on-l: #FFFFFF; --on-d: #091101; --pt-l: #435A23; --pt-d: #B1C798; --ti-l: #EAEDE6; --ti-d: #2D332B; --a-l: #456783; --a-d: #9DBDDA; --at-l: #E9EDF0; --at-d: #303840; }
+[data-skin="slate"] { --p-l: #586474; --p-d: #909DAC; --on-l: #FFFFFF; --on-d: #060F1B; --pt-l: #485463; --pt-d: #B5C0CF; --ti-l: #EBECEE; --ti-d: #2E3237; --a-l: #496C50; --a-d: #A0C2A5; --at-l: #E9EDEA; --at-d: #313936; }
+[data-skin="umber"] { --p-l: #88573E; --p-d: #C2927A; --on-l: #FFFFFF; --on-d: #1C0801; --pt-l: #75462D; --pt-d: #E2B6A0; --ti-l: #F1EBE8; --ti-d: #38302D; --a-l: #356B77; --a-d: #90C1CD; --at-l: #E7EDEF; --at-d: #2E393E; }
+[data-skin="crimson"] { --p-l: #99485A; --p-d: #D58694; --on-l: #FFFFFF; --on-d: #1C060B; --pt-l: #88384B; --pt-d: #F5ABB8; --ti-l: #F3E9EB; --ti-d: #3B2D32; --a-l: #336C6F; --a-d: #8FC2C5; --at-l: #E7EDEE; --at-d: #2D393C; }
+[data-skin="mono"] { --p-l: #181A1C; --p-d: #EDF0F4; --on-l: #FFFFFF; --on-d: #07080B; --pt-l: #181A1C; --pt-d: #EDF0F4; --ti-l: #E1E1E1; --ti-d: #383A3D; --a-l: #546488; --a-d: #A8B9DD; --at-l: #EAECF1; --at-d: #323741; }
+/* 形状 */
+[data-shape="round"]  { --r-card: 8px; --r-btn: 8px; --r-tag: 6px; --r-ctl: 8px; }
+[data-shape="square"] { --r-card: 4px; --r-btn: 4px; --r-tag: 3px; --r-ctl: 4px; }
+/* 密度 */
+[data-density="standard"] { --ctl: 48px; --tile: 108px; --gap: 12px; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.45; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- 原型外的控制条 ---------- */
+.page { padding: 16px; max-width: 1760px; margin: 0 auto; }
+.ph-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 12px; }
+.ph-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
+.ph-head p { margin: 0; color: var(--fg2); font-size: 13px; }
+.ph-head a { color: var(--fg2); }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px; background: var(--surface); border-radius: 12px; margin-bottom: 12px; }
+.grp { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.grp > b { font-size: 12px; color: var(--fg2); font-weight: 600; margin-right: 2px; }
+.seg { display: inline-flex; background: var(--s2); border-radius: 8px; padding: 2px; flex-wrap: wrap; }
+.seg button { padding: 5px 10px; border-radius: 6px; font-size: 13px; color: var(--fg2); min-height: 30px; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.lay { display: inline-flex; align-items: center; gap: 6px; }
+.mini { width: 30px; height: 20px; display: grid; gap: 1.5px; padding: 1.5px; background: var(--s3); border-radius: 3px; }
+.mini i { background: var(--surface); border-radius: 1px; }
+.mini i.n { background: var(--fg3); }
+.mini i.d { background: var(--brand); }
+.sw { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--c) 0 58%, var(--c2) 58%); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--fg); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (min-width: 1500px) { .main { grid-template-columns: minmax(0, 1fr) 300px; } }
+.stage { width: 100%; position: relative; }
+.device { width: 1280px; height: 800px; transform-origin: top left; position: absolute; left: 0; top: 0;
+  background: var(--bg); border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 10px #1C1D20, 0 12px 40px rgba(0,0,0,.25); }
+
+.legend { background: var(--surface); border-radius: 12px; padding: 12px; }
+.legend h2 { font-size: 14px; margin: 0 0 4px; }
+.legend p.hint { margin: 0 0 8px; color: var(--fg2); font-size: 12px; }
+.legend h3 { font-size: 12px; color: var(--fg2); font-weight: 600; margin: 12px 0 4px; }
+.lg { display: grid; grid-template-columns: 34px 1fr; gap: 0 8px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 8px; }
+.lg:hover { background: var(--s2); }
+.lg[aria-pressed="true"] { background: var(--warn-tint); }
+.lg code { font: 600 12px/20px ui-monospace, Menlo, monospace; color: var(--annot); }
+.lg b { font-size: 13px; font-weight: 600; }
+.lg small { grid-column: 2; color: var(--fg2); font-size: 12px; }
+
+/* ---------- 设备内：外壳 ---------- */
+.app { display: grid; grid-template-rows: 56px 1fr; height: 100%; position: relative; }
+.sys { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--surface); }
+.sys > section { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 6px; }
+.g1 { min-width: 230px; }
+.g1 .logo { width: 32px; height: 32px; border-radius: 8px; background: var(--fg); color: var(--surface); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.g1 .who b { display: block; font-size: 13px; line-height: 1.2; }
+.g1 .who small { color: var(--fg2); font-size: 12px; }
+.g2 { flex: 1; justify-content: center; }
+.g2 button { height: 40px; padding: 0 16px; border-radius: var(--r-btn); color: var(--fg2); font-weight: 600; }
+.g2 button[aria-current="true"] { background: var(--fg); color: var(--surface); }
+.ent { height: 40px; min-width: 44px; padding: 0 10px; border-radius: var(--r-btn); background: var(--s2); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg2); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg3); flex: none; }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--danger); }
+.cnt { background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 0 6px; line-height: 18px; }
+.clock { font-weight: 700; font-size: 15px; padding-left: 4px; }
+
+.body { display: grid; gap: var(--gap); padding: var(--gap); min-height: 0; }
+.body > * { min-height: 0; min-width: 0; }
+.panel { background: var(--surface); border-radius: var(--r-card); }
+
+/* 导航区（Z3）：竖排 96px，横排 48px */
+.nav { grid-area: nav; display: flex; flex-direction: column; gap: 4px; padding: 6px; overflow: hidden auto; }
+.nav .nv { min-height: var(--ctl); border-radius: var(--r-ctl); padding: 6px 8px; text-align: left; color: var(--fg2); display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 13px; flex: none; }
+.nav .nv[aria-current="true"] { background: var(--fg); color: var(--surface); font-weight: 600; }
+/* 墨黑主题：墨色已是主题色，位置选中改用灰底，结账保持唯一的墨块 */
+[data-skin="mono"] .nav .nv[aria-current="true"], [data-skin="mono"] .chip[aria-pressed="true"], [data-skin="mono"] .g2 button[aria-current="true"] { background: var(--s3); color: var(--fg); }
+.nav .nv em { font-style: normal; font-size: 12px; opacity: .8; }
+.nav .sep { height: 1px; background: var(--s3); margin: 4px 2px; flex: none; }
+.nav .cap { font-size: 12px; color: var(--fg3); padding: 4px 8px 0; flex: none; }
+[data-nav="top"] .nav { flex-direction: row; align-items: center; padding: 4px 6px; overflow: auto hidden; }
+[data-nav="top"] .nav .nv { min-height: 36px; padding: 0 14px; border-radius: var(--r-btn); white-space: nowrap; }
+[data-nav="top"] .nav .sep { width: 1px; height: 24px; margin: 0 6px; }
+[data-nav="top"] .nav .cap { display: none; }
+
+.content { grid-area: content; display: flex; flex-direction: column; gap: var(--gap); }
+.detail { grid-area: detail; display: flex; flex-direction: column; overflow: hidden; }
+.detail > section { padding: 12px; }
+.detail .grow { flex: 1; overflow: auto; min-height: 0; }
+.detail .foot { background: var(--s2); }
+
+/* 通用小件 */
+.row { display: flex; align-items: center; gap: 8px; }
+.sp { flex: 1; }
+.t-sub { color: var(--fg2); font-size: 12px; }
+.t-h { font-size: 17px; font-weight: 700; }
+.chip { height: 36px; padding: 0 14px; border-radius: var(--r-btn); background: var(--s2); color: var(--fg2); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--surface); font-weight: 600; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-tag); font-size: 12px; background: var(--s3); color: var(--fg2); white-space: nowrap; }
+.tag.brand { background: var(--tint); color: var(--brand-text); }
+.tag.aux { background: var(--aux-tint); color: var(--aux); }
+.chip.aux { background: var(--aux-tint); color: var(--aux); }
+.tag.warn { background: var(--warn-tint); color: var(--warn); }
+.tag.bad { background: var(--danger-tint); color: var(--danger); }
+.btn { min-height: var(--ctl); padding: 0 16px; border-radius: var(--r-btn); font-weight: 600; background: var(--s3); color: var(--fg); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.btn.soft { background: var(--tint); color: var(--brand-text); }
+.btn.pri { background: var(--brand); color: var(--on-brand); }
+.btn.dng { background: var(--danger-tint); color: var(--danger); }
+.btn.ghost { background: var(--s2); color: var(--fg2); }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
+.kv dt { color: var(--fg2); } .kv dd { margin: 0; text-align: right; }
+.big { font-size: 30px; font-weight: 700; letter-spacing: -.01em; }
+.ph { background: var(--s3); border-radius: 4px; height: 10px; }
+.input { height: var(--ctl); border-radius: var(--r-ctl); background: var(--s2); display: flex; align-items: center; padding: 0 12px; color: var(--fg3); font-size: 13px; gap: 8px; }
+.step { display: inline-flex; align-items: center; background: var(--s2); border-radius: var(--r-btn); }
+.step span { width: 36px; height: 36px; display: grid; place-items: center; font-weight: 700; }
+.step b { min-width: 22px; text-align: center; }
+
+/* 菜品宫格 M4 */
+.tools { padding: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tools .input { flex: 1; min-width: 120px; }
+.grid { flex: 1; overflow: auto; padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--gap); align-content: start; }
+.dish { min-height: var(--tile); border-radius: calc(var(--r-card) - 3px); background: var(--s2); padding: 10px; display: flex; flex-direction: column; text-align: left; position: relative; gap: 2px; }
+.dish b { font-weight: 600; font-size: 14px; }
+.dish .pr { margin-top: auto; font-weight: 700; }
+.dish .q { position: absolute; top: 6px; right: 6px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--brand); color: var(--on-brand); font-size: 12px; font-weight: 700; display: grid; place-items: center; padding: 0 6px; }
+.dish.sel { background: var(--tint); }
+.dish.out { opacity: 1; background: var(--s2); color: var(--fg3); }
+.dish.out b { color: var(--fg2); }
+/* 有图菜品卡：上图下文，图 4:3；没有图的菜用分类色块加菜名前两个字顶替 */
+[data-pic="on"] .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: max-content; }
+.dish.img { padding: 0; overflow: hidden; gap: 0; }
+.dish .pic { position: relative; aspect-ratio: 4 / 3; display: grid; place-items: center;
+  background: radial-gradient(circle at var(--fx, 50%) 56%, var(--ks, #B07A4A) 0 21%, transparent 22%),
+    radial-gradient(circle at 50% 56%, #F4F1EC 0 33%, #D8D2C9 34% 36%, transparent 37%),
+    linear-gradient(160deg, #6B5442, #33281F); }
+.dish .pic.none { background: var(--s3); color: var(--fg2); }
+.dish .pic .abbr { font-size: 24px; font-weight: 700; letter-spacing: .04em; }
+[data-scheme="blocks"][data-tone="solid"] .dish .pic.none { background: var(--ks); color: var(--ksf); }
+[data-scheme="blocks"][data-tone="pastel"] .dish .pic.none { background: var(--kp); color: var(--kpf); }
+.dish .pic .tag { position: absolute; left: 6px; bottom: 6px; background: var(--surface); }
+.dish .pic .tag.warn { background: var(--warn-tint); }
+.dish.out .pic { filter: grayscale(1); opacity: .45; }
+.dish .info { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.dish .info .row { gap: 6px; margin-top: auto; }
+.dish .info .pr { margin-top: 0; }
+
+/* 已点清单 M5 */
+.lines h4 { margin: 4px 0 6px; font-size: 12px; color: var(--fg2); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+.ln { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; align-items: center; padding: 8px; border-radius: 8px; }
+.ln:hover { background: var(--s2); }
+.ln b { font-weight: 600; } .ln .sub { grid-column: 1 / -1; }
+.ln.new { background: var(--tint); }
+
+/* 桌台图 T2 */
+.tables { flex: 1; overflow: auto; padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--gap); align-content: start; }
+.tb { min-height: 104px; border-radius: calc(var(--r-card) - 3px); background: var(--s2); padding: 10px; display: flex; flex-direction: column; gap: 4px; text-align: left; }
+.tb b { font-size: 17px; }
+.tb.busy { background: var(--tint); }
+.tb.busy .tag.brand, .tb.resv .tag.aux { background: var(--surface); }
+.foot .btn.ghost, .foot .chip { background: var(--s3); color: var(--fg); }
+.foot .chip.aux { background: var(--aux-tint); color: var(--aux); }
+.tb.due { background: var(--warn-tint); }
+.tb.resv { background: var(--aux-tint); }
+.tb.cur { box-shadow: inset 0 0 0 2px var(--fg); }
+.tb .row { margin-top: auto; justify-content: space-between; font-size: 12px; color: var(--fg2); }
+.stats { display: flex; gap: var(--gap); padding: 8px 8px 0; }
+.stat { flex: 1; background: var(--s2); border-radius: 8px; padding: 8px 12px; }
+.stat b { display: block; font-size: 20px; }
+
+/* 收款 P2 */
+.pays { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); padding: 12px; }
+.pay { min-height: 64px; border-radius: calc(var(--r-card) - 3px); background: var(--s2); font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.pay[aria-pressed="true"] { background: var(--tint); color: var(--brand-text); box-shadow: inset 0 0 0 2px var(--brand); }
+.pay small { font-weight: 400; color: var(--fg2); font-size: 12px; }
+.keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); }
+.keys button { height: 60px; border-radius: var(--r-ctl); background: var(--s2); font-size: 20px; font-weight: 600; }
+
+/* 订单列表 O2 */
+.olist { flex: 1; overflow: auto; padding: 4px 8px 8px; }
+.orow { display: grid; grid-template-columns: 70px 60px 60px 1fr 90px 60px 70px; gap: 8px; align-items: center; padding: 0 8px; min-height: 52px; border-radius: 8px; font-size: 13px; }
+.orow.th { min-height: 32px; color: var(--fg3); font-size: 12px; }
+.orow.cur { background: var(--tint); }
+
+/* ---------- 浮层（X1–X4、P3、S1） ---------- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; }
+.modal { width: 560px; max-height: 720px; overflow: auto; background: var(--surface); border-radius: calc(var(--r-card) + 3px); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal.wide { width: 760px; }
+.modal h3 { margin: 0; font-size: 20px; }
+.opt { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt .chip { height: 40px; }
+.sheet { position: absolute; top: 0; right: 0; bottom: 0; width: 520px; background: var(--surface); z-index: 21; display: flex; flex-direction: column; box-shadow: -8px 0 32px rgba(0,0,0,.18); }
+.sheet .tabs { display: flex; gap: 4px; padding: 12px 16px 0; }
+.sheet .in { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.sheet h4 { margin: 0 0 8px; font-size: 13px; color: var(--fg2); font-weight: 600; }
+.layg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.layg button { background: var(--s2); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); }
+.layg button .mini { width: 60px; height: 38px; }
+.layg button[aria-pressed="true"] { background: var(--tint); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 2px var(--brand); }
+.dots { display: flex; gap: 12px; justify-content: center; }
+.dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--s3); }
+.dots i.on { background: var(--fg); }
+
+/* ---------- 色块方案：黑白灰为底、扁平，分类 / 状态 / 支付方式各用一个色块 ---------- */
+/* 色块：-s 实色、-f 实色上的字、-p 粉彩底、-pf 粉彩上的字；深色只换粉彩 */
+:root { --red-s: #CC3430; --red-f: #FFFFFF; --red-p: #FFE0DB; --red-pf: #910F13; --orange-s: #C25500; --orange-f: #FFFFFF; --orange-p: #FEE1D3; --orange-pf: #7E3300; --yellow-s: #F6C330; --yellow-f: #141414; --yellow-p: #F4E7C7; --yellow-pf: #614900; --green-s: #18883A; --green-f: #FFFFFF; --green-p: #D6F0D8; --green-pf: #005E21; --teal-s: #038476; --teal-f: #FFFFFF; --teal-p: #D5EEE9; --teal-pf: #005A50; --blue-s: #006CC4; --blue-f: #FFFFFF; --blue-p: #D8EAFF; --blue-pf: #004D91; --indigo-s: #5552BB; --indigo-f: #FFFFFF; --indigo-p: #E3E6FE; --indigo-pf: #413F94; --purple-s: #8747AA; --purple-f: #FFFFFF; --purple-p: #F2E0FE; --purple-pf: #653181; --rose-s: #BC3E79; --rose-f: #FFFFFF; --rose-p: #FFDEE9; --rose-pf: #841E51; --brown-s: #80512F; --brown-f: #FFFFFF; --brown-p: #F4E4DA; --brown-pf: #6A4327; --gray-s: #5E5E5E; --gray-f: #FFFFFF; --gray-p: #E6E6E6; --gray-pf: #3D3D3D; }
+:root[data-mode="dark"] { --red-p: #53211D; --red-pf: #FEBFB7; --orange-p: #4E2710; --orange-pf: #FFC1A2; --yellow-p: #403002; --yellow-pf: #EBCE86; --green-p: #1B3B21; --green-pf: #A9E2B0; --teal-p: #193A34; --teal-pf: #A6DED4; --blue-p: #183452; --blue-pf: #B0D5FE; --indigo-p: #2D2E53; --indigo-pf: #C7CDFF; --purple-p: #3E294A; --purple-pf: #E6BFFF; --rose-p: #4D2335; --rose-pf: #FEBBD4; --brown-p: #402F23; --brown-pf: #EBC9B4; --gray-p: #2E2E2E; --gray-pf: #D0D0D0; }
+@media (prefers-color-scheme: dark) { :root[data-mode="auto"] { --red-p: #53211D; --red-pf: #FEBFB7; --orange-p: #4E2710; --orange-pf: #FFC1A2; --yellow-p: #403002; --yellow-pf: #EBCE86; --green-p: #1B3B21; --green-pf: #A9E2B0; --teal-p: #193A34; --teal-pf: #A6DED4; --blue-p: #183452; --blue-pf: #B0D5FE; --indigo-p: #2D2E53; --indigo-pf: #C7CDFF; --purple-p: #3E294A; --purple-pf: #E6BFFF; --rose-p: #4D2335; --rose-pf: #FEBBD4; --brown-p: #402F23; --brown-pf: #EBC9B4; --gray-p: #2E2E2E; --gray-pf: #D0D0D0; } }
+.k-red { --ks: var(--red-s); --ksf: var(--red-f); --kp: var(--red-p); --kpf: var(--red-pf); } /* 朱红 */
+.k-orange { --ks: var(--orange-s); --ksf: var(--orange-f); --kp: var(--orange-p); --kpf: var(--orange-pf); } /* 橘橙 */
+.k-yellow { --ks: var(--yellow-s); --ksf: var(--yellow-f); --kp: var(--yellow-p); --kpf: var(--yellow-pf); } /* 明黄 */
+.k-green { --ks: var(--green-s); --ksf: var(--green-f); --kp: var(--green-p); --kpf: var(--green-pf); } /* 草绿 */
+.k-teal { --ks: var(--teal-s); --ksf: var(--teal-f); --kp: var(--teal-p); --kpf: var(--teal-pf); } /* 青绿 */
+.k-blue { --ks: var(--blue-s); --ksf: var(--blue-f); --kp: var(--blue-p); --kpf: var(--blue-pf); } /* 湛蓝 */
+.k-indigo { --ks: var(--indigo-s); --ksf: var(--indigo-f); --kp: var(--indigo-p); --kpf: var(--indigo-pf); } /* 靛紫 */
+.k-purple { --ks: var(--purple-s); --ksf: var(--purple-f); --kp: var(--purple-p); --kpf: var(--purple-pf); } /* 葡萄紫 */
+.k-rose { --ks: var(--rose-s); --ksf: var(--rose-f); --kp: var(--rose-p); --kpf: var(--rose-pf); } /* 玫红 */
+.k-brown { --ks: var(--brown-s); --ksf: var(--brown-f); --kp: var(--brown-p); --kpf: var(--brown-pf); } /* 栗棕 */
+.k-gray { --ks: var(--gray-s); --ksf: var(--gray-f); --kp: var(--gray-p); --kpf: var(--gray-pf); } /* 石灰 */
+:root[data-scheme="blocks"] {
+    --bg: #EBEBEB; --surface: #FFFFFF; --s2: #F2F2F2; --s3: #E2E2E2; --s4: #D4D4D4; --fg: #141414; --fg2: #5E5E5E; --fg3: #9A9A9A;
+    --brand: #141414; --on-brand: #FFFFFF; --brand-text: #141414; --tint: #E2E2E2; --aux: #141414; --aux-tint: #E2E2E2;
+}
+:root[data-scheme="blocks"][data-mode="dark"] {
+    --bg: #000000; --surface: #161616; --s2: #212121; --s3: #2C2C2C; --s4: #383838; --fg: #F2F2F2; --fg2: #A6A6A6; --fg3: #6E6E6E;
+    --brand: #F2F2F2; --on-brand: #141414; --brand-text: #F2F2F2; --tint: #2C2C2C; --aux: #F2F2F2; --aux-tint: #2C2C2C;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-scheme="blocks"][data-mode="auto"] {
+    --bg: #000000; --surface: #161616; --s2: #212121; --s3: #2C2C2C; --s4: #383838; --fg: #F2F2F2; --fg2: #A6A6A6; --fg3: #6E6E6E;
+    --brand: #F2F2F2; --on-brand: #141414; --brand-text: #F2F2F2; --tint: #2C2C2C; --aux: #F2F2F2; --aux-tint: #2C2C2C;
+  }
+}
+[data-scheme="blocks"][data-tone="solid"] .blk, [data-scheme="blocks"][data-tone="solid"] .nav .nv[aria-current="true"][class*="k-"] { background: var(--ks); color: var(--ksf); }
+[data-scheme="blocks"][data-tone="pastel"] .blk, [data-scheme="blocks"][data-tone="pastel"] .nav .nv[aria-current="true"][class*="k-"] { background: var(--kp); color: var(--kpf); }
+[data-scheme="blocks"] .blk .t-sub, [data-scheme="blocks"] .blk .row, [data-scheme="blocks"] .blk small { color: inherit; opacity: .85; }
+[data-scheme="blocks"] .blk .tag { background: var(--surface); color: var(--fg); }
+.ksq { display: none; width: 10px; height: 10px; border-radius: 3px; background: var(--ks); flex: none; }
+[data-scheme="blocks"] .ksq { display: inline-block; }
+.kn { display: inline-flex; align-items: center; gap: 6px; }
+/* 选中：色块外加一圈墨色，不改色块本身 */
+[data-scheme="blocks"] .dish.sel, [data-scheme="blocks"] .pay[aria-pressed="true"], [data-scheme="blocks"] .tb.cur { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--fg); }
+/* 扁平：设备里不用阴影 */
+[data-scheme="blocks"] .sheet { box-shadow: none; }
+[data-scheme="blocks"] .device .seg button[aria-pressed="true"] { box-shadow: none; background: var(--fg); color: var(--surface); }
+
+/* ---------- 功能区标注 ---------- */
+[data-annot="on"] [data-zone]:not(.sheet) { position: relative; }
+[data-annot="on"] [data-zone] { outline: 2px dashed var(--annot); outline-offset: -2px; }
+[data-annot="on"] [data-zone]::after { content: attr(data-tag); position: absolute; top: 2px; left: 2px; z-index: 5; background: var(--annot); color: #fff;
+  font: 600 11px/16px ui-monospace, Menlo, "PingFang SC", monospace; padding: 0 5px; border-radius: 3px; pointer-events: none;
+  white-space: nowrap; max-width: calc(100% - 4px); overflow: hidden; text-overflow: ellipsis; }
+[data-annot="on"] .sys [data-zone]::after { top: auto; bottom: -8px; }
+[data-zone].hl { outline: 3px solid var(--annot) !important; outline-offset: -3px; background-image: linear-gradient(rgba(255,106,0,.08), rgba(255,106,0,.08)); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="ph-head">
+    <h1>全线点餐 POS · 原型框架草图</h1>
+    <p>收银平板 1280×800 线框，按 <a href="../docs/全线点餐POS-功能区清单.md">功能区清单</a> 的 27 个功能区搭建。橙色虚线是功能区，标签写「代号 名称 · 布局槽」。</p>
+  </header>
+  <div class="bar" id="bar"></div>
+  <div class="main">
+    <div class="stage" id="stage"><div class="device" id="device"></div></div>
+    <aside class="legend" id="legend"></aside>
+  </div>
+</div>
+<script>
+(function () {
+  var root = document.documentElement, KEY = 'pos-frame';
+  var S = { wb: 'order', ov: 'none', sheet: 'set', nav: 'left', detail: 'right', scheme: 'blocks', tone: 'solid', pic: 'on', skin: 'pine', shape: 'native', mode: 'light', density: 'compact', annot: 'on', hl: '' };
+  try { var saved = JSON.parse(localStorage.getItem(KEY) || '{}'); for (var k in saved) if (k in S && k !== 'hl') S[k] = saved[k]; } catch (e) {}
+  if (!/^(pine|indigo|teal|tea|slate|umber|crimson|mono)$/.test(S.skin)) S.skin = 'pine';
+
+  /* 功能区：代号 → [名称, 布局槽, 职责] */
+  var Z = {
+    G1: ['身份与班次', 'Z1', '谁在用、哪个门店、当前班次、时钟'],
+    G2: ['工作台切换', 'Z1', '桌台 / 点餐 / 结账 / 订单 / 班次'],
+    G3: ['设备状态', 'Z1', '打印、网络、钱箱；异常时变色'],
+    G4: ['待办提醒', 'Z1', '外卖待接、打印失败、催菜、待审批'],
+    G5: ['布局与风格', 'Z1→X4', '布局 L1–L6，主题色、形状、深浅、密度'],
+    T1: ['桌区与状态筛选', 'Z3', '桌区、状态筛选、各状态数量'],
+    T2: ['桌台图', 'Z4', '所有桌台的状态、人数、时长、金额'],
+    T3: ['桌台详情', 'Z5+Z6', '所选桌概况；开台、换桌、并台、清台'],
+    M1: ['当前单头', 'Z2', '桌号、单号、人数、时长；整单操作'],
+    M2: ['菜品分类', 'Z3', '切换分类，标出有已点菜的分类'],
+    M3: ['菜品检索与工具', 'Z4 顶', '搜索、标签、视图；沽清、临时菜'],
+    M4: ['菜品宫格', 'Z4', '点一下加菜；份数、沽清、限量'],
+    M5: ['已点清单', 'Z5', '待下单 / 已下单；行操作、批量选择'],
+    M6: ['金额与优惠', 'Z6 上', '会员、券、折扣、抹零、费用；应收'],
+    M7: ['单据操作', 'Z6 下', '挂单、预结、送厨、结账'],
+    P1: ['账单摘要', 'Z5', '应收、已收、待收'],
+    P2: ['收款', 'Z4', '支付方式、键盘、找零、组合支付'],
+    P3: ['收款结果', '弹窗', '成功 / 失败、小票、开票'],
+    O1: ['订单筛选', 'Z3', '状态、渠道、搜单号'],
+    O2: ['订单列表', 'Z4', '单号、桌号、件数、金额、时间'],
+    O3: ['订单详情', 'Z5+Z6', '菜品、支付记录；取单、合单、补打'],
+    S1: ['开班与自检', '弹窗', '收银台、备用金、设备检查'],
+    S2: ['交班对账', 'Z4+Z5', '当班数据、钱箱实盘、差异'],
+    X1: ['菜品配置', '弹窗', '规格、做法、加料、备注、套餐'],
+    X2: ['授权', '弹窗', '主管授权码 + 原因'],
+    X3: ['选桌选单', '弹窗', '换桌、并台、转菜选桌；合单选单'],
+    X4: ['侧滑面板', '侧滑', '外卖、会员、打印、网络、设置']
+  };
+  var WB = {
+    tables:   { name: '桌台', nav: true,  zones: ['T1', 'T2', 'T3'] },
+    order:    { name: '点餐', nav: true,  zones: ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] },
+    checkout: { name: '结账', nav: false, zones: ['P1', 'P2'] },
+    orders:   { name: '订单', nav: true,  zones: ['O1', 'O2', 'O3'] },
+    shift:    { name: '班次', nav: false, zones: ['S2'] }
+  };
+  var OV = [['none', '无'], ['x1', 'X1 菜品配置'], ['x2', 'X2 授权'], ['x3', 'X3 选桌'], ['x4', 'X4 侧滑'], ['p3', 'P3 收款结果'], ['s1', 'S1 开班']];
+  var OVZONE = { x1: 'X1', x2: 'X2', x3: 'X3', x4: 'X4', p3: 'P3', s1: 'S1' };
+  var LAYOUTS = [['L1', 'left', 'right', '导航左 · 详情右（默认）'], ['L2', 'top', 'right', '导航上 · 详情右'], ['L3', 'top', 'left', '导航上 · 详情左'],
+                 ['L4', 'right', 'left', '导航右 · 详情左'], ['L5', 'left', 'left', '导航左 · 详情左'], ['L6', 'right', 'right', '导航右 · 详情右']];
+  /* 主题 + 辅助色，取值见 docs/POS配色方案.md */
+  var SKINS = [['pine', '松绿 + 黛蓝', '#1D6E58', '#3F6789'], ['indigo', '靛蓝 + 青碧', '#485FA2', '#276E6C'], ['teal', '黛青 + 梅紫', '#276B80', '#7B587C'],
+               ['tea', '茶青 + 岩蓝', '#526932', '#456783'], ['slate', '石墨 + 苔绿', '#586474', '#496C50'], ['umber', '栗棕 + 石青', '#88573E', '#356B77'],
+               ['crimson', '绛红 + 青瓷', '#99485A', '#336C6F'], ['mono', '墨黑 + 靛灰', '#181A1C', '#546488']];
+  var SHAPES = [['native', 'B 端原生'], ['round', '微圆'], ['square', '方角']];
+  var MODES = [['light', '浅色'], ['dark', '深色'], ['auto', '跟随系统']];
+  var DENS = [['compact', '紧凑'], ['standard', '标准']];
+
+  /* 三栏网格：同一个函数排设备里的版面和按钮上的小图 */
+  function tmpl(nav, det, hasNav, u) {
+    if (!hasNav) return det === 'right' ? ['"content detail"', '1fr ' + u.D, '1fr'] : ['"detail content"', u.D + ' 1fr', '1fr'];
+    if (nav === 'top') return det === 'right' ? ['"nav detail" "content detail"', '1fr ' + u.D, u.T + ' 1fr'] : ['"detail nav" "detail content"', u.D + ' 1fr', u.T + ' 1fr'];
+    var order = { 'left-right': ['nav', 'content', 'detail'], 'right-left': ['detail', 'content', 'nav'],
+                  'left-left': ['nav', 'detail', 'content'], 'right-right': ['content', 'nav', 'detail'] }[nav + '-' + det];
+    var w = { nav: u.N, content: '1fr', detail: u.D };
+    return ['"' + order.join(' ') + '"', order.map(function (a) { return w[a]; }).join(' '), '1fr'];
+  }
+  function mini(nav, det, hasNav) {
+    var t = tmpl(nav, det, hasNav, { N: '5px', D: '11px', T: '4px' });
+    return '<span class="mini" style="grid-template-areas:' + t[0].replace(/"/g, "'") + ';grid-template-columns:' + t[1] + ';grid-template-rows:' + t[2] + '">' +
+      (hasNav ? '<i class="n" style="grid-area:nav"></i>' : '') + '<i style="grid-area:content"></i><i class="d" style="grid-area:detail"></i></span>';
+  }
+  function zone(code, cls, inner, tag) { tag = tag || 'section'; return '<' + tag + ' class="' + cls + '" data-zone="' + code + '">' + inner + '</' + tag + '>'; }
+  function seg(key, list, cur) {
+    return '<span class="seg">' + list.map(function (o) { return '<button data-set="' + key + ':' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</span>';
+  }
+  function swatches() {
+    return SKINS.map(function (s) { return '<button class="sw" style="--c:' + s[2] + ';--c2:' + s[3] + '" title="' + s[1] + '" aria-label="主题色 ' + s[1] + '" data-set="skin:' + s[0] + '" aria-pressed="' + (S.skin === s[0]) + '"></button>'; }).join('');
+  }
+  function layoutBtns(big) {
+    return LAYOUTS.map(function (l) {
+      var on = S.nav === l[1] && S.detail === l[2];
+      return big ? '<button data-set="nav:' + l[1] + ',detail:' + l[2] + '" aria-pressed="' + on + '">' + mini(l[1], l[2], true) + '<span>' + l[0] + ' ' + l[3] + '</span></button>'
+                 : '<button class="lay" title="' + l[3] + '" data-set="nav:' + l[1] + ',detail:' + l[2] + '" aria-pressed="' + on + '">' + mini(l[1], l[2], true) + l[0] + '</button>';
+    }).join('');
+  }
+
+  /* ---------- 全局 Z1 ---------- */
+  function sysbar() {
+    var tabs = Object.keys(WB).map(function (k) { return '<button data-set="wb:' + k + ',ov:none" aria-current="' + (S.wb === k) + '">' + WB[k].name + '</button>'; }).join('');
+    return '<header class="sys">' +
+      zone('G1', 'g1', '<span class="logo">虹</span><span class="who"><b>虹选小馆 · 南山店</b><small>收银员 李敏 · 早班 09:00 起</small></span>') +
+      zone('G2', 'g2', tabs, 'nav') +
+      zone('G3', '', '<button class="ent" data-set="ov:x4,sheet:print"><i class="dot warn"></i>打印</button><button class="ent" data-set="ov:x4,sheet:net"><i class="dot ok"></i>网络</button><button class="ent" data-set="ov:x4,sheet:print">钱箱</button>') +
+      zone('G4', '', '<button class="ent" data-set="ov:x4,sheet:takeout">外卖 <span class="cnt">2</span></button><button class="ent" data-set="ov:x4,sheet:todo">待办 <span class="cnt">3</span></button>') +
+      zone('G5', '', '<button class="ent" data-set="ov:x4,sheet:set">' + mini(S.nav, S.detail, true) + '布局与风格</button>') +
+      '<span class="clock num">12:30</span></header>';
+  }
+
+  /* ---------- 桌台工作台 ---------- */
+  function tablesWB() {
+    var nav = zone('T1', 'panel nav', '<span class="cap">桌区</span><button class="nv" aria-current="true">大厅<em>12</em></button><button class="nv">包间<em>6</em></button><button class="nv">外带<em>4</em></button>' +
+      '<span class="sep"></span><span class="cap">状态</span><button class="nv k-gray"><span class="kn"><i class="ksq"></i>空闲</span><em>7</em></button><button class="nv k-blue"><span class="kn"><i class="ksq"></i>用餐中</span><em>8</em></button><button class="nv k-orange"><span class="kn"><i class="ksq"></i>待结账</span><em>2</em></button><button class="nv k-purple"><span class="kn"><i class="ksq"></i>已预订</span><em>1</em></button>', 'nav');
+    var st = ['busy', 'busy', 'busy cur', '', 'due', 'busy', '', 'resv', 'busy', '', 'busy', 'due', '', 'busy', '', 'busy', '', ''];
+    var tiles = st.map(function (c, i) {
+      var name = i < 12 ? 'A' + ('0' + (i + 1)).slice(-2) : 'V0' + (i - 11);
+      var label = c.indexOf('busy') > -1 ? '<span class="tag brand">用餐中</span>' : c === 'due' ? '<span class="tag warn">待结账</span>' : c === 'resv' ? '<span class="tag aux">已预订 19:00</span>' : '<span class="tag">空闲</span>';
+      var foot = c === '' || c === 'resv' ? '<div class="row"><span>' + (i < 12 ? '4' : '10') + ' 座</span></div>' : '<div class="row"><span>' + (2 + i % 4) + '/' + (i < 12 ? 4 : 10) + ' 人 · ' + (15 + i * 7) + ' 分</span><b class="num">¥' + (120 + i * 31) + '</b></div>';
+      var k = c.indexOf('busy') > -1 ? ' blk k-blue' : c === 'due' ? ' blk k-orange' : c === 'resv' ? ' blk k-purple' : '';
+      return '<button class="tb ' + c + k + '"><b>' + name + '</b>' + label + foot + '</button>';
+    }).join('');
+    var content = zone('T2', 'panel content', '<div class="stats"><div class="stat"><span class="t-sub kn"><i class="ksq k-gray"></i>空闲</span><b class="num">7</b></div><div class="stat"><span class="t-sub kn"><i class="ksq k-blue"></i>用餐中</span><b class="num">8</b></div><div class="stat"><span class="t-sub kn"><i class="ksq k-orange"></i>待结账</span><b class="num">2</b></div><div class="stat"><span class="t-sub">今日翻台</span><b class="num">1.6</b></div></div><div class="tables">' + tiles + '</div>');
+    var detail = zone('T3', 'panel detail',
+      '<section><div class="row"><span class="t-h">A03</span><span class="tag brand blk k-blue">用餐中</span><span class="sp"></span><span class="t-sub">#1024</span></div></section>' +
+      '<section class="grow"><dl class="kv"><dt>人数</dt><dd>4 / 6</dd><dt>开台</dt><dd>11:42 · 48 分钟</dd><dt>服务员</dt><dd>王芳</dd><dt>付款时机</dt><dd>先吃后付</dd></dl>' +
+      '<h4 class="t-sub" style="margin:16px 0 6px">已点 6 道 · 上菜 2/6</h4>' + ['酸菜鱼', '夫妻肺片', '小炒黄牛肉', '酸梅汤 ×2'].map(function (n) { return '<div class="ln"><span>' + kname(n) + '</span><span></span><span class="tag">已下单</span></div>'; }).join('') + '</section>' +
+      '<section class="foot"><div class="row" style="margin-bottom:8px"><span class="t-sub">未结金额</span><span class="sp"></span><b class="num" style="font-size:20px">¥268.00</b></div>' +
+      '<div class="row" style="flex-wrap:wrap"><button class="btn ghost" data-set="ov:x3">换桌</button><button class="btn ghost" data-set="ov:x3">并台</button><button class="btn ghost">预结</button><button class="btn ghost">清台</button><span class="sp"></span><button class="btn pri" data-set="wb:order">加菜</button></div></section>', 'aside');
+    return nav + content + detail;
+  }
+
+  /* ---------- 点餐工作台 ---------- */
+  /* 色块：分类、桌台状态、支付方式各对应一个色块 */
+  var CK = { 热销: 'red', 招牌: 'rose', 凉菜: 'green', 热菜: 'orange', 主食: 'yellow', 汤羹: 'teal', 饮品: 'blue', 套餐: 'purple', 甜品: 'brown' };
+  var DK = { 宫保鸡丁: '热菜', 水煮鱼: '招牌', 小炒黄牛肉: '热菜', 蒜蓉西兰花: '凉菜', 麻婆豆腐: '热菜', 酸菜鱼: '招牌', 夫妻肺片: '凉菜', 拍黄瓜: '凉菜',
+    米饭: '主食', 酸梅汤: '饮品', 鲜榨橙汁: '饮品', 担担面: '主食', 红糖糍粑: '甜品', 双人套餐: '套餐', 番茄蛋汤: '汤羹' };
+  function kOf(name) { var c = DK[name.split(' ')[0]]; return c ? 'k-' + CK[c] : 'k-gray'; }
+  function kname(name) { return '<span class="kn"><i class="ksq ' + kOf(name) + '"></i>' + name + '</span>'; }
+  var DISHES = [['宫保鸡丁', 48, 1, 'spec'], ['水煮鱼', 88, 0, 'spec'], ['小炒黄牛肉', 68, 1], ['蒜蓉西兰花', 28], ['麻婆豆腐', 26], ['酸菜鱼', 78, 1, 'spec'],
+    ['夫妻肺片', 38, 1], ['拍黄瓜', 16], ['米饭', 3, 4], ['酸梅汤', 12, 2], ['鲜榨橙汁', 18, 0, 'lim'], ['担担面', 22, 0, 'out'], ['红糖糍粑', 22], ['双人套餐', 168, 0, 'spec'], ['番茄蛋汤', 18]];
+  var NOIMG = { 米饭: 1, 拍黄瓜: 1, 红糖糍粑: 1 };   // 有图模式下仍没有图片的菜
+  function orderWB() {
+    var cats = ['热销', '招牌', '凉菜', '热菜', '主食', '汤羹', '饮品', '套餐'], has = { 0: 1, 2: 1, 3: 1, 4: 1, 6: 1 };
+    var nav = zone('M2', 'panel nav', cats.map(function (c, i) { return '<button class="nv k-' + CK[c] + '" aria-current="' + (i === 0) + '"><span class="kn"><i class="ksq"></i>' + c + '</span>' + (has[i] ? '<i class="dot" style="background:var(--brand)"></i>' : '') + '</button>'; }).join(''), 'nav');
+    var tools = zone('M3', 'tools', '<div class="input">⌕ 搜索菜名 / 拼音首字母 / 编号</div><button class="chip" aria-pressed="true">全部</button><button class="chip">辣</button><button class="chip">素食</button><button class="chip">特价</button>' +
+      seg('pic', [['on', '有图'], ['off', '无图']], S.pic) + '<span class="seg"><button aria-pressed="true">卡片</button><button>列表</button></span><button class="chip">沽清</button><button class="chip">临时菜</button>');
+    var grid = zone('M4', 'grid', DISHES.map(function (d) {
+      var k = kOf(d[0]), cls = 'dish ' + k + (d[2] ? ' sel' : ''), extra = '';
+      if (d[3] === 'out') { cls = 'dish out ' + k; extra = '<span class="tag">已沽清</span>'; }
+      if (d[3] === 'lim') extra = '<span class="tag warn">限量 剩 3</span>';
+      if (d[3] === 'spec') extra = '<span class="t-sub">多规格</span>';
+      var q = d[2] ? '<span class="q">' + d[2] + '</span>' : '', act = d[3] === 'spec' ? ' data-set="ov:x1"' : '';
+      if (S.pic === 'off') return '<button class="' + cls + (d[3] === 'out' ? '' : ' blk') + '"' + act + '><b>' + d[0] + '</b>' + extra + '<span class="pr num">¥' + d[1] + '</span>' + q + '</button>';
+      /* 有图：图上放份数角标和状态标签；文字区放菜名、价格、多规格 */
+      var noImg = NOIMG[d[0]], tagOnPic = d[3] === 'out' || d[3] === 'lim' ? extra : '';
+      return '<button class="' + cls + ' img"' + act + '><span class="pic' + (noImg ? ' none' : '') + '" style="--fx:' + (44 + (d[1] % 13)) + '%">' + (noImg ? '<b class="abbr">' + d[0].slice(0, 2) + '</b>' : '') + tagOnPic + q + '</span>' +
+        '<span class="info"><b class="kn"><i class="ksq"></i>' + d[0] + '</b><span class="row"><span class="pr num">¥' + d[1] + '</span>' + (d[3] === 'spec' ? extra : '') + '</span></span></button>';
+    }).join(''));
+    var content = '<div class="panel content">' + tools + grid + '</div>';
+    var line = function (n, sub, q, p, st, isNew) {
+      return '<div class="ln' + (isNew ? ' new' : '') + '"><b>' + kname(n) + '</b>' + (isNew ? '<span class="step"><span>−</span><b>' + q + '</b><span>+</span></span>' : '<span class="t-sub">×' + q + '</span>') +
+        '<span class="num">¥' + p + '</span>' + (sub || st ? '<span class="t-sub row sub">' + (sub || '') + (st ? '<span class="sp"></span>' + st : '') + '</span>' : '') + '</div>';
+    };
+    var detail = '<aside class="panel detail">' +
+      zone('M1', '', '<div class="row"><span class="t-h">A03</span><span class="t-sub">4 人 · 48 分 · 堂食 · #1024</span><span class="sp"></span></div>' +
+        '<div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px"><button class="chip">改人数</button><button class="chip">整单备注</button><button class="chip" data-set="ov:x3">换桌</button><button class="chip" data-set="ov:x3">并台</button><button class="chip">更多</button></div>') +
+      zone('M5', 'grow lines', '<h4>待下单 2<span class="sp"></span><button class="t-sub">批量选择</button></h4>' + line('宫保鸡丁', '大份 · 微辣 · 少油', 1, '48.00', '', true) + line('米饭', '', 4, '12.00', '', true) +
+        '<h4 style="margin-top:12px">已下单 4</h4>' + line('酸菜鱼', '', 1, '78.00', '<span class="tag">制作中</span>') + line('夫妻肺片', '', 1, '38.00', '<span class="tag">已上</span>') +
+        line('小炒黄牛肉', '', 1, '68.00', '<span class="tag warn">催菜中</span>') + line('酸梅汤', '', 2, '24.00', '<span class="tag aux">赠送 1</span>&nbsp;<button class="t-sub" data-set="ov:x2">赠 / 退</button>')) +
+      zone('M6', 'foot', '<div class="row" style="margin-bottom:8px"><button class="chip aux" data-set="ov:x4,sheet:member">会员 · 金卡</button><button class="chip aux">满 200 减 10</button><button class="chip" data-set="ov:x2">折扣</button></div>' +
+        '<dl class="kv num"><dt>小计</dt><dd>¥268.00</dd><dt>会员价</dt><dd>−¥8.00</dd><dt>服务费 5%</dt><dd>¥8.50</dd><dt>抹零</dt><dd>−¥0.50</dd></dl>' +
+        '<div class="row" style="margin-top:6px"><span>应收</span><span class="sp"></span><span class="big num">¥268.00</span></div>') +
+      zone('M7', 'foot', '<div class="row"><button class="btn ghost">挂单</button><button class="btn ghost">预结</button><button class="btn soft">送厨 · 2</button><button class="btn pri" style="flex:1" data-set="wb:checkout">结账 ¥268.00</button></div>') +
+      '</aside>';
+    return nav + content + detail;
+  }
+
+  /* ---------- 结账工作台 ---------- */
+  function checkoutWB() {
+    var pays = [['微信', '扫码', 'green'], ['支付宝', '扫码', 'blue'], ['现金', '找零', 'yellow'], ['银行卡', '刷卡', 'indigo'], ['会员储值', '余额 ¥520', 'purple'], ['组合支付', '多种方式', 'gray']];
+    var content = zone('P2', 'panel content',
+      '<div class="pays">' + pays.map(function (p, i) { return '<button class="pay blk k-' + p[2] + '" aria-pressed="' + (i === 2) + '">' + p[0] + '<small>' + p[1] + '</small></button>'; }).join('') + '</div>' +
+      '<div style="padding:0 12px;display:grid;grid-template-columns:1fr 1fr;gap:16px;flex:1">' +
+      '<div style="display:flex;flex-direction:column;gap:12px"><div class="input" style="height:72px;font-size:15px;color:var(--fg)">实收<span class="sp"></span><span class="big num">¥300.00</span></div>' +
+      '<div class="row t-sub">找零<span class="sp"></span><b class="num" style="font-size:20px;color:var(--fg)">¥32.00</b></div>' +
+      '<div class="row" style="flex-wrap:wrap"><button class="chip">¥268</button><button class="chip">¥270</button><button class="chip" aria-pressed="true">¥300</button><button class="chip">¥500</button></div>' +
+      '<div class="ph" style="width:60%;margin-top:auto"></div><div class="ph" style="width:40%"></div></div>' +
+      '<div class="keys">' + ['7', '8', '9', '⌫', '4', '5', '6', 'C', '1', '2', '3', '00', '0', '.', '', ''].map(function (k) { return k ? '<button>' + k + '</button>' : '<span></span>'; }).join('') + '</div></div>' +
+      '<div style="padding:12px"><button class="btn pri" style="width:100%;height:56px;font-size:17px" data-set="ov:p3">确认收款 ¥268.00</button></div>');
+    var detail = zone('P1', 'panel detail',
+      '<section><div class="row"><span class="t-h">A03 结账</span><span class="t-sub">#1024 · 4 人</span></div></section>' +
+      '<section class="grow">' + ['宫保鸡丁 ×1', '米饭 ×4', '酸菜鱼 ×1', '夫妻肺片 ×1', '小炒黄牛肉 ×1', '酸梅汤 ×2'].map(function (n) { return '<div class="ln"><span>' + kname(n) + '</span><span></span><span class="ph" style="width:48px"></span></div>'; }).join('') + '</section>' +
+      '<section class="foot"><dl class="kv num"><dt>小计</dt><dd>¥268.00</dd><dt>优惠</dt><dd>−¥8.50</dd><dt>服务费</dt><dd>¥8.50</dd></dl>' +
+      '<div class="row" style="margin-top:8px"><span>应收</span><span class="sp"></span><span class="big num">¥268.00</span></div>' +
+      '<dl class="kv num" style="margin-top:6px"><dt>已收</dt><dd>¥0.00</dd><dt>待收</dt><dd><b>¥268.00</b></dd></dl></section>', 'aside');
+    return content + detail;
+  }
+
+  /* ---------- 订单工作台 ---------- */
+  function ordersWB() {
+    var nav = zone('O1', 'panel nav', '<span class="cap">状态</span><button class="nv" aria-current="true">进行中<em>8</em></button><button class="nv">挂起<em>2</em></button><button class="nv">已结账<em>46</em></button>' +
+      '<span class="sep"></span><span class="cap">渠道</span><button class="nv k-blue"><span class="kn"><i class="ksq"></i>堂食</span></button><button class="nv k-teal"><span class="kn"><i class="ksq"></i>外带</span></button><button class="nv k-orange"><span class="kn"><i class="ksq"></i>外卖</span></button>', 'nav');
+    var rows = [['#1024', 'A03', '堂食', '6 件', '268.00', '11:42', '<span class="tag brand blk k-blue">用餐中</span>'], ['#1025', 'A05', '堂食', '3 件', '96.00', '11:58', '<span class="tag warn">待结账</span>'],
+      ['#1026', '—', '外带', '2 件', '42.00', '12:03', '<span class="tag">挂起</span>'], ['#1027', '—', '外卖', '4 件', '118.00', '12:10', '<span class="tag brand">制作中</span>'],
+      ['#1028', 'V02', '堂食', '12 件', '886.00', '12:12', '<span class="tag brand blk k-blue">用餐中</span>'], ['#1029', 'A09', '堂食', '5 件', '172.00', '12:20', '<span class="tag brand blk k-blue">用餐中</span>']];
+    var content = zone('O2', 'panel content', '<div class="tools"><div class="input">⌕ 搜单号 / 桌号 / 手机尾号</div></div><div class="olist"><div class="orow th"><span>单号</span><span>桌台</span><span>渠道</span><span></span><span>金额</span><span>时间</span><span>状态</span></div>' +
+      rows.map(function (r, i) { return '<div class="orow' + (i === 0 ? ' cur' : '') + '"><b>' + r[0] + '</b><span>' + r[1] + '</span><span><span class="tag blk k-' + ({ 堂食: 'blue', 外带: 'teal', 外卖: 'orange' })[r[2]] + '">' + r[2] + '</span></span><span class="t-sub">' + r[3] + '</span><b class="num">¥' + r[4] + '</b><span class="t-sub num">' + r[5] + '</span>' + r[6] + '</div>'; }).join('') + '</div>');
+    var detail = zone('O3', 'panel detail',
+      '<section><div class="row"><span class="t-h">#1024</span><span class="t-sub">A03 · 堂食 · 11:42</span></div></section>' +
+      '<section class="grow"><h4 class="t-sub" style="margin:0 0 6px">菜品</h4>' + ['宫保鸡丁 ×1', '米饭 ×4', '酸菜鱼 ×1', '夫妻肺片 ×1'].map(function (n) { return '<div class="ln"><span>' + kname(n) + '</span><span></span><span class="ph" style="width:48px"></span></div>'; }).join('') +
+      '<h4 class="t-sub" style="margin:12px 0 6px">支付记录</h4><div class="t-sub">暂无</div></section>' +
+      '<section class="foot"><div class="row" style="flex-wrap:wrap"><button class="btn ghost" data-set="ov:x3">合单</button><button class="btn ghost">补打</button><button class="btn dng" data-set="ov:x2">反结账</button><span class="sp"></span><button class="btn pri" data-set="wb:order">取单</button></div></section>', 'aside');
+    return nav + content + detail;
+  }
+
+  /* ---------- 班次工作台 ---------- */
+  function shiftWB() {
+    var stats = [['营业额', '¥8,642'], ['单数', '46'], ['客单价', '¥187.9'], ['现金', '¥1,280', 'yellow'], ['微信', '¥4,102', 'green'], ['支付宝', '¥2,340', 'blue'], ['银行卡', '¥620', 'indigo'], ['会员储值', '¥300', 'purple']];
+    var content = '<div class="panel content" data-zone="S2" style="padding:12px"><div class="row"><span class="t-h">当班数据</span><span class="t-sub">早班 09:00 – 12:30 · 李敏</span></div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap)">' + stats.map(function (s) { return '<div class="stat"><span class="t-sub kn">' + (s[2] ? '<i class="ksq k-' + s[2] + '"></i>' : '') + s[0] + '</span><b class="num">' + s[1] + '</b></div>'; }).join('') + '</div>' +
+      '<div class="row t-sub" style="margin-top:8px">退菜 2 笔 · 赠送 1 笔 · 折扣 3 笔 · 开钱箱 9 次</div><div class="ph" style="width:70%"></div><div class="ph" style="width:50%"></div></div>';
+    var detail = '<aside class="panel detail" data-zone="S2"><section><span class="t-h">钱箱实盘</span></section><section class="grow">' +
+      ['100 元', '50 元', '20 元', '10 元', '5 元', '1 元', '硬币'].map(function (d) { return '<div class="row" style="margin-bottom:8px"><span style="width:60px">' + d + '</span><div class="input" style="flex:1">张数</div></div>'; }).join('') + '</section>' +
+      '<section class="foot"><dl class="kv num"><dt>应有现金</dt><dd>¥1,780.00</dd><dt>实盘</dt><dd>¥1,770.00</dd><dt>差异</dt><dd style="color:var(--warn)">−¥10.00</dd></dl>' +
+      '<div class="row" style="margin-top:10px"><button class="btn ghost">打印当班报表</button><span class="sp"></span><button class="btn pri">确认交班</button></div></section></aside>';
+    return content + detail;
+  }
+
+  /* ---------- 浮层 ---------- */
+  function overlay() {
+    var close = '<button class="btn ghost" data-set="ov:none">取消</button>';
+    if (S.ov === 'x1') return '<div class="scrim">' + zone('X1', 'modal', '<div class="row"><h3>宫保鸡丁</h3><span class="sp"></span><b class="num">¥48</b></div>' +
+      '<div><h4 class="t-sub" style="margin:0 0 6px">规格 · 必选</h4><div class="opt"><button class="chip" aria-pressed="true">大份</button><button class="chip">小份 ¥32</button></div></div>' +
+      '<div><h4 class="t-sub" style="margin:0 0 6px">辣度</h4><div class="opt"><button class="chip">不辣</button><button class="chip" aria-pressed="true">微辣</button><button class="chip">中辣</button><button class="chip">特辣</button></div></div>' +
+      '<div><h4 class="t-sub" style="margin:0 0 6px">加料 · 多选</h4><div class="opt"><button class="chip">加花生 +¥3</button><button class="chip">加鸡肉 +¥12</button></div></div>' +
+      '<div><h4 class="t-sub" style="margin:0 0 6px">备注</h4><div class="opt"><button class="chip" aria-pressed="true">少油</button><button class="chip">少盐</button><button class="chip">不要葱</button></div><div class="input" style="margin-top:8px">其他要求</div></div>' +
+      '<div class="row"><span class="step"><span>−</span><b>1</b><span>+</span></span><span class="sp"></span>' + close + '<button class="btn pri" data-set="ov:none">加入 ¥48</button></div>') + '</div>';
+    if (S.ov === 'x2') return '<div class="scrim">' + zone('X2', 'modal', '<h3>主管授权 · 退菜</h3><div class="t-sub">酸梅汤 ×1 · ¥12.00</div>' +
+      '<div><h4 class="t-sub" style="margin:0 0 6px">原因</h4><div class="opt"><button class="chip" aria-pressed="true">上错菜</button><button class="chip">客人退菜</button><button class="chip">菜品质量</button><button class="chip">等待太久</button></div></div>' +
+      '<div class="dots"><i class="on"></i><i class="on"></i><i></i><i></i></div><div class="keys" style="grid-template-columns:repeat(3,1fr)">' +
+      ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map(function (k) { return k ? '<button>' + k + '</button>' : '<span></span>'; }).join('') + '</div>' +
+      '<div class="row"><span class="t-sub">记录原因、操作人、授权人</span><span class="sp"></span>' + close + '<button class="btn pri" data-set="ov:none">确认</button></div>') + '</div>';
+    if (S.ov === 'x3') return '<div class="scrim">' + zone('X3', 'modal wide', '<h3>选择目标桌</h3><span class="seg"><button aria-pressed="true">换桌</button><button>并台</button><button>转菜</button><button>合单</button></span>' +
+      '<div class="t-sub">换桌只能选空闲桌；并台、转菜选用餐中的桌；合单选进行中的订单</div><div class="tables" style="padding:0">' +
+      ['A04', 'A07', 'A10', 'A13', 'V03', 'V05', 'V06', 'B01'].map(function (n, i) { return '<button class="tb' + (i === 1 ? ' cur' : '') + '"><b>' + n + '</b><span class="tag">空闲</span></button>'; }).join('') + '</div>' +
+      '<div class="row"><span class="sp"></span>' + close + '<button class="btn pri" data-set="ov:none">换到 A07</button></div>') + '</div>';
+    if (S.ov === 'p3') return '<div class="scrim">' + zone('P3', 'modal', '<h3>收款成功</h3><dl class="kv num" style="font-size:15px"><dt>应收</dt><dd>¥268.00</dd><dt>现金实收</dt><dd>¥300.00</dd><dt>找零</dt><dd><b>¥32.00</b></dd></dl>' +
+      '<div class="row"><button class="btn ghost">打印小票</button><button class="btn ghost">开票</button><span class="sp"></span><button class="btn pri" data-set="ov:none,wb:tables">回到桌台</button></div>') + '</div>';
+    if (S.ov === 's1') return '<div class="scrim">' + zone('S1', 'modal', '<h3>开班</h3><div class="row"><span style="width:72px">收银台</span><div class="input" style="flex:1">1 号收银台 ▾</div></div>' +
+      '<div class="row"><span style="width:72px">备用金</span><div class="input" style="flex:1">¥500.00</div></div>' +
+      '<div><h4 class="t-sub" style="margin:0 0 6px">设备自检</h4><dl class="kv"><dt>前台打印机</dt><dd><span class="tag">正常</span></dd><dt>热菜档口打印机</dt><dd><span class="tag warn">缺纸</span></dd><dt>网络</dt><dd><span class="tag">正常</span></dd><dt>钱箱</dt><dd><span class="tag">正常</span></dd></dl></div>' +
+      '<div class="row"><span class="t-sub">有异常也能开班，热菜单会排队等待</span><span class="sp"></span><button class="btn pri" data-set="ov:none">开班</button></div>') + '</div>';
+    if (S.ov === 'x4') {
+      var tabs = [['takeout', '外卖'], ['member', '会员'], ['print', '打印'], ['net', '网络'], ['todo', '待办'], ['set', '设置']];
+      var body;
+      if (S.sheet === 'set') body = '<div data-zone="G5"><h4>布局 · 导航区与详情区的位置</h4><div class="layg">' + layoutBtns(true) + '</div></div>' +
+        schemeCtl(true) + '<div><h4>菜品图</h4>' + seg('pic', [['on', '有图'], ['off', '无图']], S.pic) + '</div>' +
+        '<div><h4>形状</h4>' + seg('shape', SHAPES, S.shape) + '</div><div><h4>深浅</h4>' + seg('mode', MODES, S.mode) + '</div><div><h4>密度</h4>' + seg('density', DENS, S.density) + '</div>';
+      else if (S.sheet === 'takeout') body = ['美团 #88 · 4 件 · ¥96', '饿了么 #31 · 2 件 · ¥42'].map(function (t) { return '<div class="row"><span>' + t + '</span><span class="sp"></span><button class="btn ghost">拒单</button><button class="btn pri">接单</button></div>'; }).join('') + '<div class="ph" style="width:60%"></div>';
+      else if (S.sheet === 'member') body = '<div class="input">输入手机号或扫会员码</div><dl class="kv"><dt>会员</dt><dd>138****6621 · 金卡</dd><dt>余额</dt><dd>¥520.00</dd><dt>积分</dt><dd>2,310</dd><dt>可用券</dt><dd>满 200 减 10</dd></dl>';
+      else if (S.sheet === 'print') body = '<dl class="kv"><dt>前台打印机</dt><dd><span class="tag">正常</span></dd><dt>热菜档口</dt><dd><span class="tag warn">缺纸 · 2 单待打</span></dd><dt>凉菜档口</dt><dd><span class="tag">正常</span></dd><dt>吧台</dt><dd><span class="tag">正常</span></dd></dl><div class="row"><button class="btn ghost">补打</button><button class="btn ghost">开钱箱</button><span class="sp"></span><button class="btn pri">重打失败单</button></div>';
+      else if (S.sheet === 'net') body = '<dl class="kv"><dt>门店服务器</dt><dd><span class="tag">已连接</span></dd><dt>支付网关</dt><dd><span class="tag">已连接</span></dd><dt>待同步</dt><dd>0 单</dd></dl><div class="t-sub">离线时可点菜、送厨（进队列）、收现金和刷卡；扫码支付不可用</div>';
+      else body = ['外卖待接 2 单', '热菜档口打印失败 2 单', 'A03 小炒黄牛肉催菜'].map(function (t) { return '<div class="row"><span>' + t + '</span><span class="sp"></span><button class="btn ghost">处理</button></div>'; }).join('');
+      return '<div class="scrim" data-set="ov:none"></div>' + zone('X4', 'sheet', '<div class="row" style="padding:16px 16px 0"><span class="t-h">' + tabs.filter(function (t) { return t[0] === S.sheet; })[0][1] + '</span><span class="sp"></span><button class="btn ghost" data-set="ov:none">关闭</button></div>' +
+        '<div class="tabs">' + tabs.map(function (t) { return '<button class="chip" data-set="sheet:' + t[0] + '" aria-pressed="' + (S.sheet === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div><div class="in">' + body + '</div>', 'aside');
+    }
+    return '';
+  }
+
+  /* ---------- 原型控制条与图例 ---------- */
+  var SCHEMES = [['blocks', '色块'], ['theme', '主题色']], TONES = [['solid', '实色'], ['pastel', '粉彩']];
+  function schemeCtl(inSheet) {
+    var a = inSheet ? ['<div><h4>', '</h4>', '</div>'] : ['<div class="grp"><b>', '</b>', '</div>'];
+    return a[0] + '配色' + a[1] + seg('scheme', SCHEMES, S.scheme) + a[2] +
+      (S.scheme === 'blocks' ? a[0] + '色块' + a[1] + seg('tone', TONES, S.tone) + a[2]
+                             : a[0] + '主题色' + a[1] + '<span class="row" style="flex-wrap:wrap">' + swatches() + '</span>' + a[2]);
+  }
+  function bar() {
+    var wbs = Object.keys(WB).map(function (k) { return [k, WB[k].name]; });
+    return '<div class="grp"><b>工作台</b>' + seg('wb', wbs, S.wb) + '</div>' +
+      '<div class="grp"><b>浮层</b>' + seg('ov', OV, S.ov) + '</div>' +
+      '<div class="grp"><b>布局</b><span class="seg">' + layoutBtns(false) + '</span></div>' +
+      schemeCtl(false) + '<div class="grp"><b>菜品图</b>' + seg('pic', [['on', '有图'], ['off', '无图']], S.pic) + '</div>' +
+      '<div class="grp"><b>形状</b>' + seg('shape', SHAPES, S.shape) + '</div>' +
+      '<div class="grp"><b>深浅</b>' + seg('mode', MODES, S.mode) + '</div>' +
+      '<div class="grp"><b>密度</b>' + seg('density', DENS, S.density) + '</div>' +
+      '<div class="grp"><b>标注</b>' + seg('annot', [['on', '显示功能区'], ['off', '隐藏']], S.annot) + '</div>';
+  }
+  function legend() {
+    var item = function (c) { return '<button class="lg" data-set="hl:' + (S.hl === c ? '' : c) + '" aria-pressed="' + (S.hl === c) + '"><code>' + c + '</code><b>' + Z[c][0] + ' <span class="t-sub">· ' + Z[c][1] + '</span></b><small>' + Z[c][2] + '</small></button>'; };
+    var lay = LAYOUTS.filter(function (l) { return l[1] === S.nav && l[2] === S.detail; })[0];
+    return '<h2>本屏功能区</h2><p class="hint">点一项在设备里高亮。当前布局 ' + lay[0] + '：' + lay[3] + (WB[S.wb].nav ? '' : '（本工作台没有导航区）') + '</p>' +
+      '<h3>全局</h3>' + ['G1', 'G2', 'G3', 'G4', 'G5'].map(item).join('') +
+      '<h3>' + WB[S.wb].name + '工作台</h3>' + WB[S.wb].zones.map(item).join('') +
+      (OVZONE[S.ov] ? '<h3>浮层</h3>' + item(OVZONE[S.ov]) : '');
+  }
+
+  var stage = document.getElementById('stage'), device = document.getElementById('device');
+  function fit() { var s = Math.min(1, stage.clientWidth / 1280); device.style.transform = 'scale(' + s + ')'; stage.style.height = (800 * s + 12) + 'px'; }
+
+  function render() {
+    ['scheme', 'tone', 'pic', 'skin', 'shape', 'mode', 'density', 'annot', 'nav', 'detail'].forEach(function (k) { root.setAttribute('data-' + k, S[k]); });
+    var w = WB[S.wb], html = { tables: tablesWB, order: orderWB, checkout: checkoutWB, orders: ordersWB, shift: shiftWB }[S.wb]();
+    device.innerHTML = '<div class="app">' + sysbar() + '<div class="body" id="body">' + html + '</div>' + overlay() + '</div>';
+    var t = tmpl(S.nav, S.detail, w.nav, { N: '96px', D: '360px', T: '48px' }), body = document.getElementById('body');
+    body.style.gridTemplateAreas = t[0]; body.style.gridTemplateColumns = t[1]; body.style.gridTemplateRows = t[2];
+    Array.prototype.forEach.call(device.querySelectorAll('[data-zone]'), function (el) {
+      var c = el.getAttribute('data-zone'); el.setAttribute('data-tag', c + ' ' + Z[c][0] + ' · ' + Z[c][1]);
+      if (S.hl && c === S.hl) el.classList.add('hl');
+    });
+    document.getElementById('bar').innerHTML = bar();
+    document.getElementById('legend').innerHTML = legend();
+    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-set]'); if (!b) return;
+    b.getAttribute('data-set').split(',').forEach(function (p) { var i = p.indexOf(':'); S[p.slice(0, i)] = p.slice(i + 1); });
+    render();
+  });
+  new ResizeObserver(fit).observe(stage);
+  render(); fit();
+})();
+</script>
+</body>
+</html>

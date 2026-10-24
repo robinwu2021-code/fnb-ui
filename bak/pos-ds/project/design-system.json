@@ -1,0 +1,14 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": { "v": 1, "at": "2026-10-22T08:00:00Z" },
+  "title": "Dining POS",
+  "namespace": "DiningPOS",
+  "libraries": [],
+  "sections": {},
+  "groups": [],
+  "assetGroups": {},
+  "blobs": {},
+  "docs": { "readme": "project/README.md", "sections": [] },
+  "lastChange": { "by": "Claude", "at": "2026-10-22T12:30:00Z", "via": "Claude Code", "note": "定稿 L1 + B端色块：sh-* 对齐 ai-shop，新增 Dining* 组件" }
+}

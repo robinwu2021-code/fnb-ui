@@ -1,0 +1,28 @@
+<!-- @dsCard height=288 -->
+<div style="position:relative;width:960px;height:288px;background:var(--sh-bg);overflow:hidden">
+  <style>
+    .cv-p{fill:var(--sh-primary)} .cv-t{fill:var(--sh-primary-tint)} .cv-s{fill:var(--sh-surface)} .cv-f{fill:var(--sh-faint)} .cv-i{fill:var(--sh-ink)}
+    .cv-lg{rx:var(--radius-lg)} .cv-md{rx:var(--radius-md)} .cv-pill{rx:22px}
+  </style>
+  <!--
+    blocks: sh-primary 210x72, sh-primary-tint 99x72 tiles, sh-surface 99x72 tiles, sh-faint 210x72, sh-ink pill 154x44
+    arrangement: the L1 menu grid flush right of x=504, tiles merged two-wide like the order dock, one ink pill like the checkout button
+    pattern: geometric modular dense UI -> tiles cut by radius-lg, colour-block layering with no strokes, because the B-end language is flat tint blocks
+    scales: gap pos-gap 8 x 1.5 = 12, inset space-lg 20 + 4, radius-lg 16, pill radius-full at 44px (pos-ctl)
+  -->
+  <svg width="960" height="288" viewBox="0 0 960 288" style="position:absolute;inset:0" aria-hidden="true">
+    <rect class="cv-p cv-lg" x="504" y="24" width="210" height="72"/>
+    <rect class="cv-s cv-lg" x="726" y="24" width="99" height="72"/>
+    <rect class="cv-t cv-lg" x="837" y="24" width="99" height="72"/>
+    <rect class="cv-t cv-lg" x="504" y="108" width="99" height="72"/>
+    <rect class="cv-s cv-lg" x="615" y="108" width="99" height="72"/>
+    <rect class="cv-f cv-lg" x="726" y="108" width="210" height="72"/>
+    <rect class="cv-s cv-lg" x="504" y="192" width="99" height="72"/>
+    <rect class="cv-t cv-lg" x="615" y="192" width="99" height="72"/>
+    <rect class="cv-i cv-pill" x="782" y="206" width="154" height="44"/>
+  </svg>
+  <div style="position:absolute;left:40px;bottom:36px;max-width:440px">
+    <div style="font:600 72px/.92 var(--font-sans);letter-spacing:-.03em;color:var(--sh-ink)">Dining POS</div>
+    <div style="margin-top:14px;font:400 14px/1.4 var(--font-sans);color:var(--sh-sub)">B 端色块语言上的餐饮收银平板规范</div>
+  </div>
+</div>

@@ -1,0 +1,203 @@
+/* ══ UI 2.0 · 四种风格皮肤：Apple · Material 3 · Uber Base · 玻璃态（2026-10-24）══════════════════════════════
+ * 只被 style-compare/pos-ui-v2.0.html、pos-components-v2.0.html 注入到 bapp 正式稿（v1 / v1.5）的 iframe 里；正式稿与 proto.css 不加载本文件。
+ * 做法：先换 --sh-* 令牌、圆角、字体；所有规则都挂 .pc:not(#_)，借一个 id 的权重压过 pos-colors.css 与 pos-v15.css 的同名规则，
+ * 再对少数「形态本身不同」的组件单独改写：分段、开关、勾选、输入框、菜单、弹窗、Toast、选中态。
+ * 组件 HTML 与类名不变，所以四套皮肤和原版是同一份内容。 */
+
+/* ── 0 v1.5 兼容（pos-ui-v1.5.html / pos-components-v1.5.html）─────────────────────────────────
+ * pos-v15.css 用 :root[data-ver="1.5"] .pc … 把选中、输入、次按钮、导航都写成墨黑灰体系（优先级 0,5,0），会盖掉皮肤。
+ * 这里把这些「颜色与选中」规则还给 --sh-* 令牌（由各皮肤决定）；v1.5 的间距 16/12、标签 4 圆角、选择类胶囊、
+ * 不可用改文字说明、危险改文字按钮、对比度修正都保留。:where() 让本段与下面各皮肤同级，皮肤写在后面所以皮肤优先。 */
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) :is(.sh-filter,.sh-option,.dn-pay,.dn-coupon,.dn-layout).is-on{background:var(--sh-sel-bg);color:var(--sh-sel-fg);box-shadow:none}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) :is(.sh-filter,.sh-option).is-on::after{content:none;-webkit-mask:none;mask:none;background:none}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-panel .dn-paylist--h .dn-pay--row.is-on{background:var(--sh-sel-bg)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) :is(.dn-wbtabs span,.dn-rail span,.sh-subnav>span).is-on{background:var(--sh-sel-bg);color:var(--sh-sel-fg)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .dn-rail span.is-on .sh-biname small{color:inherit;opacity:.75}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-seg span.is-on{background:var(--sh-sel-bg);color:var(--sh-sel-fg)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) :is(.sh-input,.sh-search){background:var(--sh-wash);box-shadow:none}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-input.is-err{background:var(--sh-danger-tint);box-shadow:none}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-panel>.bd.dn-ledger{background:var(--sh-wash)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) :is(.dn-ledger,.sh-cells--sunk,.dn-group,.dn-mcard) :is(.sh-input,.sh-search){background:var(--sh-card)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-btn--soft{background:var(--sh-primary-tint);color:var(--sh-primary-text)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-btn--muted{background:var(--sh-wash);color:var(--sh-ink)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) .sh-btn--text{color:var(--sh-primary-text)}
+:root:where([data-ver="1.5"][data-style]:not([data-style="base"])) .pc:not(#_) :is(.dn-table.is-cur,.dn-ocard.is-on){background:var(--sh-ink);color:#fff}
+
+/* 公共：导航栏选中项里的嵌套 span（菜名 + 英文）跟随选中字色，否则在 Uber 黑底上是灰字 */
+:root[data-style] .pc:not(#_) .dn-rail span.is-on span{color:inherit}
+/* 搜索框提示只占一行：v1.5 内边距更大，加上带勾的筛选标签后会被挤成两行 */
+:root[data-style]:not([data-style="base"]) .pc:not(#_) .sh-search{white-space:nowrap;overflow:hidden}
+
+/* ── 1 Apple HIG ──────────────────────────────────────────────────────────────────────────
+ * iOS 分组列表：画布 systemGroupedBackground，卡片纯白；控件底 = tertiary fill；系统蓝只做主按钮和选中；
+ * 分段控件 = 灰轨 + 白色浮起滑块；开关 = 系统绿；勾选 = 圆形；菜单 = 浅色毛玻璃；SF 字体，圆角连续曲率近似 16 / 12 / 10。 */
+:root[data-style="apple"] .pc:not(#_){
+  --pc-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Noto Sans SC",sans-serif;
+  --sh-bg:#F2F2F7;--sh-card:#FFFFFF;--sh-faint:#EEEEF0;--sh-wash:#EEEEF0;--sh-wash-strong:#E3E3E8;--sh-line:#E5E5EA;
+  --sh-ink:#1C1C1E;--sh-sub:#6C6C70;--sh-disabled:#AEAEB2;
+  --sh-primary:#007AFF;--sh-on-primary:#FFFFFF;--sh-primary-tint:rgba(0,122,255,.12);--sh-primary-text:#0064D2;
+  --sh-sel-bg:rgba(0,122,255,.12);--sh-sel-fg:#0064D2;--sh-pick:rgba(0,122,255,.10);
+  --sh-success-text:#248A3D;--sh-success-tint:rgba(52,199,89,.15);
+  --sh-warning-text:#B25000;--sh-warning-tint:rgba(255,149,0,.15);
+  --sh-danger:#FF3B30;--sh-danger-text:#D70015;--sh-danger-tint:rgba(255,59,48,.12);
+  --sh-scrim:rgba(0,0,0,.22);
+  --rc:16px;--rt:12px;--rk:10px;--rb:12px;
+  letter-spacing:-.01em}
+:root[data-style="apple"] .pc:not(#_) .sh-seg{padding:2px;background:#EEEEF0;border-radius:9px}
+:root[data-style="apple"] .pc:not(#_) .sh-seg span{border-radius:7px;color:var(--sh-ink)}
+:root[data-style="apple"] .pc:not(#_) .sh-seg span.is-on{background:#fff;color:var(--sh-ink);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04)}
+:root[data-style="apple"] .pc:not(#_) .sh-switch{width:51px;height:31px;border-radius:16px;background:#E9E9EA}
+:root[data-style="apple"] .pc:not(#_) .sh-switch::after{top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.15),0 3px 1px rgba(0,0,0,.06)}
+:root[data-style="apple"] .pc:not(#_) .sh-switch.is-on{background:#34C759}
+:root[data-style="apple"] .pc:not(#_) .sh-switch.is-on::after{left:22px}
+:root[data-style="apple"] .pc:not(#_) .sh-check:not(#_){border-radius:50%;background:transparent;box-shadow:inset 0 0 0 1.5px #C7C7CC}
+:root[data-style="apple"] .pc:not(#_) .sh-check.is-on:not(#_),:root[data-style="apple"] .pc:not(#_) .sh-check.is-mixed:not(#_){background:var(--sh-primary);box-shadow:none}
+:root[data-style="apple"] .pc:not(#_) .sh-tabs span.is-on{color:var(--sh-primary-text);box-shadow:inset 0 -2px 0 var(--sh-primary)}
+:root[data-style="apple"] .pc:not(#_) .sh-menu{background:rgba(246,246,248,.86);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);color:var(--sh-ink);border-radius:13px;box-shadow:0 10px 40px rgba(0,0,0,.18),0 0 0 .5px rgba(0,0,0,.08)}
+:root[data-style="apple"] .pc:not(#_) .sh-menu hr{border-top-color:rgba(60,60,67,.18)}
+:root[data-style="apple"] .pc:not(#_) .sh-menu span.is-danger{color:#FF3B30}
+:root[data-style="apple"] .pc:not(#_) .sh-dialog{border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.18)}
+:root[data-style="apple"] .pc:not(#_) .sh-sheet{border-radius:20px 0 0 20px;box-shadow:-10px 0 40px rgba(0,0,0,.12)}
+:root[data-style="apple"] .pc:not(#_) .sh-toast{background:rgba(30,30,32,.82);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-radius:999px}
+:root[data-style="apple"] .pc:not(#_) .sh-btn--muted{color:var(--sh-primary-text)}   /* iOS 灰底按钮用系统蓝字 */
+
+/* ── 2 Material 3 ─────────────────────────────────────────────────────────────────────────
+ * 基线紫色方案（primary #6750A4）。分层靠 surface container 五档色调，不靠阴影；按钮全圆；
+ * 次按钮 = Tonal（secondary container），灰按钮 = Outlined；筛选 Chip 描边 8 圆角、选中填色带勾；
+ * 分段 = Segmented button（描边胶囊 + 勾）；开关 52×32 带描边；输入 = Filled text field（上圆下线）；弹窗 28 圆角。 */
+:root[data-style="m3"] .pc:not(#_){
+  --pc-font:"Roboto","Noto Sans SC",sans-serif;
+  --sh-bg:#F3EDF7;--sh-card:#FEF7FF;--sh-faint:#ECE6F0;--sh-wash:#ECE6F0;--sh-wash-strong:#E6E0E9;--sh-line:#CAC4D0;
+  --sh-ink:#1D1B20;--sh-sub:#49454F;--sh-disabled:#9D99A3;
+  --sh-primary:#6750A4;--sh-on-primary:#FFFFFF;--sh-primary-tint:#E8DEF8;--sh-primary-text:#6750A4;
+  --sh-sel-bg:#E8DEF8;--sh-sel-fg:#1D192B;--sh-pick:#E8DEF8;
+  --sh-success-text:#386A20;--sh-success-tint:#D7EBC9;
+  --sh-warning-text:#7D5700;--sh-warning-tint:#FFDEA6;
+  --sh-danger:#B3261E;--sh-danger-text:#8C1D18;--sh-danger-tint:#F9DEDC;
+  --sh-scrim:rgba(0,0,0,.32);
+  --rc:16px;--rt:12px;--rk:8px;--rb:999px}
+:root[data-style="m3"] .pc:not(#_) .sh-btn--soft{background:#E8DEF8;color:#1D192B}
+:root[data-style="m3"] .pc:not(#_) .sh-btn--muted{background:transparent;box-shadow:inset 0 0 0 1px #79747E;color:var(--sh-primary)}
+:root[data-style="m3"] .pc:not(#_) .sh-btn--danger{background:#F9DEDC;color:#410E0B}
+:root[data-style="m3"] .pc:not(#_) .sh-btn{font-weight:500;letter-spacing:.01em}
+:root[data-style="m3"] .pc:not(#_) .sh-filter{background:transparent;box-shadow:inset 0 0 0 1px #79747E;border-radius:8px;color:var(--sh-sub)}
+:root[data-style="m3"] .pc:not(#_) .sh-filter.is-on{background:#E8DEF8;box-shadow:none;color:#1D192B}
+:root[data-style="m3"] .pc:not(#_) .sh-filter.is-on::after{content:"";order:-1;width:4px;height:9px;margin:0 4px 2px 0;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(45deg)}
+:root[data-style="m3"] .pc:not(#_) .sh-seg{background:transparent;box-shadow:inset 0 0 0 1px #79747E;border-radius:999px}
+:root[data-style="m3"] .pc:not(#_) .sh-seg span{border-radius:0;color:var(--sh-ink);box-shadow:inset -1px 0 0 #79747E}
+:root[data-style="m3"] .pc:not(#_) .sh-seg span:last-child{box-shadow:none}
+:root[data-style="m3"] .pc:not(#_) .sh-seg span:first-child{border-radius:999px 0 0 999px}
+:root[data-style="m3"] .pc:not(#_) .sh-seg span:last-child{border-radius:0 999px 999px 0}
+:root[data-style="m3"] .pc:not(#_) .sh-seg span.is-on{background:#E8DEF8;color:#1D192B}
+:root[data-style="m3"] .pc:not(#_) .sh-seg span.is-on::after{content:"✓";margin-left:6px;font-weight:700}
+:root[data-style="m3"] .pc:not(#_) .sh-option,:root[data-style="m3"] .pc:not(#_) .dn-pay,:root[data-style="m3"] .pc:not(#_) .dn-coupon{box-shadow:inset 0 0 0 1px var(--sh-line)}
+:root[data-style="m3"] .pc:not(#_) .sh-option.is-on,:root[data-style="m3"] .pc:not(#_) .dn-pay.is-on,:root[data-style="m3"] .pc:not(#_) .dn-coupon.is-on{box-shadow:none}
+:root[data-style="m3"] .pc:not(#_) .sh-stepper{background:transparent;box-shadow:inset 0 0 0 1px #79747E}
+:root[data-style="m3"] .pc:not(#_) .sh-input{border-radius:4px 4px 0 0;background:#E6E0E9;box-shadow:inset 0 -1px 0 #49454F}
+:root[data-style="m3"] .pc:not(#_) .sh-input.is-err{background:#E6E0E9;box-shadow:inset 0 -2px 0 #B3261E;color:#B3261E}
+:root[data-style="m3"] .pc:not(#_) .sh-search{background:#ECE6F0;border-radius:999px}
+:root[data-style="m3"] .pc:not(#_) .sh-switch{width:52px;height:32px;border-radius:16px;background:#E6E0E9;box-shadow:inset 0 0 0 2px #79747E}
+:root[data-style="m3"] .pc:not(#_) .sh-switch::after{top:8px;left:8px;width:16px;height:16px;border-radius:50%;background:#79747E}
+:root[data-style="m3"] .pc:not(#_) .sh-switch.is-on{background:var(--sh-primary);box-shadow:none}
+:root[data-style="m3"] .pc:not(#_) .sh-switch.is-on::after{top:4px;left:24px;width:24px;height:24px;background:#fff}
+:root[data-style="m3"] .pc:not(#_) .sh-check:not(#_){width:18px;height:18px;border-radius:2px;background:transparent;box-shadow:inset 0 0 0 2px #49454F}
+:root[data-style="m3"] .pc:not(#_) .sh-check.is-on:not(#_),:root[data-style="m3"] .pc:not(#_) .sh-check.is-mixed:not(#_){background:var(--sh-primary);box-shadow:none}
+:root[data-style="m3"] .pc:not(#_) .sh-tabs span.is-on{color:var(--sh-primary);box-shadow:inset 0 -3px 0 var(--sh-primary)}
+:root[data-style="m3"] .pc:not(#_) .dn-rail span.is-on,:root[data-style="m3"] .pc:not(#_) .sh-subnav>span.is-on{border-radius:999px}
+:root[data-style="m3"] .pc:not(#_) .sh-menu{background:#F3EDF7;color:var(--sh-ink);border-radius:4px;box-shadow:0 2px 6px 2px rgba(0,0,0,.15),0 1px 2px rgba(0,0,0,.3)}
+:root[data-style="m3"] .pc:not(#_) .sh-menu span{border-radius:0}
+:root[data-style="m3"] .pc:not(#_) .sh-menu hr{border-top-color:#CAC4D0}
+:root[data-style="m3"] .pc:not(#_) .sh-menu span.is-danger{color:#B3261E}
+:root[data-style="m3"] .pc:not(#_) .sh-dialog{background:#ECE6F0;border-radius:28px;padding:24px}
+:root[data-style="m3"] .pc:not(#_) .sh-dialog .h{font-size:22px;font-weight:400}
+:root[data-style="m3"] .pc:not(#_) .sh-sheet{background:#F7F2FA;border-radius:16px 0 0 16px}
+:root[data-style="m3"] .pc:not(#_) .sh-toast{background:#322F35;color:#F5EFF7;border-radius:4px}
+:root[data-style="m3"] .pc:not(#_) .sh-toast b{color:#D0BCFF;text-decoration:none}
+
+/* ── 3 Uber Base ──────────────────────────────────────────────────────────────────────────
+ * 黑就是品牌色：主按钮、选中、开关、份数角标一律纯黑，白字；其余是 #F3F3F3 / #EEEEEE 两档灰；
+ * 不用彩色做装饰，彩色只留给状态（正向绿 · 警示黄 · 负向红）；字重整体加一档，金额更粗更大；
+ * 按钮与卡片 8 圆角，筛选与分类是黑白胶囊；已点菜品 = 白底 + 2px 黑框；菜单与弹窗是白底投影。 */
+:root[data-style="uber"] .pc:not(#_){
+  --pc-font:"Helvetica Neue","Inter","Noto Sans SC",Arial,sans-serif;
+  --sh-bg:#F3F3F3;--sh-card:#FFFFFF;--sh-faint:#EEEEEE;--sh-wash:#EEEEEE;--sh-wash-strong:#E2E2E2;--sh-line:#E8E8E8;
+  --sh-ink:#000000;--sh-sub:#5E5E5E;--sh-disabled:#AFAFAF;
+  --sh-primary:#000000;--sh-on-primary:#FFFFFF;--sh-primary-tint:#EEEEEE;--sh-primary-text:#000000;
+  --sh-sel-bg:#000000;--sh-sel-fg:#FFFFFF;--sh-pick:#FFFFFF;
+  --sh-success-text:#03703C;--sh-success-tint:#E6F2ED;
+  --sh-warning-text:#674D1B;--sh-warning-tint:#FFF2D9;
+  --sh-danger:#E11900;--sh-danger-text:#AB1300;--sh-danger-tint:#FFEFED;
+  --sh-scrim:rgba(0,0,0,.5);
+  --rc:12px;--rt:8px;--rk:8px;--rb:8px}
+:root[data-style="uber"] .pc:not(#_) .sh-btn{font-weight:600}
+:root[data-style="uber"] .pc:not(#_) .sh-btn--soft,:root[data-style="uber"] .pc:not(#_) .sh-btn--muted{background:#EEEEEE;color:#000;font-weight:600}
+:root[data-style="uber"] .pc:not(#_) .sh-filter{border-radius:999px}
+:root[data-style="uber"] .pc:not(#_) .dn-rail span.is-on>i{background:#fff}
+:root[data-style="uber"] .pc:not(#_) .sh-filter:not(.is-on){color:#000;font-weight:500}
+:root[data-style="uber"] .pc:not(#_) .sh-seg span{border-radius:999px}
+:root[data-style="uber"] .pc:not(#_) .sh-seg span:not(.is-on){color:#000}
+:root[data-style="uber"] .pc:not(#_) .sh-seg{border-radius:999px}
+:root[data-style="uber"] .pc:not(#_) .dn-dish.is-on,:root[data-style="uber"] .pc:not(#_) .dn-pay.is-on,:root[data-style="uber"] .pc:not(#_) .sh-option.is-on,:root[data-style="uber"] .pc:not(#_) .dn-coupon.is-on,:root[data-style="uber"] .pc:not(#_) .dn-layout.is-on{background:#fff;color:#000;box-shadow:inset 0 0 0 2px #000}
+:root[data-style="uber"] .pc:not(#_) .dn-pay.is-on small,:root[data-style="uber"] .pc:not(#_) .sh-option.is-on small{color:var(--sh-sub);opacity:1}
+:root[data-style="uber"] .pc:not(#_) .dn-dish .p,:root[data-style="uber"] .pc:not(#_) .dn-amount b,:root[data-style="uber"] .pc:not(#_) .dn-table b,:root[data-style="uber"] .pc:not(#_) .dn-due2 b{font-weight:800}
+:root[data-style="uber"] .pc:not(#_) .dn-amount b{letter-spacing:-.03em}
+:root[data-style="uber"] .pc:not(#_) .sh-dialog .h,:root[data-style="uber"] .pc:not(#_) .sh-sheet .hd b,:root[data-style="uber"] .pc:not(#_) .sh-panel--page>.hd .t b{font-weight:700;font-size:20px}
+:root[data-style="uber"] .pc:not(#_) .sh-tabs span.is-on{color:#000;font-weight:700;box-shadow:inset 0 -3px 0 #000}
+:root[data-style="uber"] .pc:not(#_) .sh-check:not(#_){border-radius:4px;background:transparent;box-shadow:inset 0 0 0 2px #000}
+:root[data-style="uber"] .pc:not(#_) .sh-check.is-on:not(#_),:root[data-style="uber"] .pc:not(#_) .sh-check.is-mixed:not(#_){background:#000;box-shadow:none}
+:root[data-style="uber"] .pc:not(#_) .sh-switch{background:#E2E2E2;border-radius:13px}
+:root[data-style="uber"] .pc:not(#_) .sh-switch.is-on{background:#000}
+:root[data-style="uber"] .pc:not(#_) .sh-switch::after{border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+:root[data-style="uber"] .pc:not(#_) .sh-input.is-err{background:#FFEFED;box-shadow:inset 0 0 0 2px #E11900}
+:root[data-style="uber"] .pc:not(#_) .sh-menu{background:#fff;color:#000;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.16)}
+:root[data-style="uber"] .pc:not(#_) .sh-menu hr{border-top-color:#E8E8E8}
+:root[data-style="uber"] .pc:not(#_) .sh-menu span.is-danger{color:#E11900}
+:root[data-style="uber"] .pc:not(#_) .sh-dialog{border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.24)}
+:root[data-style="uber"] .pc:not(#_) .sh-sheet{border-radius:16px 0 0 16px;box-shadow:-8px 0 24px rgba(0,0,0,.16)}
+:root[data-style="uber"] .pc:not(#_) .sh-toast{background:#000;border-radius:8px}
+:root[data-style="uber"] .pc:not(#_) .dn-qty{background:#000}
+
+/* ── 4 玻璃态 Glassmorphism（白色）──────────────────────────────────────────────────────────
+ * 白色磨砂：近白画布上只留几块很淡的冷色光斑（让模糊看得出来），所有面（卡片、面板、导航、菜品、支付、弹窗）是
+ * 72% 白 + 24px 模糊 + 1px 白描边 + 极淡灰投影；控件底是 5% 墨的半透明灰；选中 = 纯白浮起 + 投影，卡片类加墨色内圈；
+ * 主按钮、开关、份数角标用墨色，不用彩色；遮罩是白色磨砂。
+ * 注意：模糊在低端安卓一体机上掉帧明显；白底上分层很淡，靠描边和投影区分。 */
+:root[data-style="glass"] .pc:not(#_){
+  --pc-font:-apple-system,"SF Pro Text","Inter","PingFang SC","Noto Sans SC",sans-serif;
+  --sh-bg:rgba(255,255,255,.4);--sh-card:rgba(255,255,255,.72);--sh-faint:rgba(15,23,42,.05);--sh-wash:rgba(15,23,42,.05);--sh-wash-strong:rgba(15,23,42,.09);--sh-line:rgba(15,23,42,.08);
+  --sh-ink:#111318;--sh-sub:#5B6070;--sh-disabled:#8A8F9C;
+  --sh-primary:#111318;--sh-on-primary:#FFFFFF;--sh-primary-tint:rgba(17,19,24,.06);--sh-primary-text:#111318;
+  --sh-sel-bg:#FFFFFF;--sh-sel-fg:#111318;--sh-pick:#FFFFFF;
+  --sh-scrim:rgba(236,239,244,.45);
+  --rc:22px;--rt:16px;--rk:12px;--rb:14px;
+  background:
+    radial-gradient(circle at 12% 15%,#E3ECFF 0,transparent 38%),
+    radial-gradient(circle at 88% 12%,#FCE9F1 0,transparent 36%),
+    radial-gradient(circle at 70% 92%,#E4F6EE 0,transparent 40%),
+    linear-gradient(160deg,#FCFCFE,#F0F2F6)}
+:root[data-style="glass"] .pc:not(#_) :is(.sh-card,.sh-panel,.sh-cells,.dn-rail,.sh-subnav,.dn-dish,.dn-pay,.dn-table,.sh-dialog,.sh-sheet,.dn-ocard,.dn-mcard,.dn-kpi,.sh-stat){
+  -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.9),0 0 0 1px rgba(15,23,42,.05),0 8px 30px rgba(15,23,42,.06)}
+:root[data-style="glass"] .pc:not(#_) :is(.sh-btn--soft,.sh-btn--muted,.sh-filter,.sh-option,.sh-input,.sh-search,.sh-stepper,.sh-seg,.dn-coupon,.dn-layout){
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.7)}
+:root[data-style="glass"] .pc:not(#_) .sh-btn:not(.sh-btn--soft,.sh-btn--muted,.sh-btn--danger,.sh-btn--danger-solid,.sh-btn--off,.sh-btn--text){
+  background:linear-gradient(180deg,#2A2D35,#111318);box-shadow:0 6px 18px rgba(17,19,24,.22),inset 0 1px 0 rgba(255,255,255,.18)}
+:root[data-style="glass"] .pc:not(#_) :is(.sh-filter,.sh-seg span,.dn-rail span,.sh-subnav>span,.dn-wbtabs span).is-on{
+  box-shadow:0 0 0 1px rgba(15,23,42,.06),0 4px 14px rgba(15,23,42,.10)}
+:root[data-style="glass"] .pc:not(#_) :is(.sh-option,.dn-pay,.dn-dish,.dn-coupon,.dn-layout).is-on{
+  box-shadow:inset 0 0 0 2px #111318,0 6px 20px rgba(15,23,42,.10)}
+:root[data-style="glass"] .pc:not(#_) .sh-switch{background:rgba(15,23,42,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.7)}
+:root[data-style="glass"] .pc:not(#_) .sh-switch::after{background:#fff;box-shadow:0 2px 6px rgba(15,23,42,.18)}
+:root[data-style="glass"] .pc:not(#_) .sh-switch.is-on{background:#111318}
+:root[data-style="glass"] .pc:not(#_) .sh-check:not(#_){background:rgba(255,255,255,.8);box-shadow:inset 0 0 0 1.5px rgba(15,23,42,.25)}
+:root[data-style="glass"] .pc:not(#_) .sh-check.is-on:not(#_),:root[data-style="glass"] .pc:not(#_) .sh-check.is-mixed:not(#_){background:#111318;box-shadow:none}
+:root[data-style="glass"] .pc:not(#_) .sh-mask{color:var(--sh-sub);-webkit-backdrop-filter:blur(10px) saturate(140%);backdrop-filter:blur(10px) saturate(140%)}
+:root[data-style="glass"] .pc:not(#_) .sh-dialog{background:rgba(255,255,255,.82);box-shadow:inset 0 0 0 1px #fff,0 24px 60px rgba(15,23,42,.16)}
+:root[data-style="glass"] .pc:not(#_) .sh-sheet{background:rgba(255,255,255,.85);box-shadow:inset 0 0 0 1px #fff,-12px 0 40px rgba(15,23,42,.12)}
+:root[data-style="glass"] .pc:not(#_) .sh-menu{background:rgba(255,255,255,.8);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);color:var(--sh-ink);box-shadow:inset 0 0 0 1px #fff,0 0 0 1px rgba(15,23,42,.06),0 12px 40px rgba(15,23,42,.14)}
+:root[data-style="glass"] .pc:not(#_) .sh-menu hr{border-top-color:rgba(15,23,42,.08)}
+:root[data-style="glass"] .pc:not(#_) .sh-menu span.is-danger{color:#D92D20}
+:root[data-style="glass"] .pc:not(#_) .sh-toast{background:rgba(17,19,24,.78);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+:root[data-style="glass"] .pc:not(#_) .dn-qty{background:#111318}
+:root[data-style="glass"] .pc:not(#_) .dn-ledger,:root[data-style="glass"] .pc:not(#_) .sh-panel>.bd.dn-ledger{background:rgba(15,23,42,.035)}
+:root[data-style="glass"] .pc:not(#_) .sh-mask>.sh-help{color:var(--sh-sub)!important}   /* 组件页里的遮罩说明字写死了白色，白色遮罩上看不见 */

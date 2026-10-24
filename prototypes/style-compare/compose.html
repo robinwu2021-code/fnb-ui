@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>组件库 2.0 拼图</title>
+<!-- 把 img/lib/<小节>-<风格>.png 四张并排拼成一张对比图，供导出。?sec=04 -->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#fff;font-family:-apple-system,"PingFang SC",sans-serif;color:#111;padding:28px 32px 32px;width:3000px}
+h1{font-size:30px;font-weight:700}
+p{font-size:16px;color:#666;margin:6px 0 22px}
+.cols{display:grid;grid-template-columns:repeat(4,720px);gap:24px}
+.col h2{font-size:20px;display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.col h2 i{width:16px;height:16px;border-radius:50%}
+.col h2 span{font-size:14px;color:#888;font-weight:400}
+.col img{width:720px;display:block;border-radius:12px;border:1px solid #eee}
+</style>
+</head>
+<body>
+<h1 id="t"></h1><p id="d"></p>
+<div class="cols" id="cols"></div>
+<script>
+const SEC={'03':'菜单（菜品卡 · 搜索筛选 · 规格 · 操作菜单 · 详情浮层）','04':'按钮（按钮层级 · 步进器 · 开关 · 支付方式 · 布局选择）','0708':'浮层与表单（弹窗 · 侧边抽屉 · 输入框 · 勾选 · 开关 · 数字键盘）'};
+const ST=[['apple','Apple HIG','系统蓝 · 分组灰 · 白色滑块','#007AFF'],['m3','Material 3','色调分层 · 全圆按钮 · 带勾 Chip','#6750A4'],['uber','Uber Base','纯黑 · 粗体 · 胶囊与黑框','#000'],['glass','玻璃态（白）','白色磨砂 · 淡光斑 · 墨色主按钮','linear-gradient(135deg,#FFFFFF,#C9D0DC)']];
+const sec=new URLSearchParams(location.search).get('sec')||'04';
+document.getElementById('t').textContent=`组件库 2.0 · ${sec.replace(/^(\d\d)(\d\d)$/,'$1 + $2')} · ${SEC[sec].split('（')[0]}：四种风格`;
+document.getElementById('d').textContent=`同一份 pos-components.html，叠加 themes-v2.0.css 皮肤。${SEC[sec]}`;
+document.getElementById('cols').innerHTML=ST.map(([k,n,d,c])=>`<div class="col"><h2><i style="background:${c}"></i>${n}<span>${d}</span></h2><img src="img/lib/${sec}-${k}.png"></div>`).join('');
+Promise.all([...document.images].map(i=>i.decode().catch(()=>{}))).then(()=>document.body.dataset.h=document.documentElement.scrollHeight);
+</script>
+</body>
+</html>

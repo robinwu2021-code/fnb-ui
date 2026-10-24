@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POS 配色方案</title>
+<!-- 全线点餐 POS · 配色方案预览：黑白灰 + 主题色 + 辅助色，8 套主题浅深并排。取值与 docs/POS配色方案.md 一致，由 OKLCH 脚本生成。 -->
+<style>
+/* 中性灰：浅 / 深 */
+.lt { --canvas: #E4E6EA; --surface: #FFFFFF; --faint: #E8EBEF; --strong: #DADDE0; --line: #D3D6DA; --ink: #181A1C; --sub: #616367; --muted: #9C9FA2;
+  --danger: #D92D20; --danger-text: #B42318; --danger-tint: #FAE2E0; --warn: #F79009; --warn-text: #B54708; --warn-tint: #FEEFDD; --ok: #12B76A; --ok-text: #067647; --ok-tint: #DEF5EA;
+  --primary: var(--p-l); --on-primary: var(--on-l); --primary-text: var(--pt-l); --primary-tint: var(--ti-l); --aux: var(--a-l); --aux-tint: var(--at-l); }
+.dk { --canvas: #07080B; --surface: #15171A; --faint: #242729; --strong: #313336; --line: #37393C; --ink: #EDF0F4; --sub: #A8ABAF; --muted: #727578;
+  --danger: #F04438; --danger-text: #F97066; --danger-tint: #3C1F1F; --warn: #F79009; --warn-text: #FDB022; --warn-tint: #3E2D17; --ok: #12B76A; --ok-text: #47CD89; --ok-tint: #143428;
+  --primary: var(--p-d); --on-primary: var(--on-d); --primary-text: var(--pt-d); --primary-tint: var(--ti-d); --aux: var(--a-d); --aux-tint: var(--at-d); }
+/* 主题：主色 p、实心上的字 on、主色文字 pt、主色 tint ti、辅助色 a、辅助 tint at；-l 浅色，-d 深色 */
+[data-skin="pine"] { --p-l: #1D6E58; --p-d: #67A993; --on-l: #FFFFFF; --on-d: #00140C; --pt-l: #005E49; --pt-d: #90CBB5; --ti-l: #E4EEEB; --ti-d: #253432; --a-l: #3F6789; --a-d: #98BEDF; --at-l: #E8EDF1; --at-d: #2F3841; }
+[data-skin="indigo"] { --p-l: #485FA2; --p-d: #829BDB; --on-l: #FFFFFF; --on-d: #070D1F; --pt-l: #3A4F90; --pt-d: #A7BEF9; --ti-l: #E9ECF4; --ti-d: #2B3141; --a-l: #276E6C; --a-d: #86C3C0; --at-l: #E5EEED; --at-d: #2C393B; }
+[data-skin="teal"] { --p-l: #276B80; --p-d: #69A4B8; --on-l: #FFFFFF; --on-d: #00121B; --pt-l: #105A6F; --pt-d: #93C7DA; --ti-l: #E5EDF0; --ti-d: #26333A; --a-l: #7B587C; --a-d: #D0ADD1; --at-l: #EFEBEF; --at-d: #3A353F; }
+[data-skin="tea"] { --p-l: #526932; --p-d: #8EA571; --on-l: #FFFFFF; --on-d: #091101; --pt-l: #435A23; --pt-d: #B1C798; --ti-l: #EAEDE6; --ti-d: #2D332B; --a-l: #456783; --a-d: #9DBDDA; --at-l: #E9EDF0; --at-d: #303840; }
+[data-skin="slate"] { --p-l: #586474; --p-d: #909DAC; --on-l: #FFFFFF; --on-d: #060F1B; --pt-l: #485463; --pt-d: #B5C0CF; --ti-l: #EBECEE; --ti-d: #2E3237; --a-l: #496C50; --a-d: #A0C2A5; --at-l: #E9EDEA; --at-d: #313936; }
+[data-skin="umber"] { --p-l: #88573E; --p-d: #C2927A; --on-l: #FFFFFF; --on-d: #1C0801; --pt-l: #75462D; --pt-d: #E2B6A0; --ti-l: #F1EBE8; --ti-d: #38302D; --a-l: #356B77; --a-d: #90C1CD; --at-l: #E7EDEF; --at-d: #2E393E; }
+[data-skin="crimson"] { --p-l: #99485A; --p-d: #D58694; --on-l: #FFFFFF; --on-d: #1C060B; --pt-l: #88384B; --pt-d: #F5ABB8; --ti-l: #F3E9EB; --ti-d: #3B2D32; --a-l: #336C6F; --a-d: #8FC2C5; --at-l: #E7EDEE; --at-d: #2D393C; }
+[data-skin="mono"] { --p-l: #181A1C; --p-d: #EDF0F4; --on-l: #FFFFFF; --on-d: #07080B; --pt-l: #181A1C; --pt-d: #EDF0F4; --ti-l: #E1E1E1; --ti-d: #383A3D; --a-l: #546488; --a-d: #A8B9DD; --at-l: #EAECF1; --at-d: #323741; }
+
+:root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+body { margin: 0; background: #E4E6EA; color: #181A1C; font-size: 14px; line-height: 1.5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { background: #07080B; color: #EDF0F4; } }
+:root[data-theme="dark"] body { background: #07080B; color: #EDF0F4; }
+* { box-sizing: border-box; }
+.num, code { font-variant-numeric: tabular-nums; }
+code { font: 12px/1.4 ui-monospace, Menlo, monospace; }
+.page { max-width: 1440px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.lead { margin: 0 0 24px; opacity: .75; max-width: 760px; }
+h2 { font-size: 17px; margin: 32px 0 12px; }
+.lead a { color: inherit; }
+
+/* 骨架条：四层颜色的面积 */
+.layers { display: grid; grid-template-columns: 90fr 5fr 2fr 3fr; height: 40px; border-radius: 10px; overflow: hidden; }
+.layers span { display: flex; align-items: center; padding: 0 12px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+
+/* 中性灰色阶 */
+.neu { display: grid; gap: 8px; }
+.neu .row { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; padding: 12px; border-radius: 14px; background: var(--canvas); color: var(--ink); }
+.chip { border-radius: 10px; overflow: hidden; background: var(--surface); }
+.chip i { display: block; height: 52px; }
+.chip div { padding: 6px 8px; font-size: 12px; }
+.chip b { display: block; font-weight: 600; }
+.chip code { color: var(--sub); }
+
+/* 主题卡 */
+.themes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 1100px) { .themes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { border-radius: 18px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; }
+@media (max-width: 640px) { .card { grid-template-columns: 1fr; } }
+.pane { background: var(--canvas); color: var(--ink); padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pane .hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pane .hd b { font-size: 17px; }
+.pane .hd span { color: var(--sub); font-size: 12px; }
+.sw { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.sw div { min-width: 0; }
+.sw i { display: block; height: 30px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(127,127,127,.18); }
+.sw small { display: block; font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw code { font-size: 11px; }
+.panel { background: var(--surface); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.dish, .tb { border-radius: 10px; background: var(--faint); padding: 8px; position: relative; min-height: 64px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
+.dish b, .tb b { font-weight: 600; }
+.dish .pr { margin-top: auto; font-weight: 700; }
+.dish.sel { background: var(--primary-tint); }
+.q { position: absolute; top: 6px; right: 6px; min-width: 20px; height: 20px; border-radius: 10px; background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 700; display: grid; place-items: center; padding: 0 5px; }
+.tb.busy { background: var(--primary-tint); }
+.tb.resv { background: var(--aux-tint); }
+.tb.due { background: var(--warn-tint); }
+.tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; background: var(--strong); color: var(--sub); align-self: flex-start; }
+.tag.p { background: var(--surface); color: var(--primary-text); }
+.tag.a { background: var(--aux-tint); color: var(--aux); }
+.tb.resv .tag.a { background: var(--surface); }
+.tag.w { background: var(--warn-tint); color: var(--warn-text); }
+.tb.due .tag.w { background: var(--surface); }
+.tag.d { background: var(--danger-tint); color: var(--danger-text); }
+.tag.o { background: var(--ok-tint); color: var(--ok-text); }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { height: 40px; padding: 0 14px; border-radius: 999px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; border: 0; font-family: inherit; white-space: nowrap; }
+.btn.m { background: var(--faint); color: var(--ink); }
+.btn.s { background: var(--primary-tint); color: var(--primary-text); }
+.btn.pri { background: var(--primary); color: var(--on-primary); flex: 1; justify-content: center; }
+.btn.dg { background: var(--danger-tint); color: var(--danger-text); }
+.kv { display: grid; grid-template-columns: 1fr auto; font-size: 12px; gap: 2px 8px; color: var(--sub); }
+.kv span:nth-child(even) { text-align: right; color: var(--ink); }
+.nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.nav span { height: 30px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 12px; color: var(--sub); background: var(--faint); }
+.nav span.on { background: var(--ink); color: var(--surface); font-weight: 600; }
+[data-skin="mono"] .nav span.on { background: var(--strong); color: var(--ink); }
+.cr { font-size: 11px; color: var(--sub); }
+
+/* 语义色 */
+.sem { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.sem .pane { border-radius: 14px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>全线点餐 POS · 配色方案</h1>
+  <p class="lead">黑白灰做结构，主题色只表示订单和钱，辅助色只表示人和营销（会员、券、赠送、预订），语义色只在出现异常时露面。8 套主题都在 OKLCH 里按同一组明度和彩度生成，对比度为实测值。说明见 <a href="../docs/POS配色方案.md">docs/POS配色方案.md</a>。</p>
+
+  <h2>一屏的颜色比例（示意）</h2>
+  <div class="lt" data-skin="pine">
+    <div class="layers">
+      <span style="background:var(--faint);color:var(--sub)">黑白灰 ≈ 90%：结构、文字、当前位置</span>
+      <span style="background:var(--primary);color:var(--on-primary)">主题</span>
+      <span style="background:var(--aux);color:#fff">辅</span>
+      <span style="background:var(--warn-tint);color:var(--warn-text)">异常</span>
+    </div>
+  </div>
+
+  <h2>黑白灰 · 所有主题共用</h2>
+  <div class="neu" id="neu"></div>
+
+  <h2>主题色 + 辅助色 · 8 套（左浅右深）</h2>
+  <div class="themes" id="themes"></div>
+
+  <h2>语义色 · 所有主题共用</h2>
+  <div class="sem" id="sem"></div>
+</div>
+<script>
+(function () {
+  var NEU = [['canvas', '画布'], ['surface', '面板'], ['faint', '中性块'], ['strong', '按下 / 强块'], ['line', '分隔'], ['ink', '墨 · 正文'], ['sub', '次要文字'], ['muted', '禁用图形']];
+  var HEX = {
+    lt: { canvas: '#E4E6EA', surface: '#FFFFFF', faint: '#E8EBEF', strong: '#DADDE0', line: '#D3D6DA', ink: '#181A1C', sub: '#616367', muted: '#9C9FA2' },
+    dk: { canvas: '#07080B', surface: '#15171A', faint: '#242729', strong: '#313336', line: '#37393C', ink: '#EDF0F4', sub: '#A8ABAF', muted: '#727578' }
+  };
+  document.getElementById('neu').innerHTML = ['lt', 'dk'].map(function (m) {
+    return '<div class="row ' + m + '">' + NEU.map(function (n) {
+      return '<div class="chip"><i style="background:var(--' + n[0] + ')"></i><div><b>' + n[0] + '</b>' + n[1] + '<br><code>' + HEX[m][n[0]] + '</code></div></div>';
+    }).join('') + '</div>';
+  }).join('');
+
+  /* key, 主题, 辅助色, 浅 [primary, text, tint, aux, auxTint], 深 [...], 对比度说明 浅 / 深, 一句话 */
+  var T = [
+    ['pine', '松绿', '黛蓝', ['#1D6E58', '#005E49', '#E4EEEB', '#3F6789', '#E8EDF1'], ['#67A993', '#90CBB5', '#253432', '#98BEDF', '#2F3841'], '白字 6.1 · 文字/tint 6.6 · 辅/底 5.1', '暗字 6.9 · 文字/tint 7.1 · 辅/底 6.1', '推荐默认。绿配蓝，最安静'],
+    ['indigo', '靛蓝', '青碧', ['#485FA2', '#3A4F90', '#E9ECF4', '#276E6C', '#E5EEED'], ['#829BDB', '#A7BEF9', '#2B3141', '#86C3C0', '#2C393B'], '白字 6.1 · 文字/tint 6.6 · 辅/底 5.0', '暗字 7.1 · 文字/tint 7.0 · 辅/底 6.0', '蓝配青，理性，适合团餐、食堂'],
+    ['teal', '黛青', '梅紫', ['#276B80', '#105A6F', '#E5EDF0', '#7B587C', '#EFEBEF'], ['#69A4B8', '#93C7DA', '#26333A', '#D0ADD1', '#3A353F'], '白字 6.0 · 文字/tint 6.5 · 辅/底 5.0', '暗字 6.9 · 文字/tint 7.1 · 辅/底 6.0', '青配紫，雅致，适合海鲜、轻食'],
+    ['tea', '茶青', '岩蓝', ['#526932', '#435A23', '#EAEDE6', '#456783', '#E9EDF0'], ['#8EA571', '#B1C798', '#2D332B', '#9DBDDA', '#303840'], '白字 6.1 · 文字/tint 6.5 · 辅/底 5.1', '暗字 7.1 · 文字/tint 7.1 · 辅/底 6.1', '草木配水色，适合茶饮、咖啡、烘焙'],
+    ['slate', '石墨', '苔绿', ['#586474', '#485463', '#EBECEE', '#496C50', '#E9EDEA'], ['#909DAC', '#B5C0CF', '#2E3237', '#A0C2A5', '#313936'], '白字 6.0 · 文字/tint 6.5 · 辅/底 5.0', '暗字 7.0 · 文字/tint 7.0 · 辅/底 6.1', '近无彩，和任何装修都不冲突'],
+    ['umber', '栗棕', '石青', ['#88573E', '#75462D', '#F1EBE8', '#356B77', '#E7EDEF'], ['#C2927A', '#E2B6A0', '#38302D', '#90C1CD', '#2E393E'], '白字 6.0 · 文字/tint 6.7 · 辅/底 5.0', '暗字 7.1 · 文字/tint 7.0 · 辅/底 6.0', '暖棕配冷青。离警告橙近，警告必须带字'],
+    ['crimson', '绛红', '青瓷', ['#99485A', '#88384B', '#F3E9EB', '#336C6F', '#E7EDEE'], ['#D58694', '#F5ABB8', '#3B2D32', '#8FC2C5', '#2D393C'], '白字 6.1 · 文字/tint 6.5 · 辅/底 5.1', '暗字 7.1 · 文字/tint 7.1 · 辅/底 6.1', '红配青，喜庆。离危险红近，危险操作用 soft'],
+    ['mono', '墨黑', '靛灰', ['#181A1C', '#181A1C', '#E1E1E1', '#546488', '#EAECF1'], ['#EDF0F4', '#EDF0F4', '#383A3D', '#A8B9DD', '#323741'], '白字 17.5 · 辅/底 5.0', '暗字 17.5 · 辅/底 6.1', '无彩。选中的分类改为灰底，结账是唯一的墨块']
+  ];
+  var LBL = ['主色', '主色文字', '主色 tint', '辅助色', '辅助 tint'];
+  function pane(t, m) {
+    var v = m === 'lt' ? t[3] : t[4];
+    return '<div class="pane ' + m + '">' +
+      '<div class="hd"><b>' + t[1] + ' + ' + t[2] + '</b><span>' + (m === 'lt' ? '浅色 · ' + t[7] : '深色') + '</span></div>' +
+      '<div class="sw">' + v.map(function (h, i) { return '<div><i style="background:' + h + '"></i><small>' + LBL[i] + '</small><code>' + h + '</code></div>'; }).join('') + '</div>' +
+      '<div class="panel"><div class="nav"><span class="on">热菜</span><span>凉菜</span><span>饮品</span></div>' +
+      '<div class="tiles"><div class="dish"><b>麻婆豆腐</b><span class="pr num">¥26</span></div><div class="dish sel"><b>宫保鸡丁</b><span class="pr num">¥48</span><span class="q">1</span></div><div class="dish sel"><b>米饭</b><span class="pr num">¥3</span><span class="q">4</span></div></div>' +
+      '<div class="tiles"><div class="tb busy"><b>A03</b><span class="tag p">用餐中</span></div><div class="tb resv"><b>A08</b><span class="tag a">已预订 19:00</span></div><div class="tb due"><b>A05</b><span class="tag w">待结账</span></div></div></div>' +
+      '<div class="panel"><div class="tags"><span class="tag a">会员 · 金卡</span><span class="tag a">满 200 减 10</span><span class="tag a">赠送</span><span class="tag">外卖</span><span class="tag w">催菜中</span><span class="tag d">已退</span></div>' +
+      '<div class="kv num"><span>小计</span><span>¥268.00</span><span>会员价</span><span>−¥8.00</span></div>' +
+      '<div class="btns"><button class="btn m">挂单</button><button class="btn s">送厨 · 2</button><button class="btn pri">结账 ¥260.00</button></div></div>' +
+      '<div class="cr num">' + (m === 'lt' ? t[5] : t[6]) + '</div></div>';
+  }
+  document.getElementById('themes').innerHTML = T.map(function (t) { return '<div class="card" data-skin="' + t[0] + '">' + pane(t, 'lt') + pane(t, 'dk') + '</div>'; }).join('');
+
+  var S = [['危险', 'd', '退菜、已沽清、失败、删除', '字/底 5.3 · 5.4'], ['警告', 'w', '催菜中、待结账、缺纸、离线、限量', '字/底 4.8 · 7.2'], ['成功', 'o', '只用于收款成功、设备正常', '字/底 5.0 · 6.7']];
+  document.getElementById('sem').innerHTML = S.map(function (s) {
+    return ['lt', 'dk'].map(function (m) { return '<div class="pane ' + m + '" data-skin="pine"><div class="hd"><b>' + s[0] + '</b><span>' + (m === 'lt' ? '浅色' : '深色') + '</span></div><div class="tags"><span class="tag ' + s[1] + '">' + s[0] + '标签</span></div><div class="cr">' + s[2] + ' · ' + s[3] + '</div></div>'; }).join('');
+  }).join('');
+})();
+</script>
+</body>
+</html>

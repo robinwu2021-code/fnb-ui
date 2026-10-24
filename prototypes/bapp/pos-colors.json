@@ -1,0 +1,2129 @@
+{
+ "gray": {
+  "0": "#FFFFFF",
+  "50": "#F4F6F9",
+  "100": "#EDEFF2",
+  "150": "#E5E7EA",
+  "200": "#DCDEE1",
+  "300": "#C5C7CA",
+  "400": "#A3A5A7",
+  "500": "#848689",
+  "600": "#67696B",
+  "700": "#4B4D50",
+  "800": "#313335",
+  "900": "#181A1C",
+  "950": "#0A0B0D"
+ },
+ "themes": {
+  "mono": {
+   "zh": "墨黑",
+   "en": "Ink",
+   "base": "#181A1C",
+   "hue": 258,
+   "nearest": "900",
+   "roles": {
+    "primary": "900",
+    "primary-hover": "800",
+    "primary-pressed": "950",
+    "primary-tint": "150",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "900"
+   },
+   "ramp": {
+    "50": "#F4F6F9",
+    "100": "#EDEFF2",
+    "200": "#DCDEE1",
+    "300": "#C5C7CA",
+    "400": "#A3A5A7",
+    "500": "#848689",
+    "600": "#67696B",
+    "700": "#4B4D50",
+    "800": "#313335",
+    "900": "#181A1C",
+    "950": "#0A0B0D"
+   },
+   "bright": null,
+   "values": {
+    "primary": "#181A1C",
+    "primary-hover": "#313335",
+    "primary-pressed": "#0A0B0D",
+    "primary-tint": "#E5E7EA",
+    "primary-tint-hover": "#DCDEE1",
+    "primary-border": "#C5C7CA",
+    "primary-text": "#181A1C"
+   },
+   "contrast": {
+    "white/primary": 17.45,
+    "text/tint": 14.09,
+    "text/white": 17.45,
+    "focus/white": 17.45,
+    "focus/tint": 14.09,
+    "tint/white": 1.24
+   },
+   "vs_status": {
+    "success": {
+     "tint": 8.9,
+     "text": 22.6
+    },
+    "warning": {
+     "tint": 8.6,
+     "text": 30.3
+    },
+    "danger": {
+     "tint": 7.1,
+     "text": 34.2
+    },
+    "info": {
+     "tint": 6.4,
+     "text": 23.8
+    }
+   }
+  },
+  "brand": {
+   "zh": "虹选红",
+   "en": "Brand red",
+   "base": "#E1251B",
+   "hue": 29,
+   "nearest": "600",
+   "roles": {
+    "primary": "600",
+    "primary-hover": "700",
+    "primary-pressed": "800",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#FEF4F2",
+    "100": "#FFE6E2",
+    "200": "#FFCDC5",
+    "300": "#FFAB9E",
+    "400": "#FF7C6B",
+    "500": "#F94233",
+    "600": "#DC1C14",
+    "700": "#BB0000",
+    "800": "#930000",
+    "900": "#730000",
+    "950": "#540000"
+   },
+   "bright": null,
+   "values": {
+    "primary": "#DC1C14",
+    "primary-hover": "#BB0000",
+    "primary-pressed": "#930000",
+    "primary-tint": "#FFE6E2",
+    "primary-tint-hover": "#FFCDC5",
+    "primary-border": "#FFAB9E",
+    "primary-text": "#BB0000"
+   },
+   "contrast": {
+    "white/primary": 4.98,
+    "text/tint": 5.68,
+    "text/white": 6.75,
+    "focus/white": 4.98,
+    "focus/tint": 4.19,
+    "tint/white": 1.19
+   },
+   "vs_status": {
+    "success": {
+     "tint": 11.3,
+     "text": 28.9
+    },
+    "warning": {
+     "tint": 7.5,
+     "text": 12.4
+    },
+    "danger": {
+     "tint": 6.2,
+     "text": 0.9
+    },
+    "info": {
+     "tint": 9.5,
+     "text": 32.5
+    }
+   }
+  },
+  "blue": {
+   "zh": "经典蓝",
+   "en": "Classic blue",
+   "base": "#2C69FF",
+   "hue": 264,
+   "nearest": "600",
+   "roles": {
+    "primary": "600",
+    "primary-hover": "700",
+    "primary-pressed": "800",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#F3F7FE",
+    "100": "#E4EDFE",
+    "200": "#C9DBFF",
+    "300": "#A7C4FE",
+    "400": "#7DA7FF",
+    "500": "#5288FF",
+    "600": "#2A67FD",
+    "700": "#1C51D9",
+    "800": "#103CB1",
+    "900": "#0A2D89",
+    "950": "#051F64"
+   },
+   "bright": null,
+   "values": {
+    "primary": "#2A67FD",
+    "primary-hover": "#1C51D9",
+    "primary-pressed": "#103CB1",
+    "primary-tint": "#E4EDFE",
+    "primary-tint-hover": "#C9DBFF",
+    "primary-border": "#A7C4FE",
+    "primary-text": "#1C51D9"
+   },
+   "contrast": {
+    "white/primary": 4.71,
+    "text/tint": 5.53,
+    "text/white": 6.5,
+    "focus/white": 4.71,
+    "focus/tint": 4.0,
+    "tint/white": 1.18
+   },
+   "vs_status": {
+    "success": {
+     "tint": 10.6,
+     "text": 27.9
+    },
+    "warning": {
+     "tint": 11.1,
+     "text": 32.4
+    },
+    "danger": {
+     "tint": 9.2,
+     "text": 36.4
+    },
+    "info": {
+     "tint": 6.4,
+     "text": 11.5
+    }
+   }
+  },
+  "fresh": {
+   "zh": "微信绿",
+   "en": "Fresh green",
+   "base": "#00B578",
+   "hue": 160,
+   "nearest": "500",
+   "roles": {
+    "primary": "700",
+    "primary-hover": "800",
+    "primary-pressed": "900",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#EBFCF2",
+    "100": "#D5F6E3",
+    "200": "#B0EACB",
+    "300": "#82DAAD",
+    "400": "#4BC38C",
+    "500": "#04A970",
+    "600": "#008E5D",
+    "700": "#00754B",
+    "800": "#005B39",
+    "900": "#00452B",
+    "950": "#00311C"
+   },
+   "bright": {
+    "primary": "500",
+    "on": "#181A1C",
+    "contrast": 5.75
+   },
+   "values": {
+    "primary": "#00754B",
+    "primary-hover": "#005B39",
+    "primary-pressed": "#00452B",
+    "primary-tint": "#D5F6E3",
+    "primary-tint-hover": "#B0EACB",
+    "primary-border": "#82DAAD",
+    "primary-text": "#00754B"
+   },
+   "contrast": {
+    "white/primary": 5.76,
+    "text/tint": 4.97,
+    "text/white": 5.76,
+    "focus/white": 5.76,
+    "focus/tint": 4.97,
+    "tint/white": 1.16
+   },
+   "vs_status": {
+    "success": {
+     "tint": 6.6,
+     "text": 8.0
+    },
+    "warning": {
+     "tint": 10.5,
+     "text": 17.2
+    },
+    "danger": {
+     "tint": 10.7,
+     "text": 28.3
+    },
+    "info": {
+     "tint": 9.1,
+     "text": 20.1
+    }
+   }
+  },
+  "teal": {
+   "zh": "青碧",
+   "en": "Teal",
+   "base": "#008484",
+   "hue": 195,
+   "nearest": "600",
+   "roles": {
+    "primary": "700",
+    "primary-hover": "800",
+    "primary-pressed": "900",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#EDFAF9",
+    "100": "#D9F3F2",
+    "200": "#B9E5E4",
+    "300": "#90D2D1",
+    "400": "#64BAB9",
+    "500": "#37A1A1",
+    "600": "#0E8888",
+    "700": "#017070",
+    "800": "#005858",
+    "900": "#004343",
+    "950": "#002F2F"
+   },
+   "bright": {
+    "primary": "500",
+    "on": "#181A1C",
+    "contrast": 5.63
+   },
+   "values": {
+    "primary": "#017070",
+    "primary-hover": "#005858",
+    "primary-pressed": "#004343",
+    "primary-tint": "#D9F3F2",
+    "primary-tint-hover": "#B9E5E4",
+    "primary-border": "#90D2D1",
+    "primary-text": "#017070"
+   },
+   "contrast": {
+    "white/primary": 5.91,
+    "text/tint": 5.08,
+    "text/white": 5.91,
+    "focus/white": 5.91,
+    "focus/tint": 5.08,
+    "tint/white": 1.16
+   },
+   "vs_status": {
+    "success": {
+     "tint": 8.2,
+     "text": 10.2
+    },
+    "warning": {
+     "tint": 10.9,
+     "text": 18.2
+    },
+    "danger": {
+     "tint": 10.0,
+     "text": 27.8
+    },
+    "info": {
+     "tint": 7.4,
+     "text": 14.3
+    }
+   }
+  },
+  "amber": {
+   "zh": "琥珀",
+   "en": "Amber",
+   "base": "#A46911",
+   "hue": 69,
+   "nearest": "600",
+   "roles": {
+    "primary": "600",
+    "primary-hover": "700",
+    "primary-pressed": "800",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#FEF5EB",
+    "100": "#FCE9D6",
+    "200": "#F4D5B3",
+    "300": "#E8BB89",
+    "400": "#D49D5D",
+    "500": "#BD8132",
+    "600": "#A46910",
+    "700": "#895500",
+    "800": "#6C4100",
+    "900": "#533000",
+    "950": "#3B2100"
+   },
+   "bright": null,
+   "values": {
+    "primary": "#A46910",
+    "primary-hover": "#895500",
+    "primary-pressed": "#6C4100",
+    "primary-tint": "#FCE9D6",
+    "primary-tint-hover": "#F4D5B3",
+    "primary-border": "#E8BB89",
+    "primary-text": "#895500"
+   },
+   "contrast": {
+    "white/primary": 4.56,
+    "text/tint": 5.28,
+    "text/white": 6.24,
+    "focus/white": 4.56,
+    "focus/tint": 3.86,
+    "tint/white": 1.18
+   },
+   "vs_status": {
+    "success": {
+     "tint": 10.1,
+     "text": 16.4
+    },
+    "warning": {
+     "tint": 6.8,
+     "text": 1.6
+    },
+    "danger": {
+     "tint": 6.7,
+     "text": 13.4
+    },
+    "info": {
+     "tint": 10.4,
+     "text": 25.7
+    }
+   }
+  },
+  "violet": {
+   "zh": "紫",
+   "en": "Violet",
+   "base": "#7A4CE0",
+   "hue": 292,
+   "nearest": "600",
+   "roles": {
+    "primary": "600",
+    "primary-hover": "700",
+    "primary-pressed": "800",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#F7F5FE",
+    "100": "#EDEAFE",
+    "200": "#DBD4FF",
+    "300": "#C5B9FE",
+    "400": "#AC96FE",
+    "500": "#966FFF",
+    "600": "#7F53E7",
+    "700": "#6A3FC6",
+    "800": "#532CA0",
+    "900": "#3F207C",
+    "950": "#2C155A"
+   },
+   "bright": null,
+   "values": {
+    "primary": "#7F53E7",
+    "primary-hover": "#6A3FC6",
+    "primary-pressed": "#532CA0",
+    "primary-tint": "#EDEAFE",
+    "primary-tint-hover": "#DBD4FF",
+    "primary-border": "#C5B9FE",
+    "primary-text": "#6A3FC6"
+   },
+   "contrast": {
+    "white/primary": 4.89,
+    "text/tint": 5.67,
+    "text/white": 6.69,
+    "focus/white": 4.89,
+    "focus/tint": 4.15,
+    "tint/white": 1.18
+   },
+   "vs_status": {
+    "success": {
+     "tint": 11.5,
+     "text": 29.5
+    },
+    "warning": {
+     "tint": 10.8,
+     "text": 28.4
+    },
+    "danger": {
+     "tint": 8.6,
+     "text": 29.3
+    },
+    "info": {
+     "tint": 6.8,
+     "text": 14.7
+    }
+   }
+  },
+  "pine": {
+   "zh": "松绿",
+   "en": "Pine",
+   "base": "#216857",
+   "hue": 174,
+   "nearest": "700",
+   "roles": {
+    "primary": "700",
+    "primary-hover": "800",
+    "primary-pressed": "900",
+    "primary-tint": "100",
+    "primary-tint-hover": "200",
+    "primary-border": "300",
+    "primary-text": "700"
+   },
+   "ramp": {
+    "50": "#F0F9F6",
+    "100": "#DFF2EC",
+    "200": "#C3E3D9",
+    "300": "#A1D0C1",
+    "400": "#7DB7A6",
+    "500": "#5B9E8C",
+    "600": "#428674",
+    "700": "#306F5F",
+    "800": "#215749",
+    "900": "#174237",
+    "950": "#0E2E26"
+   },
+   "bright": null,
+   "values": {
+    "primary": "#306F5F",
+    "primary-hover": "#215749",
+    "primary-pressed": "#174237",
+    "primary-tint": "#DFF2EC",
+    "primary-tint-hover": "#C3E3D9",
+    "primary-border": "#A1D0C1",
+    "primary-text": "#306F5F"
+   },
+   "contrast": {
+    "white/primary": 5.89,
+    "text/tint": 5.06,
+    "text/white": 5.89,
+    "focus/white": 5.89,
+    "focus/tint": 5.06,
+    "tint/white": 1.16
+   },
+   "vs_status": {
+    "success": {
+     "tint": 8.2,
+     "text": 9.1
+    },
+    "warning": {
+     "tint": 10.1,
+     "text": 15.6
+    },
+    "danger": {
+     "tint": 9.4,
+     "text": 25.7
+    },
+    "info": {
+     "tint": 7.9,
+     "text": 16.4
+    }
+   }
+  }
+ },
+ "status": {
+  "success": {
+   "zh": "成功",
+   "base": "#12B76A",
+   "hue": 155,
+   "ramp": {
+    "50": "#EBFCF0",
+    "100": "#D5F7DF",
+    "200": "#B1EBC4",
+    "300": "#83DBA3",
+    "400": "#4DC47F",
+    "500": "#02AB61",
+    "600": "#008F50",
+    "700": "#007541",
+    "800": "#005C31",
+    "900": "#004623",
+    "950": "#003216"
+   },
+   "roles": {
+    "dot": "600",
+    "text": "800",
+    "tint": "200",
+    "border": "300",
+    "strong": "700"
+   },
+   "contrast": {
+    "text/tint": 6.04,
+    "text/white": 8.15,
+    "dot/tint": 3.08,
+    "dot/white": 4.16,
+    "white/strong": 5.8
+   }
+  },
+  "warning": {
+   "zh": "警告",
+   "base": "#F79009",
+   "hue": 62,
+   "ramp": {
+    "50": "#FFF5EC",
+    "100": "#FFE8D5",
+    "200": "#FFD1A9",
+    "300": "#FBB270",
+    "400": "#EB9133",
+    "500": "#CE7600",
+    "600": "#AD6200",
+    "700": "#8F5000",
+    "800": "#703D00",
+    "900": "#572D00",
+    "950": "#401D00"
+   },
+   "roles": {
+    "dot": "600",
+    "text": "700",
+    "tint": "200",
+    "border": "300",
+    "strong": "600"
+   },
+   "contrast": {
+    "text/tint": 4.51,
+    "text/white": 6.33,
+    "dot/tint": 3.3,
+    "dot/white": 4.64,
+    "white/strong": 4.64
+   }
+  },
+  "danger": {
+   "zh": "危险",
+   "base": "#F04438",
+   "hue": 29,
+   "ramp": {
+    "50": "#FEF4F2",
+    "100": "#FFE7E3",
+    "200": "#FECDC6",
+    "300": "#FFAB9F",
+    "400": "#FE7D6D",
+    "500": "#F5493C",
+    "600": "#D82821",
+    "700": "#B70F0F",
+    "800": "#930001",
+    "900": "#720001",
+    "950": "#520001"
+   },
+   "roles": {
+    "dot": "600",
+    "text": "700",
+    "tint": "200",
+    "border": "300",
+    "strong": "600"
+   },
+   "contrast": {
+    "text/tint": 4.78,
+    "text/white": 6.8,
+    "dot/tint": 3.48,
+    "dot/white": 4.95,
+    "white/strong": 4.95
+   }
+  },
+  "info": {
+   "zh": "信息",
+   "base": "#2E90FA",
+   "hue": 254,
+   "ramp": {
+    "50": "#F2F7FF",
+    "100": "#E1EEFF",
+    "200": "#C2DDFF",
+    "300": "#9BC8FE",
+    "400": "#67ACFF",
+    "500": "#2D8FF9",
+    "600": "#0076DE",
+    "700": "#0060B9",
+    "800": "#004A93",
+    "900": "#003873",
+    "950": "#002656"
+   },
+   "roles": {
+    "dot": "600",
+    "text": "800",
+    "tint": "200",
+    "border": "300",
+    "strong": "600"
+   },
+   "contrast": {
+    "text/tint": 6.28,
+    "text/white": 8.75,
+    "dot/tint": 3.25,
+    "dot/white": 4.52,
+    "white/strong": 4.52
+   }
+  }
+ },
+ "avoid": {
+  "brand": {
+   "status": "danger",
+   "mark": "neutral",
+   "note": "虹选红 ↔ 危险（色相差 0°）：赠送、会员价、优惠券、预订这类主题标记改用中性标签，红色只留给已退、失败"
+  },
+  "fresh": {
+   "status": "success",
+   "group": "done",
+   "note": "微信绿 ↔ 成功（色相差 5°）：「已完成」组（已上菜、已结账、已送达…）改用灰色，绿色只留给主题"
+  },
+  "amber": {
+   "status": "warning",
+   "due_mark": true,
+   "note": "琥珀 ↔ 警告（色相差 8°）：桌台「待结账」在桌号前加 ¥ 标记，不只靠底色"
+  },
+  "teal": {
+   "aux": "cyan",
+   "group": "waiting",
+   "note": "青碧 ↔ 辅助色青（色相差 6°）：「等待中」组（待取餐、配送中、支付中…）改用灰色"
+  },
+  "blue": {
+   "status": "info",
+   "hint": "neutral",
+   "group": "progress",
+   "note": "经典蓝 ↔ 信息（色相差 10°）：提示类说明改中性底，「进行中」组（制作中、已接单…）改用灰色，蓝色只留给主题"
+  }
+ },
+ "categories": [
+  [
+   "red",
+   "朱红",
+   "#CC3430",
+   "#FFE0DB",
+   "#910F13"
+  ],
+  [
+   "orange",
+   "橘橙",
+   "#C25500",
+   "#FEE1D3",
+   "#7E3300"
+  ],
+  [
+   "yellow",
+   "明黄",
+   "#F6C330",
+   "#F4E7C7",
+   "#614900"
+  ],
+  [
+   "green",
+   "草绿",
+   "#18883A",
+   "#D6F0D8",
+   "#005E21"
+  ],
+  [
+   "teal",
+   "青绿",
+   "#038476",
+   "#D5EEE9",
+   "#005A50"
+  ],
+  [
+   "blue",
+   "湛蓝",
+   "#006CC4",
+   "#D8EAFF",
+   "#004D91"
+  ],
+  [
+   "indigo",
+   "靛紫",
+   "#5552BB",
+   "#E3E6FE",
+   "#413F94"
+  ],
+  [
+   "purple",
+   "葡萄紫",
+   "#8747AA",
+   "#F2E0FE",
+   "#653181"
+  ],
+  [
+   "rose",
+   "玫红",
+   "#BC3E79",
+   "#FFDEE9",
+   "#841E51"
+  ],
+  [
+   "brown",
+   "栗棕",
+   "#80512F",
+   "#F4E4DA",
+   "#6A4327"
+  ],
+  [
+   "gray",
+   "石灰",
+   "#5E5E5E",
+   "#E6E6E6",
+   "#3D3D3D"
+  ]
+ ],
+ "aux": {
+  "cyan": {
+   "zh": "青",
+   "base": "#03999F",
+   "hue": 200,
+   "ramp": {
+    "50": "#ECFAFB",
+    "100": "#D7F3F4",
+    "200": "#B4E5E8",
+    "300": "#89D3D7",
+    "400": "#58BBC0",
+    "500": "#1DA2A8",
+    "600": "#00888E",
+    "700": "#027074",
+    "800": "#00575B",
+    "900": "#004346",
+    "950": "#002F31"
+   }
+  },
+  "purple": {
+   "zh": "紫罗兰",
+   "base": "#AE59DB",
+   "hue": 312,
+   "ramp": {
+    "50": "#FAF4FF",
+    "100": "#F5E6FF",
+    "200": "#EBCDFF",
+    "300": "#E0ACFF",
+    "400": "#CE85F8",
+    "500": "#B762E5",
+    "600": "#9E49CA",
+    "700": "#8436AC",
+    "800": "#69258A",
+    "900": "#501A6A",
+    "950": "#39114D"
+   }
+  },
+  "olive": {
+   "zh": "橄榄",
+   "base": "#759400",
+   "hue": 123,
+   "ramp": {
+    "50": "#F4F9EA",
+    "100": "#E7F2D3",
+    "200": "#D1E3AE",
+    "300": "#B7D081",
+    "400": "#99B750",
+    "500": "#7E9D18",
+    "600": "#688400",
+    "700": "#556C00",
+    "800": "#415400",
+    "900": "#304000",
+    "950": "#212D00"
+   }
+  },
+  "magenta": {
+   "zh": "品红",
+   "base": "#D84497",
+   "hue": 350,
+   "ramp": {
+    "50": "#FFF3F8",
+    "100": "#FFE5F0",
+    "200": "#FFC9E1",
+    "300": "#FFA3CF",
+    "400": "#F875B9",
+    "500": "#E24EA0",
+    "600": "#C63288",
+    "700": "#A81E70",
+    "800": "#860D58",
+    "900": "#680843",
+    "950": "#4A042F"
+   }
+  }
+ },
+ "groups": {
+  "action": {
+   "zh": "待处理",
+   "en": "Needs action",
+   "family": "warning",
+   "form": "chip",
+   "desc": "要人处理或留意：待接单、待结账、待审批、催菜、低库存、缺纸、离线（还能收现金和刷卡）",
+   "roles": {
+    "dot": "600",
+    "text": "700",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#AD6200",
+    "text": "#8F5000",
+    "tint": "#FFD1A9",
+    "border": "#FBB270"
+   },
+   "contrast": {
+    "text/tint": 4.51,
+    "text/white": 6.33,
+    "dot/tint": 3.3,
+    "dot/white": 4.64
+   }
+  },
+  "progress": {
+   "zh": "进行中",
+   "en": "In progress",
+   "family": "info",
+   "form": "dot",
+   "desc": "正在进行：制作中、已接单、营业中",
+   "roles": {
+    "dot": "600",
+    "text": "800",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#0076DE",
+    "text": "#004A93",
+    "tint": "#C2DDFF",
+    "border": "#9BC8FE"
+   },
+   "contrast": {
+    "text/tint": 6.28,
+    "text/white": 8.75,
+    "dot/tint": 3.25,
+    "dot/white": 4.52
+   }
+  },
+  "waiting": {
+   "zh": "等待中",
+   "en": "Waiting",
+   "family": "cyan",
+   "form": "dot",
+   "desc": "在等别人或外部系统：待取餐、配送中、支付中、排队打印、待同步",
+   "roles": {
+    "dot": "600",
+    "text": "800",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#00888E",
+    "text": "#00575B",
+    "tint": "#B4E5E8",
+    "border": "#89D3D7"
+   },
+   "contrast": {
+    "text/tint": 6.09,
+    "text/white": 8.35,
+    "dot/tint": 3.12,
+    "dot/white": 4.28
+   }
+  },
+  "done": {
+   "zh": "已完成",
+   "en": "Done",
+   "family": "success",
+   "form": "dot",
+   "desc": "完成，不需要再看：已上菜、已结账、已送达、已打印",
+   "roles": {
+    "dot": "600",
+    "text": "800",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#008F50",
+    "text": "#005C31",
+    "tint": "#B1EBC4",
+    "border": "#83DBA3"
+   },
+   "contrast": {
+    "text/tint": 6.04,
+    "text/white": 8.15,
+    "dot/tint": 3.08,
+    "dot/white": 4.16
+   }
+  },
+  "booked": {
+   "zh": "预约",
+   "en": "Booked",
+   "family": "purple",
+   "form": "chip",
+   "desc": "未来的安排：已预订、待到店",
+   "roles": {
+    "dot": "600",
+    "text": "700",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#9E49CA",
+    "text": "#8436AC",
+    "tint": "#EBCDFF",
+    "border": "#E0ACFF"
+   },
+   "contrast": {
+    "text/tint": 4.74,
+    "text/white": 6.76,
+    "dot/tint": 3.45,
+    "dot/white": 4.93
+   }
+  },
+  "held": {
+   "zh": "暂存",
+   "en": "On hold",
+   "family": "olive",
+   "form": "chip",
+   "desc": "暂时放着、还会回来：挂起、待下单",
+   "roles": {
+    "dot": "600",
+    "text": "800",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#688400",
+    "text": "#415400",
+    "tint": "#D1E3AE",
+    "border": "#B7D081"
+   },
+   "contrast": {
+    "text/tint": 6.14,
+    "text/white": 8.42,
+    "dot/tint": 3.13,
+    "dot/white": 4.3
+   }
+  },
+  "trace": {
+   "zh": "变更标记",
+   "en": "Change mark",
+   "family": "magenta",
+   "form": "dot",
+   "desc": "追溯用的标记：补打、反结账、合自、拆自、转自、改价、临时菜、加菜",
+   "roles": {
+    "dot": "600",
+    "text": "700",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#C63288",
+    "text": "#A81E70",
+    "tint": "#FFC9E1",
+    "border": "#FFA3CF"
+   },
+   "contrast": {
+    "text/tint": 4.76,
+    "text/white": 6.81,
+    "dot/tint": 3.49,
+    "dot/white": 4.98
+   }
+  },
+  "closed": {
+   "zh": "已关闭",
+   "en": "Closed",
+   "family": "neutral",
+   "form": "dot",
+   "desc": "结束且不需要处理：已取消、已拒单、已撤单、空闲、未连接",
+   "roles": {
+    "dot": "500",
+    "text": "600",
+    "tint": "100",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#848689",
+    "text": "#67696B",
+    "tint": "#EDEFF2",
+    "border": "#C5C7CA"
+   },
+   "contrast": {
+    "text/tint": 4.79,
+    "text/white": 5.51,
+    "dot/tint": 3.17,
+    "dot/white": 3.65
+   }
+  },
+  "failed": {
+   "zh": "异常",
+   "en": "Problem",
+   "family": "danger",
+   "form": "chip",
+   "desc": "失败或异常：打印失败、支付失败、同步失败、超时、盘差、已沽清、已退",
+   "roles": {
+    "dot": "600",
+    "text": "700",
+    "tint": "200",
+    "border": "300"
+   },
+   "values": {
+    "dot": "#D82821",
+    "text": "#B70F0F",
+    "tint": "#FECDC6",
+    "border": "#FFAB9F"
+   },
+   "contrast": {
+    "text/tint": 4.78,
+    "text/white": 6.8,
+    "dot/tint": 3.48,
+    "dot/white": 4.95
+   }
+  }
+ },
+ "states": [
+  {
+   "key": "order",
+   "zh": "订单",
+   "en": "Order",
+   "states": [
+    {
+     "key": "open",
+     "zh": "进行中",
+     "en": "Open",
+     "group": "progress",
+     "icon": "utensils",
+     "ref": "E-01"
+    },
+    {
+     "key": "due",
+     "zh": "待结账",
+     "en": "Ready to pay",
+     "group": "action",
+     "icon": "receipt",
+     "ref": "E-01 G-13"
+    },
+    {
+     "key": "partial",
+     "zh": "部分支付",
+     "en": "Partly paid",
+     "group": "action",
+     "icon": "wallet",
+     "ref": "G-11"
+    },
+    {
+     "key": "paid",
+     "zh": "已结账",
+     "en": "Paid",
+     "group": "done",
+     "icon": "badge-check",
+     "ref": "E-01 G-13"
+    },
+    {
+     "key": "held",
+     "zh": "挂起",
+     "en": "On hold",
+     "group": "held",
+     "icon": "circle-pause",
+     "ref": "E-03 E-04"
+    },
+    {
+     "key": "cancelled",
+     "zh": "已取消",
+     "en": "Cancelled",
+     "group": "closed",
+     "icon": "ban",
+     "ref": "—"
+    },
+    {
+     "key": "reopened",
+     "zh": "已反结账",
+     "en": "Reopened",
+     "group": "trace",
+     "icon": "undo-2",
+     "ref": "E-07"
+    },
+    {
+     "key": "merged",
+     "zh": "合自",
+     "en": "Merged from",
+     "group": "trace",
+     "icon": "git-merge",
+     "ref": "E-05"
+    },
+    {
+     "key": "split",
+     "zh": "拆自",
+     "en": "Split from",
+     "group": "trace",
+     "icon": "split",
+     "ref": "D-07"
+    }
+   ]
+  },
+  {
+   "key": "item",
+   "zh": "订单行（菜品）",
+   "en": "Order item",
+   "states": [
+    {
+     "key": "draft",
+     "zh": "待下单",
+     "en": "Not sent",
+     "group": "held",
+     "icon": "pencil-line",
+     "ref": "D-01 F-01"
+    },
+    {
+     "key": "sent",
+     "zh": "已下单",
+     "en": "Sent",
+     "group": "waiting",
+     "icon": "send",
+     "ref": "F-01 F-07"
+    },
+    {
+     "key": "cooking",
+     "zh": "制作中",
+     "en": "Cooking",
+     "group": "progress",
+     "icon": "chef-hat",
+     "ref": "F-07"
+    },
+    {
+     "key": "rushed",
+     "zh": "催菜中",
+     "en": "Rushed",
+     "group": "action",
+     "icon": "zap",
+     "ref": "D-03"
+    },
+    {
+     "key": "ready",
+     "zh": "待上菜",
+     "en": "Ready to serve",
+     "group": "waiting",
+     "icon": "concierge-bell",
+     "ref": "F-06"
+    },
+    {
+     "key": "served",
+     "zh": "已上菜",
+     "en": "Served",
+     "group": "done",
+     "icon": "check-check",
+     "ref": "F-06 F-07"
+    },
+    {
+     "key": "voided",
+     "zh": "已退",
+     "en": "Voided",
+     "group": "failed",
+     "icon": "circle-minus",
+     "ref": "D-05"
+    },
+    {
+     "key": "comp",
+     "zh": "赠送",
+     "en": "Comp",
+     "group": "trace",
+     "icon": "gift",
+     "ref": "D-04"
+    },
+    {
+     "key": "moved",
+     "zh": "转自",
+     "en": "Moved from",
+     "group": "trace",
+     "icon": "arrow-right-left",
+     "ref": "D-06"
+    },
+    {
+     "key": "repriced",
+     "zh": "已改价",
+     "en": "Repriced",
+     "group": "trace",
+     "icon": "pencil",
+     "ref": "D-08"
+    },
+    {
+     "key": "custom",
+     "zh": "临时菜",
+     "en": "Custom item",
+     "group": "trace",
+     "icon": "file-plus",
+     "ref": "C-09"
+    }
+   ]
+  },
+  {
+   "key": "table",
+   "zh": "桌台",
+   "en": "Table",
+   "states": [
+    {
+     "key": "free",
+     "zh": "空闲",
+     "en": "Free",
+     "group": "closed",
+     "icon": "circle",
+     "ref": "B-01"
+    },
+    {
+     "key": "booked",
+     "zh": "已预订",
+     "en": "Booked",
+     "group": "booked",
+     "icon": "calendar-clock",
+     "ref": "B-05"
+    },
+    {
+     "key": "seated",
+     "zh": "待点餐",
+     "en": "Seated",
+     "group": "waiting",
+     "icon": "hourglass",
+     "ref": "B-03"
+    },
+    {
+     "key": "dining",
+     "zh": "用餐中",
+     "en": "Dining",
+     "group": "progress",
+     "icon": "utensils",
+     "ref": "B-02"
+    },
+    {
+     "key": "late",
+     "zh": "超时未上菜",
+     "en": "Dishes late",
+     "group": "action",
+     "icon": "timer",
+     "ref": "F-05"
+    },
+    {
+     "key": "due",
+     "zh": "待结账",
+     "en": "Ready to pay",
+     "group": "action",
+     "icon": "receipt",
+     "ref": "B-02"
+    },
+    {
+     "key": "partial",
+     "zh": "部分支付",
+     "en": "Partly paid",
+     "group": "action",
+     "icon": "wallet",
+     "ref": "G-11"
+    },
+    {
+     "key": "to_clear",
+     "zh": "待清台",
+     "en": "To clear",
+     "group": "action",
+     "icon": "sparkles",
+     "ref": "B-09"
+    },
+    {
+     "key": "merged",
+     "zh": "并入",
+     "en": "Merged into",
+     "group": "trace",
+     "icon": "git-merge",
+     "ref": "B-08"
+    },
+    {
+     "key": "shared",
+     "zh": "拼桌",
+     "en": "Shared",
+     "group": "trace",
+     "icon": "users",
+     "ref": "B-07"
+    },
+    {
+     "key": "disabled",
+     "zh": "停用",
+     "en": "Disabled",
+     "group": "closed",
+     "icon": "ban",
+     "ref": "—"
+    }
+   ]
+  },
+  {
+   "key": "delivery",
+   "zh": "外卖与自提",
+   "en": "Delivery & pickup",
+   "states": [
+    {
+     "key": "new",
+     "zh": "待接单",
+     "en": "New",
+     "group": "action",
+     "icon": "bell-ring",
+     "ref": "H-01 H-02"
+    },
+    {
+     "key": "accepted",
+     "zh": "已接单",
+     "en": "Accepted",
+     "group": "progress",
+     "icon": "chef-hat",
+     "ref": "H-02"
+    },
+    {
+     "key": "pickup",
+     "zh": "待取餐",
+     "en": "Ready for pickup",
+     "group": "waiting",
+     "icon": "package",
+     "ref": "H-04"
+    },
+    {
+     "key": "delivering",
+     "zh": "配送中",
+     "en": "Out for delivery",
+     "group": "waiting",
+     "icon": "bike",
+     "ref": "H-04"
+    },
+    {
+     "key": "delivered",
+     "zh": "已送达",
+     "en": "Delivered",
+     "group": "done",
+     "icon": "circle-check",
+     "ref": "—"
+    },
+    {
+     "key": "rejected",
+     "zh": "已拒单",
+     "en": "Rejected",
+     "group": "closed",
+     "icon": "circle-x",
+     "ref": "H-03"
+    },
+    {
+     "key": "cancelled",
+     "zh": "已取消",
+     "en": "Cancelled",
+     "group": "closed",
+     "icon": "ban",
+     "ref": "—"
+    },
+    {
+     "key": "refunding",
+     "zh": "退款中",
+     "en": "Refunding",
+     "group": "waiting",
+     "icon": "rotate-ccw",
+     "ref": "J-04"
+    },
+    {
+     "key": "timeout",
+     "zh": "接单超时",
+     "en": "Accept timeout",
+     "group": "failed",
+     "icon": "timer-off",
+     "ref": "H-02"
+    }
+   ]
+  },
+  {
+   "key": "payment",
+   "zh": "支付",
+   "en": "Payment",
+   "states": [
+    {
+     "key": "unpaid",
+     "zh": "待支付",
+     "en": "Unpaid",
+     "group": "action",
+     "icon": "wallet",
+     "ref": "G-07"
+    },
+    {
+     "key": "paying",
+     "zh": "支付中",
+     "en": "Paying",
+     "group": "waiting",
+     "icon": "loader-circle",
+     "ref": "G-07"
+    },
+    {
+     "key": "unknown",
+     "zh": "结果未知",
+     "en": "Result unknown",
+     "group": "action",
+     "icon": "circle-help",
+     "ref": "G-07 J-04"
+    },
+    {
+     "key": "paid",
+     "zh": "已支付",
+     "en": "Paid",
+     "group": "done",
+     "icon": "circle-check",
+     "ref": "G-13"
+    },
+    {
+     "key": "failed",
+     "zh": "支付失败",
+     "en": "Failed",
+     "group": "failed",
+     "icon": "circle-alert",
+     "ref": "G-07 G-10"
+    },
+    {
+     "key": "refunding",
+     "zh": "退款中",
+     "en": "Refunding",
+     "group": "waiting",
+     "icon": "rotate-ccw",
+     "ref": "J-04"
+    },
+    {
+     "key": "refunded",
+     "zh": "已退款",
+     "en": "Refunded",
+     "group": "closed",
+     "icon": "undo-2",
+     "ref": "G-11"
+    }
+   ]
+  },
+  {
+   "key": "ticket",
+   "zh": "厨房工单",
+   "en": "Kitchen ticket",
+   "states": [
+    {
+     "key": "new",
+     "zh": "新单",
+     "en": "New",
+     "group": "action",
+     "icon": "bell-ring",
+     "ref": "F-04"
+    },
+    {
+     "key": "cooking",
+     "zh": "制作中",
+     "en": "Cooking",
+     "group": "progress",
+     "icon": "chef-hat",
+     "ref": "F-04"
+    },
+    {
+     "key": "added",
+     "zh": "加菜",
+     "en": "Added",
+     "group": "trace",
+     "icon": "plus",
+     "ref": "F-05"
+    },
+    {
+     "key": "rushed",
+     "zh": "催菜",
+     "en": "Rushed",
+     "group": "action",
+     "icon": "zap",
+     "ref": "F-05"
+    },
+    {
+     "key": "late",
+     "zh": "超时",
+     "en": "Late",
+     "group": "failed",
+     "icon": "timer-off",
+     "ref": "F-05"
+    },
+    {
+     "key": "done",
+     "zh": "已出餐",
+     "en": "Done",
+     "group": "done",
+     "icon": "check-check",
+     "ref": "F-06"
+    },
+    {
+     "key": "withdrawn",
+     "zh": "已撤单",
+     "en": "Withdrawn",
+     "group": "closed",
+     "icon": "ban",
+     "ref": "D-05"
+    }
+   ]
+  },
+  {
+   "key": "print",
+   "zh": "打印任务",
+   "en": "Print job",
+   "states": [
+    {
+     "key": "queued",
+     "zh": "排队中",
+     "en": "Queued",
+     "group": "waiting",
+     "icon": "printer",
+     "ref": "F-02"
+    },
+    {
+     "key": "printed",
+     "zh": "已打印",
+     "en": "Printed",
+     "group": "done",
+     "icon": "circle-check",
+     "ref": "F-02"
+    },
+    {
+     "key": "failed",
+     "zh": "打印失败",
+     "en": "Print failed",
+     "group": "failed",
+     "icon": "file-x",
+     "ref": "F-03"
+    },
+    {
+     "key": "reprint",
+     "zh": "补打",
+     "en": "Reprint",
+     "group": "trace",
+     "icon": "repeat",
+     "ref": "A-04 E-06"
+    }
+   ]
+  },
+  {
+   "key": "device",
+   "zh": "设备与网络",
+   "en": "Devices & network",
+   "states": [
+    {
+     "key": "online",
+     "zh": "在线",
+     "en": "Online",
+     "group": "done",
+     "icon": "wifi",
+     "ref": "A-05"
+    },
+    {
+     "key": "offline",
+     "zh": "离线",
+     "en": "Offline",
+     "group": "action",
+     "icon": "wifi-off",
+     "ref": "A-05 A-06"
+    },
+    {
+     "key": "no_paper",
+     "zh": "缺纸",
+     "en": "Out of paper",
+     "group": "action",
+     "icon": "triangle-alert",
+     "ref": "A-03"
+    },
+    {
+     "key": "unplugged",
+     "zh": "未连接",
+     "en": "Not connected",
+     "group": "closed",
+     "icon": "unplug",
+     "ref": "A-02"
+    },
+    {
+     "key": "to_sync",
+     "zh": "待同步",
+     "en": "Waiting to sync",
+     "group": "waiting",
+     "icon": "cloud-upload",
+     "ref": "A-06"
+    },
+    {
+     "key": "sync_failed",
+     "zh": "同步失败",
+     "en": "Sync failed",
+     "group": "failed",
+     "icon": "circle-alert",
+     "ref": "A-06"
+    }
+   ]
+  },
+  {
+   "key": "booking",
+   "zh": "预订",
+   "en": "Reservation",
+   "states": [
+    {
+     "key": "upcoming",
+     "zh": "待到店",
+     "en": "Upcoming",
+     "group": "booked",
+     "icon": "calendar-clock",
+     "ref": "B-05"
+    },
+    {
+     "key": "arrived",
+     "zh": "已到店",
+     "en": "Arrived",
+     "group": "done",
+     "icon": "calendar-check",
+     "ref": "B-05"
+    },
+    {
+     "key": "no_show",
+     "zh": "未到店",
+     "en": "No-show",
+     "group": "closed",
+     "icon": "calendar-x",
+     "ref": "B-05"
+    },
+    {
+     "key": "cancelled",
+     "zh": "已取消",
+     "en": "Cancelled",
+     "group": "closed",
+     "icon": "ban",
+     "ref": "—"
+    }
+   ]
+  },
+  {
+   "key": "stock",
+   "zh": "库存与沽清",
+   "en": "Stock",
+   "states": [
+    {
+     "key": "in_stock",
+     "zh": "库存充足",
+     "en": "In stock",
+     "group": "done",
+     "icon": "package-check",
+     "ref": "C-10"
+    },
+    {
+     "key": "low",
+     "zh": "仅剩 N",
+     "en": "Only N left",
+     "group": "action",
+     "icon": "triangle-alert",
+     "ref": "C-10"
+    },
+    {
+     "key": "sold_out",
+     "zh": "已沽清",
+     "en": "Sold out",
+     "group": "failed",
+     "icon": "circle-slash",
+     "ref": "C-10"
+    },
+    {
+     "key": "timed",
+     "zh": "限时供应",
+     "en": "Limited hours",
+     "group": "booked",
+     "icon": "clock",
+     "ref": "C-02"
+    },
+    {
+     "key": "off_menu",
+     "zh": "已下架",
+     "en": "Off menu",
+     "group": "closed",
+     "icon": "archive",
+     "ref": "—"
+    }
+   ]
+  },
+  {
+   "key": "sync",
+   "zh": "渠道同步",
+   "en": "Channel sync",
+   "states": [
+    {
+     "key": "synced",
+     "zh": "已同步",
+     "en": "Synced",
+     "group": "done",
+     "icon": "cloud",
+     "ref": "C-12"
+    },
+    {
+     "key": "pending",
+     "zh": "待同步",
+     "en": "Not synced",
+     "group": "waiting",
+     "icon": "cloud-upload",
+     "ref": "C-12"
+    },
+    {
+     "key": "syncing",
+     "zh": "同步中",
+     "en": "Syncing",
+     "group": "waiting",
+     "icon": "refresh-cw",
+     "ref": "C-12"
+    },
+    {
+     "key": "failed",
+     "zh": "同步失败",
+     "en": "Sync failed",
+     "group": "failed",
+     "icon": "cloud-alert",
+     "ref": "C-12"
+    },
+    {
+     "key": "unlisted",
+     "zh": "未上架",
+     "en": "Not listed",
+     "group": "closed",
+     "icon": "cloud-off",
+     "ref": "C-12"
+    }
+   ]
+  },
+  {
+   "key": "shift",
+   "zh": "班次",
+   "en": "Shift",
+   "states": [
+    {
+     "key": "closed",
+     "zh": "未开班",
+     "en": "Not open",
+     "group": "closed",
+     "icon": "lock",
+     "ref": "A-01"
+    },
+    {
+     "key": "open",
+     "zh": "营业中",
+     "en": "Open",
+     "group": "progress",
+     "icon": "store",
+     "ref": "A-01"
+    },
+    {
+     "key": "handover",
+     "zh": "交班中",
+     "en": "Handing over",
+     "group": "waiting",
+     "icon": "hourglass",
+     "ref": "J-05"
+    },
+    {
+     "key": "handed",
+     "zh": "已交班",
+     "en": "Handed over",
+     "group": "done",
+     "icon": "circle-check",
+     "ref": "J-05"
+    },
+    {
+     "key": "variance",
+     "zh": "盘差",
+     "en": "Cash variance",
+     "group": "failed",
+     "icon": "scale",
+     "ref": "J-03"
+    }
+   ]
+  },
+  {
+   "key": "approval",
+   "zh": "审批",
+   "en": "Approval",
+   "states": [
+    {
+     "key": "pending",
+     "zh": "待审批",
+     "en": "Pending",
+     "group": "action",
+     "icon": "stamp",
+     "ref": "J-08"
+    },
+    {
+     "key": "approved",
+     "zh": "已通过",
+     "en": "Approved",
+     "group": "done",
+     "icon": "circle-check",
+     "ref": "J-08"
+    },
+    {
+     "key": "rejected",
+     "zh": "已驳回",
+     "en": "Rejected",
+     "group": "failed",
+     "icon": "circle-x",
+     "ref": "J-08"
+    }
+   ]
+  },
+  {
+   "key": "invoice",
+   "zh": "发票",
+   "en": "Invoice",
+   "states": [
+    {
+     "key": "requested",
+     "zh": "待开票",
+     "en": "Requested",
+     "group": "action",
+     "icon": "file-text",
+     "ref": "G-15"
+    },
+    {
+     "key": "issued",
+     "zh": "已开票",
+     "en": "Issued",
+     "group": "done",
+     "icon": "file-check",
+     "ref": "G-15"
+    },
+    {
+     "key": "failed",
+     "zh": "开票失败",
+     "en": "Failed",
+     "group": "failed",
+     "icon": "file-x",
+     "ref": "G-15"
+    }
+   ]
+  },
+  {
+   "key": "member",
+   "zh": "会员",
+   "en": "Member",
+   "states": [
+    {
+     "key": "linked",
+     "zh": "已绑定",
+     "en": "Linked",
+     "group": "done",
+     "icon": "user-check",
+     "ref": "I-01"
+    },
+    {
+     "key": "low_balance",
+     "zh": "余额不足",
+     "en": "Low balance",
+     "group": "action",
+     "icon": "wallet",
+     "ref": "G-10"
+    },
+    {
+     "key": "unlinked",
+     "zh": "已解绑",
+     "en": "Unlinked",
+     "group": "closed",
+     "icon": "user-x",
+     "ref": "I-03"
+    },
+    {
+     "key": "lead",
+     "zh": "线索会员",
+     "en": "Lead",
+     "group": "held",
+     "icon": "user-round-pen",
+     "ref": "I-01"
+    }
+   ]
+  },
+  {
+   "key": "recharge",
+   "zh": "储值单",
+   "en": "Top-up",
+   "states": [
+    {
+     "key": "wait_collection",
+     "zh": "待收款",
+     "en": "Awaiting payment",
+     "group": "action",
+     "icon": "wallet",
+     "ref": "I-04"
+    },
+    {
+     "key": "submitted",
+     "zh": "待确认收款",
+     "en": "Payment to confirm",
+     "group": "waiting",
+     "icon": "hourglass",
+     "ref": "I-04"
+    },
+    {
+     "key": "received",
+     "zh": "已收款待到账",
+     "en": "Received",
+     "group": "waiting",
+     "icon": "loader-circle",
+     "ref": "I-04"
+    },
+    {
+     "key": "credited",
+     "zh": "已到账",
+     "en": "Credited",
+     "group": "done",
+     "icon": "circle-check",
+     "ref": "I-04"
+    },
+    {
+     "key": "cancelled",
+     "zh": "已取消",
+     "en": "Cancelled",
+     "group": "closed",
+     "icon": "ban",
+     "ref": "I-04"
+    },
+    {
+     "key": "rejected",
+     "zh": "已拒绝",
+     "en": "Rejected",
+     "group": "failed",
+     "icon": "circle-x",
+     "ref": "I-04"
+    },
+    {
+     "key": "expired",
+     "zh": "已过期",
+     "en": "Expired",
+     "group": "closed",
+     "icon": "timer-off",
+     "ref": "I-04"
+    }
+   ]
+  },
+  {
+   "key": "coupon",
+   "zh": "优惠券",
+   "en": "Coupon",
+   "states": [
+    {
+     "key": "unused",
+     "zh": "可用",
+     "en": "Available",
+     "group": "progress",
+     "icon": "ticket",
+     "ref": "I-06"
+    },
+    {
+     "key": "used",
+     "zh": "已用",
+     "en": "Used",
+     "group": "closed",
+     "icon": "ticket-check",
+     "ref": "I-06"
+    },
+    {
+     "key": "expired",
+     "zh": "已过期",
+     "en": "Expired",
+     "group": "closed",
+     "icon": "timer-off",
+     "ref": "I-06"
+    },
+    {
+     "key": "revoked",
+     "zh": "已收回",
+     "en": "Revoked",
+     "group": "failed",
+     "icon": "undo-2",
+     "ref": "I-06"
+    }
+   ]
+  },
+  {
+   "key": "campaign",
+   "zh": "营销活动",
+   "en": "Campaign",
+   "states": [
+    {
+     "key": "draft",
+     "zh": "草稿",
+     "en": "Draft",
+     "group": "held",
+     "icon": "pencil-line",
+     "ref": "I-05"
+    },
+    {
+     "key": "running",
+     "zh": "进行中",
+     "en": "Running",
+     "group": "progress",
+     "icon": "megaphone",
+     "ref": "I-05"
+    },
+    {
+     "key": "paused",
+     "zh": "已暂停",
+     "en": "Paused",
+     "group": "held",
+     "icon": "circle-pause",
+     "ref": "I-05"
+    },
+    {
+     "key": "ended",
+     "zh": "已结束",
+     "en": "Ended",
+     "group": "closed",
+     "icon": "flag",
+     "ref": "I-05"
+    }
+   ]
+  },
+  {
+   "key": "points",
+   "zh": "积分",
+   "en": "Points",
+   "states": [
+    {
+     "key": "pending",
+     "zh": "待生效",
+     "en": "Pending",
+     "group": "waiting",
+     "icon": "hourglass",
+     "ref": "I-07"
+    },
+    {
+     "key": "available",
+     "zh": "可用",
+     "en": "Available",
+     "group": "done",
+     "icon": "coins",
+     "ref": "I-07"
+    },
+    {
+     "key": "held",
+     "zh": "占用",
+     "en": "Held",
+     "group": "held",
+     "icon": "lock",
+     "ref": "I-07"
+    },
+    {
+     "key": "refund_reserved",
+     "zh": "退款预留",
+     "en": "Refund reserved",
+     "group": "waiting",
+     "icon": "rotate-ccw",
+     "ref": "I-07"
+    }
+   ]
+  }
+ ],
+ "base": {
+  "sub/white": 5.51,
+  "sub/faint": 4.79,
+  "ink/white": 17.45,
+  "hint/faint": 4.79,
+  "placeholder/white": 2.47,
+  "control-off/white": 3.65,
+  "control-off/faint": 3.17,
+  "fill-faint/white": 1.35,
+  "sub/wash": 5.09,
+  "sub/wash-strong": 4.79,
+  "slot-text/faint": 6.95
+ }
+}
