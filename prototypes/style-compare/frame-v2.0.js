@@ -39,6 +39,10 @@ frame.addEventListener('load',()=>{
     d.querySelectorAll('section').forEach(s=>{const n=s.querySelector('.sec-num');if(!n||!only.includes(n.textContent.trim()))s.remove()});
   }
   render();
+  if (/pos-ui-v2\.0\.html$/.test(location.pathname)) {
+    const style=d.createElement('link');style.rel='stylesheet';style.href='../style-compare/pad-workbench.css';d.head.appendChild(style);
+    const script=d.createElement('script');script.src='../style-compare/pad-workbench.js';script.onload=fit;d.head.appendChild(script);
+  }
   new ResizeObserver(fit).observe(d.body);
   fit();
 });
