@@ -1,0 +1,47 @@
+/* Component baseline v3.5: shared recipes loaded after page layouts. */
+body{font-variant-numeric:tabular-nums;font-synthesis:none}
+button,input,select,textarea{letter-spacing:0}
+:is(button,input,select,textarea,summary,a):focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn{font-weight:var(--weight-medium);box-shadow:none;transition:background-color .12s,color .12s}
+.btn.soft{background:var(--tint);color:var(--primary)}
+.btn.secondary{background:var(--control);color:var(--ink)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:not(:disabled):active{filter:brightness(.96)}
+.btn.active,.setting-options button.active{box-shadow:none}
+.btn.danger{color:var(--error);background:var(--error-bg)}
+.btn[aria-busy=true]::before{content:'';width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:pos-spin .8s linear infinite;flex-shrink:0}
+@keyframes pos-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.btn{transition:none}.btn[aria-busy=true]::before{animation:none;border-style:dotted}}
+.order-actions .send-action,.checkout-modal .checkout-send{background:var(--tint);color:var(--primary);font-weight:500}
+.order-actions .checkout-action,.checkout-modal .checkout-confirm{font-weight:600}
+.dish-name,.line-name{min-width:0;overflow-wrap:anywhere}
+.dish-name strong,.line-name strong{font-weight:var(--weight-strong)}
+.dish-bottom>b,.line-top>b,.amount,.checkout-due b,.table-card-bottom b,.detail-total strong{font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:0}
+.tags,.dish-bottom>small,.line-state,.dock-meta,.group-title,.group-title .btn{font-size:var(--text-label);line-height:1.4}
+.line-bottom>small{font-size:var(--text-label);min-width:0;overflow-wrap:anywhere}
+.stepper{gap:2px;background:var(--tile);border-radius:var(--button-radius);padding:2px;flex-shrink:0}
+.stepper .btn{background:transparent;min-height:32px;width:32px;font-weight:500}
+.stepper>b{font-size:var(--text-label);min-width:22px;text-align:center}
+.table-grid .table-card,.floor-table.table-card{box-shadow:var(--shadow-table)}
+.table-grid .table-card.selected,.floor-canvas .table-card.selected{box-shadow:0 0 0 2px var(--table-state-ink),var(--shadow-table)}
+.table-card .table-state,.table-detail-head .table-state{font-size:var(--text-label)}
+.table-card .table-dot{background:var(--table-state-ink)}
+.table-grid .table-card-meta,.table-grid .table-card-center small,.table-grid .table-card-bottom,.floor-table .table-card-meta{font-size:var(--text-meta);line-height:1.4}
+.table-grid .table-card-top{align-items:baseline;gap:4px}
+.table-grid .table-card-center{padding:2px 0;gap:4px}
+.table-grid .table-card-bottom b{font-size:14px}
+.admin-table th,.admin-table td small,.product-section-fields>small,.product-section-fields .admin-field>small,.product-media-fields .admin-field>span,.media-upload small,[data-media-status]{font-size:var(--text-label);line-height:1.45}
+.product-section-title h3,.admin-field>span{font-weight:600}
+.product-editor .admin-field input,.product-editor .admin-field select,.sku-table input{font-size:13px;font-variant-numeric:tabular-nums}
+.sku-table td:not(:first-child){width:28%}.sku-table [data-sku-price],.sku-table [data-sku-stock]{text-align:right}
+.product-menu-assignments small{font-size:var(--text-meta)}
+.admin-field input:read-only{color:var(--sub)}
+.gallery-buttons{align-items:center}.gallery-buttons .btn{min-width:100px}
+.gallery-semantic-colors{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px}
+.gallery-semantic-colors>div{display:flex;align-items:center;gap:8px;background:var(--tile);padding:8px;border-radius:var(--card-radius);font-size:12px}
+.gallery-semantic-colors i{height:28px;width:28px;border-radius:4px;flex-shrink:0}
+.font-comparison{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:700px){.font-comparison{grid-template-columns:repeat(2,minmax(0,1fr))}.gallery-semantic-colors{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.gallery-foundations>.gallery-semantic-colors{grid-column:1/-1}.gallery-semantic-colors span{white-space:nowrap}.gallery-semantic-colors>div{min-width:0}
+.gallery-buttons .icon-btn{min-width:40px;width:40px;padding:8px}
+:root:is([data-scale=large],[data-scale=xlarge]) .table-grid .table-card{height:auto;min-height:152px}

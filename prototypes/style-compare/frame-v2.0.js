@@ -1,5 +1,6 @@
 /* UI 2.0：pos-components-v2.0.html / pos-ui-v2.0.html 共用。把 themes-v2.0.css 注入 iframe 里的正式页，按 #风格 切换。 */
 const STYLES={
+  quiet:{n:'Quiet · 松绿',c:'#306F5F',spec:[['色彩','极浅画布 · 白色分区 · 浅绿灰底栏'],['形状','面板 8 · 卡片 4 · 按钮 12 · 无灰线'],['字体','Manrope + Noto Sans SC · 中英文']]},
   base:{n:'原版',c:'#18181B',spec:[['色彩','墨黑皮肤 · 中性灰四层'],['形状','面板 14 · 按钮 8'],['选中','主色 tint + 主色字'],['字体','Inter + 思源黑体']]},
   apple:{n:'Apple',c:'#007AFF',spec:[['色彩','系统蓝 #007AFF · 分组灰 #F2F2F7'],['形状','面板 16 · 卡内 12 · 按钮 12'],['选中','蓝 tint；分段 = 白色浮起滑块'],['控件','iOS 绿开关 · 圆形勾选 · 毛玻璃菜单'],['字体','SF Pro / 苹方']]},
   m3:{n:'Material 3',c:'#6750A4',spec:[['色彩','基线紫 #6750A4 · Surface container 色调分层'],['形状','面板 16 · 控件 8 · 按钮全圆 · 弹窗 28'],['选中','Secondary container 填色 + 勾'],['控件','Tonal / Outlined 按钮 · 描边 Chip · Filled 输入框'],['字体','Roboto + 思源黑体']]},
@@ -7,7 +8,7 @@ const STYLES={
   glass:{n:'玻璃态（白）',c:'linear-gradient(135deg,#FFFFFF,#C9D0DC)',spec:[['色彩','近白画布 + 淡冷色光斑 · 72% 白磨砂面 · 墨色主按钮'],['形状','面板 22 · 卡内 16 · 按钮 14'],['选中','纯白浮起 + 投影；卡片类墨色内圈'],['材质','24px 背景模糊 + 白描边 + 极淡灰投影'],['注意','低端设备掉帧；白底上分层很淡']]},
 };
 const q=new URLSearchParams(location.search), frame=document.getElementById('lib');
-let cur=q.get('s')||location.hash.slice(1)||'apple'; if(!STYLES[cur])cur='apple';
+let cur=q.get('s')||location.hash.slice(1)||(/pos-ui-v2\.0\.html$/.test(location.pathname)?'quiet':'apple'); if(!STYLES[cur])cur='apple';
 const only=q.get('only')?q.get('only').split(','):null;
 /* 版本：?v=1.5 改开 *-v1.5.html（叠加 pos-v15.css）；themes-v2.0.css 的「v1.5 兼容」段负责把 v1.5 的墨色选中还给皮肤 */
 const ver=q.get('v')==='1.5'?'1.5':'1';
@@ -28,7 +29,7 @@ function render(){
   const d=frame.contentDocument; if(!d||!d.documentElement)return;
   d.documentElement.dataset.style=cur;
 }
-function fit(){const d=frame.contentDocument;if(d&&d.documentElement){frame.style.height=d.documentElement.scrollHeight+'px';document.body.dataset.h=document.documentElement.scrollHeight}}
+function fit(){const d=frame.contentDocument;if(d&&d.documentElement){frame.style.height=(cur==='quiet'&&/pos-ui-v2\.0\.html$/.test(location.pathname)?Math.max(560,innerHeight-document.querySelector('header').offsetHeight):d.documentElement.scrollHeight)+'px';document.body.dataset.h=document.documentElement.scrollHeight}}
 frame.addEventListener('load',()=>{
   const d=frame.contentDocument;
   if(!d.getElementById('style-themes')){const l=d.createElement('link');l.id='style-themes';l.rel='stylesheet';l.href='../style-compare/themes-v2.0.css';l.onload=fit;d.head.appendChild(l)}
@@ -41,7 +42,8 @@ frame.addEventListener('load',()=>{
   render();
   if (/pos-ui-v2\.0\.html$/.test(location.pathname)) {
     const style=d.createElement('link');style.rel='stylesheet';style.href='../style-compare/pad-workbench.css';d.head.appendChild(style);
-    const script=d.createElement('script');script.src='../style-compare/pad-workbench.js';script.onload=fit;d.head.appendChild(script);
+    const quiet=d.createElement('link');quiet.rel='stylesheet';quiet.href='../style-compare/pad-quiet.css?v=dock2';d.head.appendChild(quiet);
+    const script=d.createElement('script');script.src='../style-compare/pad-workbench.js?v=dock2';script.onload=fit;d.head.appendChild(script);
   }
   new ResizeObserver(fit).observe(d.body);
   fit();

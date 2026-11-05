@@ -10,12 +10,17 @@
   drafts[active] = LINES;
   TABLES.forEach(function (t) { t.area = t.id[0] === 'V' ? '包间' : '大厅'; });
   S.padArea = '全部'; S.padStatus = 'all'; S.padTableQuery = ''; S.padQuery = ''; S.padFilter = 'all';
+  Object.assign(EN, {'待清台':'To clear','桌台总览':'Tables overview','找到桌台，开始服务':'Find a table and start service','全部桌台':'All tables','全部桌区':'All areas','搜索桌号':'Search table number','全部状态':'All statuses','上菜超时':'Dishes overdue','预订':'Reservations','本桌菜品':'Table items','继续点餐':'Continue ordering','开台并点餐':'Open table and order','到店开台':'Seat reservation','启用桌台':'Enable table','清台完成':'Mark as cleared','各桌草稿独立保存':'Drafts saved per table','开台人数按座位数初始化':'Guest count starts from capacity','搜索菜名或英文名':'Search dishes or English names','辣味':'Spicy','返回桌台':'Back to tables','试试其他筛选或关键词':'Try another filter or keyword','没有符合条件的桌台':'No matching tables','没有找到菜品':'No dishes found','座位':'Seats','用餐人数':'Guests','用餐时长':'Dining time','设计调试与其他工作台':'Design settings and other workspaces','此桌提供状态示例；进入点餐可创建本桌草稿。':'Sample table. Open ordering to create a draft.'});
+  RULES.unshift([/^为 (.+) 点餐$/, 'Order for $1'],[/^(\d+) 人桌$/, '$1 seats'],[/^(\d+) 位客人$/, '$1 guests'],[/^(\d+) 张桌台$/, '$1 tables'],[/^(\d+) 道菜$/, '$1 dishes'],[/^(\d+) 位$/, '$1 guests'],[/^(\d+) 人$/, '$1 guests'],[/^(\d+) 分钟$/, '$1 min'],[/^(\d+) 项$/, '$1 items']);
+  var baseSysbar=sysbar;
+  sysbar=function(){return baseSysbar().replace('</header>','<button type="button" class="sh-btn sh-btn--muted pad-lang" data-k="lang" data-v="'+(S.lang==='en'?'zh':'en')+'" aria-label="'+(S.lang==='en'?'Switch to Chinese':'Switch to English')+'">'+(S.lang==='en'?'中文':'English')+'</button></header>');};
+  S.names='one';
   S.nav = 'left'; S.detail = 'right'; S.density = 'standard'; S.wb = new URLSearchParams(parent.location.search).get('wb') === 'order' ? 'order' : 'tables';
   function escape(s) { return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function sync() { drafts[active] = LINES; contexts[active] = {}; orderFields.forEach(function (k) { contexts[active][k] = clone(S[k] === undefined ? null : S[k]); }); }
   function select(id) { sync(); active = S.table = id; LINES = drafts[id] || (drafts[id] = []); var context = contexts[id] || defaults; orderFields.forEach(function(k){ S[k] = clone(context[k]); }); S.batch = false; S.sel = []; S.ov = 'none'; S.lact = -1; }
   function current() { return TABLES.find(function(t){ return t.id === S.table; }); }
-  function input(key, placeholder) { return '<label class="sh-search pad-search">'+ico('search')+'<input aria-label="'+placeholder+'" data-pad-input="'+key+'" value="'+escape(S[key] || '')+'" placeholder="'+placeholder+'"></label>'; }
+  function input(key, placeholder) { return '<label class="sh-search pad-search">'+ico('search')+'<input aria-label="'+placeholder+'" data-pad-input="'+key+'" value="'+escape(S[key] || '')+'" placeholder="'+(S.lang==='en'?(tr(placeholder)||placeholder):placeholder)+'"></label>'; }
   function filters(items,value,action) { return '<div class="pad-filters">'+items.map(function(i){return '<button type="button" class="sh-filter '+(i[0]===value?'is-on':'')+'" data-act="'+action+':'+i[0]+'" aria-pressed="'+(i[0]===value)+'">'+i[1]+'</button>';}).join('')+'</div>'; }
   function heading(title,sub) { return '<div class="pad-heading"><div><h2>'+title+'</h2><p>'+sub+'</p></div></div>'; }
   function empty(text) { return '<div class="sh-empty"><b>'+text+'</b><span>试试其他筛选或关键词</span></div>'; }
@@ -46,7 +51,7 @@
     var head=heading('为 '+S.table+' 点餐',t.area+' · '+t.ppl+' 位客人 · 堂食')+input('padQuery','搜索菜名或英文名')+'<div class="pad-toolbar">'+filters([['all','全部'],['spicy','辣味'],['veg','素食']],S.padFilter,'padfilter')+'<span class="sh-help">'+list.length+' 道菜</span><button class="sh-btn sh-btn--muted sh-btn--sm" data-k="wb" data-v="tables">返回桌台</button></div>';
     return nav+panel(head,'<div class="dn-grid">'+(list.map(dishCard).join('')||empty('没有找到菜品'))+'</div>','','ui-pic pad-main')+dock();
   }
-  dock=function(){var html=oldDock();var t=current();html=html.replace('4 人 · 48 分钟 · 堂食 · #1024',t.ppl+' 人 · '+t.min+' 分钟 · 堂食');if(newCount()){html=html.replace('sh-btn sh-btn--soft" data-act="send"','sh-btn sh-btn--block" data-act="send"').replace('sh-btn sh-btn--block" data-act="gopay"','sh-btn sh-btn--muted" data-act="gopay"');}return html;};
+  dock=function(){var html=oldDock();var quick=quickBar();html=html.replace(quick,'<details class="pad-quick-disclosure"><summary>'+(S.lang==='en'?'Actions':'快捷操作')+'</summary>'+quick+'</details>');var t=current();html=html.replace('4 人 · 48 分钟 · 堂食 · #1024',t.ppl+' 人 · '+t.min+' 分钟 · 堂食');if(newCount()){html=html.replace('sh-btn sh-btn--soft" data-act="send"','sh-btn sh-btn--block" data-act="send"').replace('sh-btn sh-btn--block" data-act="gopay"','sh-btn sh-btn--muted" data-act="gopay"');}return html;};
   MODULES.tables.render=tables2; MODULES.order.render=order2;
   ACT.table=function(id){select(id);}; ACT.padarea=function(v){S.padArea=v;}; ACT.padstatus=function(v){S.padStatus=v;}; ACT.padfilter=function(v){S.padFilter=v;};
   ACT.seat=function(){var t=current();if(t.st!=='free'&&t.st!=='booked'){toast('此桌不能重复开台');return;}LINES=[];drafts[t.id]=LINES;t.st='seated';t.ppl=t.seats;t.min=0;t.amt=0;S.wb='order';toast(t.id+' 已开台');};
@@ -55,7 +60,7 @@
   render=function(){sync();oldRender();dev.dataset.padWb=S.wb;fit();};
   window.padOriginalSwitches = switches;
   switches=function(){return '<details class="pad-debug"><summary>设计调试与其他工作台</summary>'+window.padOriginalSwitches()+'</details>';};
-  fit=function(){if(S.wb==='tables'||S.wb==='order'){dev.style.transform='none';stage.style.height=Math.max(680,parent.innerHeight-240)+'px';dev.style.width='100%';dev.style.height='100%';}else{dev.style.width='1280px';dev.style.height='800px';oldFit();}};
+  fit=function(){if(S.wb==='tables'||S.wb==='order'){dev.style.transform='none';stage.style.height=Math.max(480,parent.innerHeight-parent.document.querySelector('header').offsetHeight-stage.getBoundingClientRect().top-window.scrollY-24)+'px';dev.style.width='100%';dev.style.height='100%';}else{dev.style.width='1280px';dev.style.height='800px';oldFit();}};
   document.addEventListener('input',function(e){var key=e.target.dataset.padInput;if(!key||e.isComposing)return;var pos=e.target.selectionStart;S[key]=e.target.value;render();var el=dev.querySelector('[data-pad-input="'+key+'"]');el.focus();el.setSelectionRange(pos,pos);});
   document.addEventListener('compositionstart',function(){window.padComposing=true;});
   document.addEventListener('compositionend',function(e){window.padComposing=false;if(e.target.dataset.padInput)e.target.dispatchEvent(new Event('input',{bubbles:true}));});
