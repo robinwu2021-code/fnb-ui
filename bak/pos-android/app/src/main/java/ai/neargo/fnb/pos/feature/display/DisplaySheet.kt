@@ -22,6 +22,8 @@ import ai.neargo.fnb.pos.core.model.OrderLayout
 import ai.neargo.fnb.pos.core.model.PanelShape
 import ai.neargo.fnb.pos.core.model.Skin
 import ai.neargo.fnb.pos.core.model.TextScale
+import ai.neargo.fnb.pos.core.model.FontChoice
+import ai.neargo.fnb.pos.core.model.Lang
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,7 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -158,7 +160,11 @@ fun DisplaySheet(state: DisplayUiState, onAction: (DisplayAction) -> Unit, onDis
                 Group.Text -> {
                     Label("字号")
                     Options(TextScale.entries, p.scale, { it.label }) { v -> set { it.copy(scale = v) } }
-                    Text("字体：当前使用系统无衬线回退；Manrope + Noto Sans SC 随包字体待接入", style = t.label, color = c.sub, modifier = Modifier.padding(top = 8.dp))
+                    Label("字体")
+                    Options(FontChoice.entries, p.font, { it.label }) { v -> set { it.copy(font = v) } }
+                    Text("Manrope 随包提供（拉丁文字与数字），中文使用系统 Noto Sans CJK；其他字体方案按需随包加入", style = t.label, color = c.sub, modifier = Modifier.padding(top = 8.dp))
+                    Label("语言")
+                    Options(Lang.entries, p.lang, { it.label }) { v -> set { it.copy(lang = v) } }
                 }
             }
             Label("演示")

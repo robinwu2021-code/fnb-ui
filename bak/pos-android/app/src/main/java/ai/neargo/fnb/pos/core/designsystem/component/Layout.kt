@@ -44,3 +44,7 @@ fun Workbench(
         if (side == BillSide.Right) aside(Modifier.width(sideWidth).fillMaxHeight())
     }
 }
+
+/** 分类 / 区域栏宽：中文 88dp；英文词更长，放宽到 112dp，避免截断。 */
+@Composable
+fun railWidth(): Dp = if (LocalLang.current == ai.neargo.fnb.pos.core.model.Lang.En) 112.dp else ai.neargo.fnb.pos.core.designsystem.theme.PosSize.rail

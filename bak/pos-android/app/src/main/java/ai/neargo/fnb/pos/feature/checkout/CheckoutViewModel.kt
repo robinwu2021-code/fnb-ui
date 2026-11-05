@@ -2,6 +2,9 @@ package ai.neargo.fnb.pos.feature.checkout
 
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.FloorRepository
+import ai.neargo.fnb.pos.core.data.PrintRepository
+import ai.neargo.fnb.pos.core.data.StoreConfigRepository
+import ai.neargo.fnb.pos.core.model.PaymentRecord
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.OrderRepository
 import ai.neargo.fnb.pos.core.model.DiningTable
@@ -37,6 +40,8 @@ data class CheckoutUiState(
     val processing: Boolean = false,
     /** 收款成功的金额；非空时显示结果页。 */
     val paid: Int? = null,
+    /** 本桌今日已结账记录（不计入本次应收）。 */
+    val history: List<PaymentRecord> = emptyList(),
 ) {
     /** 不能结账核对的原因（新加 / 待同步 / 空单）；null 表示可以。 */
     val block get() = OrderRules.checkoutBlock(totals)
@@ -50,6 +55,7 @@ sealed interface CheckoutAction {
     data object ToggleMember : CheckoutAction
     data object Confirm : CheckoutAction
     data object Done : CheckoutAction
+    data object PreBill : CheckoutAction
     data class Notice(val message: String) : CheckoutAction
 }
 
@@ -62,19 +68,24 @@ sealed interface CheckoutEffect { data object BackToTables : CheckoutEffect }
 class CheckoutViewModel(
     private val floor: FloorRepository,
     private val orders: OrderRepository,
+    config: StoreConfigRepository,
+    private val print: PrintRepository,
     device: DeviceRepository,
     private val messages: MessageBus,
     saved: SavedStateHandle,
 ) : ViewModel() {
     private val tableId = saved.toRoute<CheckoutRoute>().tableId
+    /** 小票预览文本（当前账单）。 */
+    fun preview(): List<String> = print.billPreview(tableId)
     private data class Local(val method: PayMethod = PayMethod.Cash, val processing: Boolean = false, val paid: Int? = null)
     private val local = MutableStateFlow(Local())
     private val effects = Channel<CheckoutEffect>(Channel.BUFFERED)
     val effect = effects.receiveAsFlow()
 
-    val state: StateFlow<CheckoutUiState> = combine(floor.tables, orders.orders, device.status, local) { tables, all, d, l ->
-        val o = all[tableId] ?: TableOrder()
-        CheckoutUiState(tables.firstOrNull { it.id == tableId }, o, OrderRules.totals(o), l.method, d.online, l.processing, l.paid)
+    val state: StateFlow<CheckoutUiState> = combine(config.current, device.status, local) { store, d, l ->
+        val o = store?.orders?.get(tableId) ?: TableOrder()
+        CheckoutUiState(store?.tables?.firstOrNull { it.id == tableId }, o, OrderRules.totals(o), l.method, d.online, l.processing, l.paid,
+            store?.payments.orEmpty().filter { it.tableId == tableId }.sortedByDescending { it.at })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CheckoutUiState())
 
     fun onAction(a: CheckoutAction) {
@@ -106,6 +117,7 @@ class CheckoutViewModel(
                         .onFailure { local.value = local.value.copy(processing = false); messages.post(it.message ?: "收款失败，账单已保留") }
                 }
             }
+            CheckoutAction.PreBill -> viewModelScope.launch { print.preBill(tableId).onSuccess { messages.post("预结单已加入打印队列") }.onFailure { messages.post(it.message ?: "打印失败") } }
             CheckoutAction.Done -> viewModelScope.launch { effects.send(CheckoutEffect.BackToTables) }
             is CheckoutAction.Notice -> messages.post(a.message)
         }

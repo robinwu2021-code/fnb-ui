@@ -15,6 +15,7 @@ import ai.neargo.fnb.pos.core.model.OrderLine
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,6 +109,7 @@ fun OrderLineRow(
     onQty: (Int) -> Unit,
     onAdvance: ((LineStatus) -> Unit)?,
     modifier: Modifier = Modifier,
+    onNote: (() -> Unit)? = null,
 ) {
     val c = Pos.colors
     val t = Pos.type
@@ -118,7 +120,11 @@ fun OrderLineRow(
             Text(yuan(line.unit * line.qty), style = t.line.num(), color = c.ink, maxLines = 1, softWrap = false)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(line.spec, style = t.label, color = c.sub, modifier = Modifier.weight(1f), maxLines = 2)
+            Column(Modifier.weight(1f).then(if (onNote != null) Modifier.clickable(role = Role.Button, onClickLabel = "菜品备注", onClick = onNote) else Modifier)) {
+                Text(line.spec, style = t.label, color = c.sub, maxLines = 2)
+                if (line.note.isNotBlank()) Text("备注：${line.note}", style = t.label, color = c.warning, maxLines = 2)
+                else if (onNote != null) Text("+ 备注", style = t.label, color = c.primary)
+            }
             if (line.status == LineStatus.New) {
                 QuantityStepper(line.qty, onQty)
             } else {

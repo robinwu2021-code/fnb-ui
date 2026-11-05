@@ -4,6 +4,12 @@ import ai.neargo.fnb.pos.core.model.ButtonShape
 import ai.neargo.fnb.pos.core.model.Density
 import ai.neargo.fnb.pos.core.model.DisplayPrefs
 import ai.neargo.fnb.pos.core.model.PanelShape
+import ai.neargo.fnb.pos.core.model.FontChoice
+import ai.neargo.fnb.pos.R
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import ai.neargo.fnb.pos.core.model.Skin
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -26,9 +32,9 @@ import androidx.compose.ui.unit.sp
  * 关键状态与操作文字不低于 12sp。
  */
 @Immutable
-class PosTypography(private val f: Float) {
+class PosTypography(private val f: Float, private val family: FontFamily? = null) {
     private fun s(v: Int, lh: Float, w: FontWeight = FontWeight.Normal) =
-        TextStyle(fontSize = (v * f).sp, lineHeight = (v * f * lh).sp, fontWeight = w)
+        TextStyle(fontSize = (v * f).sp, lineHeight = (v * f * lh).sp, fontWeight = w, fontFamily = family)
 
     val title = s(20, 1.3f, FontWeight.SemiBold)
     val tableNo = s(22, 1.3f, FontWeight.SemiBold)
@@ -43,6 +49,12 @@ class PosTypography(private val f: Float) {
     val amount = s(26, 1.2f, FontWeight.Bold)
     val amountM = s(24, 1.2f, FontWeight.SemiBold)
 }
+
+/** Manrope 可变字体（随包，OFL）：拉丁文字与数字；中文按字形回退系统 Noto Sans CJK。 */
+@OptIn(ExperimentalTextApi::class)
+val Manrope = FontFamily(listOf(400, 500, 600, 700).map { w ->
+    Font(R.font.manrope, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+})
 
 /** 金额、数量、桌号用等宽数字。 */
 fun TextStyle.num() = copy(fontFeatureSettings = "tnum")
@@ -93,7 +105,7 @@ fun metricsOf(p: DisplayPrefs): PosMetrics {
 @Composable
 fun PosTheme(prefs: DisplayPrefs, content: @Composable () -> Unit) {
     val c = prefs.skin.colors()
-    val t = PosTypography(prefs.scale.factor)
+    val t = PosTypography(prefs.scale.factor, if (prefs.font == FontChoice.Manrope) Manrope else null)
     val m = metricsOf(prefs)
     val scheme = lightColorScheme(
         primary = c.primary, onPrimary = c.onPrimary, primaryContainer = c.tint, onPrimaryContainer = c.primary,
@@ -104,7 +116,7 @@ fun PosTheme(prefs: DisplayPrefs, content: @Composable () -> Unit) {
         surfaceContainerHigh = c.surface, surfaceContainerHighest = c.control,
         outline = c.divider, outlineVariant = c.divider, error = c.danger, scrim = c.scrim,
     )
-    CompositionLocalProvider(LocalPosColors provides c, LocalPosType provides t, LocalPosMetrics provides m) {
+    CompositionLocalProvider(LocalPosColors provides c, LocalPosType provides t, LocalPosMetrics provides m, ai.neargo.fnb.pos.core.designsystem.component.LocalLang provides prefs.lang) {
         MaterialTheme(
             colorScheme = scheme,
             typography = Typography(bodyLarge = t.body, bodyMedium = t.body, labelLarge = t.button, labelMedium = t.label, titleLarge = t.title),

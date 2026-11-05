@@ -10,6 +10,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.LocalPosLayout
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
 import ai.neargo.fnb.pos.core.designsystem.component.PosIconButton
 import ai.neargo.fnb.pos.core.designsystem.component.PosLayout
+import ai.neargo.fnb.pos.core.designsystem.component.tr
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.PosSize
 import ai.neargo.fnb.pos.core.model.DeviceStatus
@@ -25,11 +26,14 @@ import ai.neargo.fnb.pos.navigation.ManageRoute
 import ai.neargo.fnb.pos.navigation.SyncRoute
 import ai.neargo.fnb.pos.core.data.SyncRepository
 import ai.neargo.fnb.pos.core.model.StoreSummary
+import ai.neargo.fnb.pos.core.model.Lang
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.launch
 import ai.neargo.fnb.pos.feature.order.OrderRoute as OrderScreenRoute
-import ai.neargo.fnb.pos.feature.shift.ShiftScreen
+import ai.neargo.fnb.pos.feature.shift.ShiftRoute as ShiftScreenRoute
+import ai.neargo.fnb.pos.feature.print.PrintRoute as PrintScreenRoute
+import ai.neargo.fnb.pos.navigation.PrintRoute
 import ai.neargo.fnb.pos.feature.tables.TablesRoute as TablesScreenRoute
 import ai.neargo.fnb.pos.navigation.CheckoutRoute
 import ai.neargo.fnb.pos.navigation.OrderRoute
@@ -85,7 +89,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -119,11 +123,13 @@ data class ShellUiState(
 )
 
 /** 应用壳 ViewModel：会话、设备状态、显示偏好（主题）。 */
-class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus) : ViewModel() {
+class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, private val prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus) : ViewModel() {
     val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, session.stores) { s, d, p, n, st -> ShellUiState(s, d, p, n, st) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ShellUiState())
     fun selectStore(id: String) = viewModelScope.launch { session.selectStore(id) }
     fun logout() = viewModelScope.launch { session.logout() }
+    /** 页头语言图标：中文 ⇄ English，写入显示偏好。 */
+    fun toggleLang() = viewModelScope.launch { prefs.update { it.copy(lang = if (it.lang == Lang.Zh) Lang.En else Lang.Zh) } }
 }
 
 /**
@@ -159,7 +165,7 @@ fun PosApp(shell: ShellViewModel) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, onShift = { nav.goTop(ShiftRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true })
+                val actions = HeaderActions(state.device, state.pending, notice, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
                 Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
@@ -177,14 +183,21 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<TablesRoute> { TablesScreenRoute(onOrder = { nav.goTop(OrderRoute) }, onCheckout = { nav.navigate(CheckoutRoute(it)) }) }
         composable<OrderRoute> { OrderScreenRoute(onCheckout = { nav.navigate(CheckoutRoute(it)) }, onChangeTable = { nav.goTop(TablesRoute) }) }
         composable<CheckoutRoute> { CheckoutScreenRoute(onBack = { nav.popBackStack() }, onDone = { nav.goTop(TablesRoute) }) }
-        composable<ShiftRoute> { ShiftScreen(notice) }
+        composable<ShiftRoute> { ShiftScreenRoute() }
+        composable<PrintRoute> { PrintScreenRoute() }
         composable<ManageRoute> { ManageScreenRoute(onDisplay, onSwitchStore) }
         composable<SyncRoute> { SyncScreenRoute() }
     }
 }
 
 /** 顶层页面切换：不堆栈，保留各页状态。 */
-private fun NavHostController.goTop(route: Any) = navigate(route) {
+private fun NavHostController.goTop(route: Any) {
+    // 结账页是一次性流程：经页头离开时丢弃，避免切回「点餐」时恢复出旧的结账 / 收款结果页
+    if (currentDestination?.hasRoute<CheckoutRoute>() == true) popBackStack()
+    goTopInternal(route)
+}
+
+private fun NavHostController.goTopInternal(route: Any) = navigate(route) {
     popUpTo(graph.startDestinationId) { saveState = true }
     launchSingleTop = true
     restoreState = true
@@ -202,7 +215,7 @@ private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage:
 /** 页头右侧操作：原页头（消息 / 打印 / 语言 / 显示）与原页脚（在线 / 钱箱 / 交班 / 帮助）合并，统一为图标。 */
 private class HeaderActions(
     val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit,
-    val onShift: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit,
+    val onShift: () -> Unit, val onPrint: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
 )
 
 /** AppHeader（宽屏）：门店 / 员工·终端、工作台导航；右侧图标工具栏。无页脚，内容区直达底部。 */
@@ -226,7 +239,7 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
             PrinterIcon(actions)
             ToolIcon(Icons.Outlined.PointOfSale, "钱箱") { actions.notice("钱箱操作需要权限，演示环境未连接钱箱") }
             ToolIcon(Icons.Outlined.SwapHoriz, "交班", onClick = actions.onShift)
-            ToolIcon(Icons.Outlined.Translate, "语言：中文 / EN") { actions.notice("英文界面将随 i18n 资源接入（演示）") }
+            ToolIcon(Icons.Outlined.Translate, "语言：中文 / EN", onClick = actions.onLang)
             ToolIcon(Icons.AutoMirrored.Outlined.HelpOutline, "帮助") { actions.notice("帮助中心 · POS 3.0 演示终端") }
             ToolIcon(Icons.Outlined.Tune, "显示设置", filled = true, onClick = actions.onDisplay)
         }
@@ -249,9 +262,9 @@ private fun CompactHeader(session: Session, actions: HeaderActions) {
                 val item: @Composable (androidx.compose.ui.graphics.vector.ImageVector, String, () -> Unit) -> Unit = { icon, label, act ->
                     DropdownMenuItem(text = { Text(label, style = Pos.type.body) }, leadingIcon = { Icon(icon, null) }, onClick = { more = false; act() })
                 }
-                item(Icons.Outlined.Print, if (actions.device.printerOk) "打印正常" else "打印缺纸") { actions.notice(if (actions.device.printerOk) "打印机在线（演示）" else "厨房打印机缺纸，换纸后补打") }
+                item(Icons.Outlined.Print, if (actions.device.printerOk) "打印队列" else "打印队列（缺纸）", actions.onPrint)
                 item(Icons.Outlined.SwapHoriz, "交班", actions.onShift)
-                item(Icons.Outlined.Translate, "语言：中文 / EN") { actions.notice("英文界面将随 i18n 资源接入（演示）") }
+                item(Icons.Outlined.Translate, "语言：中文 / EN", actions.onLang)
                 item(Icons.AutoMirrored.Outlined.HelpOutline, "帮助") { actions.notice("帮助中心 · POS 3.0 演示终端") }
             }
         }
@@ -278,9 +291,7 @@ private fun StatusIcon(a: HeaderActions) {
 @Composable
 private fun PrinterIcon(a: HeaderActions) {
     val ok = a.device.printerOk
-    ToolIcon(Icons.Outlined.Print, if (ok) "打印正常" else "打印缺纸", tint = if (ok) null else Pos.colors.danger, dot = !ok) {
-        a.notice(if (ok) "厨房、前台打印机在线（演示）" else "厨房打印机缺纸，换纸后补打")
-    }
+    ToolIcon(Icons.Outlined.Print, if (ok) "打印队列 · 打印机正常" else "打印队列 · 厨房打印机缺纸", tint = if (ok) null else Pos.colors.danger, dot = !ok, onClick = a.onPrint)
 }
 
 /**
@@ -312,9 +323,9 @@ private fun ToolIcon(
         }) {
             if (filled) {
                 FilledIconButton(onClick, Modifier.size(40.dp), shape = Pos.metrics.button,
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.control, contentColor = tint ?: c.ink)) { Icon(icon, label, Modifier.size(20.dp)) }
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.control, contentColor = tint ?: c.ink)) { Icon(icon, tr(label), Modifier.size(20.dp)) }
             } else {
-                IconButton(onClick, Modifier.size(40.dp), colors = IconButtonDefaults.iconButtonColors(contentColor = tint ?: c.ink)) { Icon(icon, label, Modifier.size(20.dp)) }
+                IconButton(onClick, Modifier.size(40.dp), colors = IconButtonDefaults.iconButtonColors(contentColor = tint ?: c.ink)) { Icon(icon, tr(label), Modifier.size(20.dp)) }
             }
         }
     }

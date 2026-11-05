@@ -14,7 +14,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -111,8 +110,8 @@ fun PosIconButton(
             colors = IconButtonDefaults.filledIconButtonColors(
                 containerColor = if (selected) c.tint else c.control, contentColor = if (selected) c.primary else c.ink,
             ),
-        ) { Icon(icon, label, Modifier.size(20.dp)) }
+        ) { Icon(icon, tr(label), Modifier.size(20.dp)) }
     } else {
-        IconButton(onClick, m, colors = IconButtonDefaults.iconButtonColors(contentColor = c.ink)) { Icon(icon, label, Modifier.size(20.dp)) }
+        IconButton(onClick, m, colors = IconButtonDefaults.iconButtonColors(contentColor = c.ink)) { Icon(icon, tr(label), Modifier.size(20.dp)) }
     }
 }

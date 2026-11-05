@@ -26,15 +26,18 @@ app/src/main/java/ai/neargo/fnb/pos/
 ├── core/designsystem/
 │   ├── theme/           颜色角色、八套皮肤、桌台五态、角色字号、密度与圆角 → 映射到 MaterialTheme
 │   └── component/       基于 Material 3 的扁平组件：按钮、图标按钮、Chip、分类栏、步进器、搜索、输入框、下拉选择、
-│                        复选行、开关、面板、角标、标签、分组标题、键值、详情区块、弹窗、底部弹层、商品图、双栏布局
+│                        复选行、开关、面板、角标、标签、分组标题、键值、详情区块、弹窗、底部弹层、商品图、双栏布局、
+│                        翻译 Text（中文 / English）
 ├── feature/auth/        本机账号登录 / 注册、选择门店
 ├── feature/order/       点餐：菜单、SKU 规格弹窗、账单坞（新加 / 待同步 / 已下单）
 ├── feature/tables/      桌台：筛选、五态卡片、详情、开台、清台
 ├── feature/checkout/    结账：离线收款记账、未送厨 / 待同步拦截、收款结果
 ├── feature/manage/      系统管理：多级菜单；桌台、区域、门店、分类、商品编辑器（六分区 + SKU + 图片）、规格组、库存盘点、餐牌、设备 / 收款 / 员工信息
+├── feature/common/      共用弹窗：备注、选桌、小票预览
+├── feature/print/       打印队列
 ├── feature/sync/        同步队列
 ├── feature/display/     显示设置（含强制离线、打印缺纸演示开关）
-├── feature/shift/       交班（演示）
+├── feature/shift/       交班：本班收款汇总、钱箱清点、交班单
 ├── navigation/          类型安全路由：Tables、Order、Checkout(tableId)、Shift、Manage、Sync
 └── app/                 PosApplication、ShellViewModel、PosApp（会话守卫、页头图标工具栏、导航宿主、提示）
 ```

@@ -14,6 +14,7 @@ import ai.neargo.fnb.pos.core.model.StoreData
 import ai.neargo.fnb.pos.core.model.StoreSettings
 import ai.neargo.fnb.pos.core.model.TableOrder
 import ai.neargo.fnb.pos.core.model.TableStatus
+import ai.neargo.fnb.pos.core.model.ShiftState
 
 private const val WIKI = "https://thumb.wikimedia.org/wikipedia/commons/thumb/"
 
@@ -103,6 +104,7 @@ internal object DemoCatalog {
             settings = StoreSettings("南山小馆 · 总店"),
             areas = areas, tables = tables, categories = categories, specGroups = specs, products = products, menus = menus,
             orders = map.mapValues { TableOrder(it.value) }, currentTableId = "A03", seq = uid,
+            shift = ShiftState(start = now - 4 * 3_600_000L),
         )
     }
 

@@ -7,6 +7,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.DetailBlock
 import ai.neargo.fnb.pos.core.designsystem.component.EmptyState
 import ai.neargo.fnb.pos.core.designsystem.component.KeyValue
 import ai.neargo.fnb.pos.core.designsystem.component.LocalPosLayout
+import ai.neargo.fnb.pos.core.designsystem.component.railWidth
 import ai.neargo.fnb.pos.core.designsystem.component.Panel
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
 import ai.neargo.fnb.pos.core.designsystem.component.PosChip
@@ -23,6 +24,14 @@ import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.designsystem.theme.tone
 import ai.neargo.fnb.pos.core.model.DiningTable
 import ai.neargo.fnb.pos.core.model.TableStatus
+import ai.neargo.fnb.pos.core.model.TableRules
+import ai.neargo.fnb.pos.core.designsystem.component.PosTextField
+import ai.neargo.fnb.pos.feature.common.NoteDialog
+import ai.neargo.fnb.pos.feature.common.OrderNoteTags
+import ai.neargo.fnb.pos.feature.common.TablePickDialog
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -53,7 +62,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +83,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun TablesRoute(onOrder: () -> Unit, onCheckout: (String) -> Unit) {
-    val vm = posViewModel { c, h -> TablesViewModel(c.config, c.session, c.floor, c.prefs, c.messages, h) }
+    val vm = posViewModel { c, h -> TablesViewModel(c.config, c.session, c.floor, c.orders, c.print, c.prefs, c.messages, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(vm) {
         vm.effect.collect { e ->
@@ -95,14 +104,14 @@ fun TablesScreen(state: TablesUiState, onAction: (TablesAction) -> Unit) {
     val board: @Composable (Modifier) -> Unit = { m -> Board(state, onAction, { onAction(TablesAction.Select(it)); if (!layout.wide) sheetOpen = true }, m) }
 
     if (layout.wide) {
-        Workbench(state.detailSide, layout.dockW, aside = { m -> state.selected?.let { TableDetail(it, state.selectedPending, onAction, m) } }) { m -> board(m) }
+        Workbench(state.detailSide, layout.dockW, aside = { m -> state.selected?.let { TableDetail(it, state.selectedPending, state, onAction, m) } }) { m -> board(m) }
     } else {
         board(Modifier.fillMaxSize().padding(Pos.metrics.gap))
     }
 
     if (sheetOpen && !layout.wide && state.selected != null) {
         PosSheet(onDismiss = { sheetOpen = false }, showHandle = false) {
-            TableDetail(state.selected, state.selectedPending, { a -> sheetOpen = false; onAction(a) }, Modifier.fillMaxWidth().heightIn(max = 640.dp))
+            TableDetail(state.selected, state.selectedPending, state, { a -> sheetOpen = false; onAction(a) }, Modifier.fillMaxWidth().heightIn(max = 640.dp))
         }
     }
     state.opening?.let { t -> OpenTableDialog(t, onDismiss = { onAction(TablesAction.CancelOpen) }) { onAction(TablesAction.ConfirmOpen(it)) } }
@@ -118,7 +127,7 @@ private fun Board(state: TablesUiState, onAction: (TablesAction) -> Unit, onSele
     Panel(modifier) {
         Row(Modifier.fillMaxSize()) {
             if (layout.wide) {
-                LazyColumn(Modifier.width(PosSize.rail).fillMaxHeight().background(c.tile), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
+                LazyColumn(Modifier.width(railWidth()).fillMaxHeight().background(c.tile), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
                     items(state.areas, key = { it.first }) { (id, name) -> RailItem(name, state.areaCounts[id], id == state.area, { onAction(TablesAction.SelectArea(id)) }) }
                 }
                 androidx.compose.material3.VerticalDivider(color = c.divider)
@@ -148,12 +157,16 @@ private fun Board(state: TablesUiState, onAction: (TablesAction) -> Unit, onSele
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp).background(c.tile).padding(horizontal = pad, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PosButton("卡片", {}, size = BtnSize.Small, selected = true, textStyle = t.label)
-                    PosButton("平面位置", { onAction(TablesAction.Notice("平面位置视图按 v3 桌台平面规范后续接入")) }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)
+                    TableView.entries.forEach { v ->
+                        PosButton(v.label, { onAction(TablesAction.SetView(v)) }, size = BtnSize.Small, selected = state.view == v,
+                            variant = if (state.view == v) BtnVariant.Secondary else BtnVariant.Text, textStyle = t.label)
+                    }
                     Spacer(Modifier.weight(1f))
                     Text("${state.cards.size} 张桌台", style = t.label.num(), color = c.sub)
                 }
-                LazyVerticalGrid(
+                if (state.view == TableView.Floor) {
+                    FloorPlan(state, onSelect, Modifier.fillMaxWidth().weight(1f).background(c.tile))
+                } else LazyVerticalGrid(
                     columns = GridCells.Adaptive(if (layout.width < 1100.dp) 150.dp else 164.dp),
                     modifier = Modifier.fillMaxWidth().weight(1f).background(c.tile),
                     contentPadding = PaddingValues(pad),
@@ -227,12 +240,21 @@ private fun TableCard(item: TableCardItem, selected: Boolean, onClick: () -> Uni
 /** 桌台详情：身份头（主题浅底色块）→ 信息 / 账单 / 快捷入口（内部滚动）→ 固定操作区。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TableDetail(item: TableCardItem, pending: Int, onAction: (TablesAction) -> Unit, modifier: Modifier) {
+private fun TableDetail(item: TableCardItem, pending: Int, state: TablesUiState, onAction: (TablesAction) -> Unit, modifier: Modifier) {
+    var dialog by remember(item.table.id) { mutableStateOf<String?>(null) }
     val c = Pos.colors
     val t = Pos.type
     val tb = item.table
     val dining = tb.status == TableStatus.Dining
     val totals = item.totals
+    when (dialog) {
+        "note" -> NoteDialog("${tb.id} 整单备注", item.note, OrderNoteTags, { dialog = null }) { n, done -> onAction(TablesAction.SaveNote(tb.id, n, done)) }
+        "change" -> TablePickDialog("${tb.id} 换桌", "整单移到空闲或已预订的桌台，原桌转待清台", state.all.filter { it.id != tb.id && (it.status == TableStatus.Idle || it.status == TableStatus.Reserved) && it.seats >= tb.guests },
+            { dialog = null }, confirm = "换桌") { to, _, done -> onAction(TablesAction.Change(tb.id, to, done)) }
+        "merge" -> TablePickDialog("${tb.id} 并台", "并入另一张用餐中的桌台，人数相加，原桌转待清台", state.all.filter { it.id != tb.id && it.status == TableStatus.Dining },
+            { dialog = null }, confirm = "并台") { into, _, done -> onAction(TablesAction.Merge(tb.id, into, done)) }
+        "pos" -> PositionDialog(item, { dialog = null }) { x, y, done -> onAction(TablesAction.SavePosition(tb.id, x, y, done)) }
+    }
     Panel(modifier) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().background(lerp(c.surface, c.tint, 0.5f)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -252,6 +274,7 @@ private fun TableDetail(item: TableCardItem, pending: Int, onAction: (TablesActi
                     KeyValue("菜品数量", "${totals.items}")
                     KeyValue("新加 / 待送厨", "$pending")
                     KeyValue("优惠合计", yuan(-totals.discount))
+                    if (item.note.isNotBlank()) KeyValue("整单备注", item.note)
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(Pos.metrics.card).background(c.tile).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         val paid = tb.status == TableStatus.Paid
                         Text(if (paid) "已结账（演示）" else "待结账", style = t.label, color = c.ink, modifier = Modifier.weight(1f))
@@ -261,10 +284,11 @@ private fun TableDetail(item: TableCardItem, pending: Int, onAction: (TablesActi
                 DetailBlock("服务快捷入口", divider = false) {
                     FlowRow(maxItemsInEachRow = 2, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         val m = Modifier.weight(1f)
-                        PosButton("查看消息", { onAction(TablesAction.Notice("${tb.id} 暂无新消息（演示）")) }, m, textStyle = t.label)
-                        PosButton("打印状态", { onAction(TablesAction.Notice("打印机在线（演示）")) }, m, textStyle = t.label)
-                        PosButton("整单备注", { onAction(TablesAction.Notice("整单备注（演示）")) }, m, enabled = dining, textStyle = t.label)
-                        PosButton("优惠资产", { onAction(TablesAction.Notice("会员、优惠券、储值在结账时核对")) }, m, enabled = dining, textStyle = t.label)
+                        PosButton("打印预结单", { onAction(TablesAction.PreBill(tb.id)) }, m, enabled = dining && totals.items > 0, textStyle = t.label)
+                        PosButton("整单备注", { dialog = "note" }, m, enabled = dining, textStyle = t.label)
+                        PosButton("换桌", { dialog = "change" }, m, enabled = dining, textStyle = t.label)
+                        PosButton("并台", { dialog = "merge" }, m, enabled = dining, textStyle = t.label)
+                        if (state.view == TableView.Floor) PosButton("调整位置", { dialog = "pos" }, m, textStyle = t.label)
                     }
                 }
             }
@@ -301,5 +325,63 @@ private fun OpenTableDialog(tb: DiningTable, onDismiss: () -> Unit, onConfirm: (
             Text("用餐人数", style = Pos.type.body, color = Pos.colors.ink, modifier = Modifier.weight(1f))
             QuantityStepper(n, { n = (n + it).coerceIn(1, tb.seats) }, min = 1, max = tb.seats)
         }
+    }
+}
+
+/** 平面位置：按区域分组的画布（900×460，左右滑动查看）；卡片 140×112，按坐标摆放。 */
+@Composable
+private fun FloorPlan(state: TablesUiState, onSelect: (String) -> Unit, modifier: Modifier) {
+    val c = Pos.colors
+    val t = Pos.type
+    LazyColumn(modifier, contentPadding = PaddingValues(Pos.metrics.pad), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        items(state.floorAreas, key = { it.first }) { (area, cards) ->
+            Column {
+                Text("$area · ${cards.size} 张", style = t.section, color = c.ink)
+                Text("示意位置 · 左右滑动查看 · 选中桌台后可在详情中调整坐标", style = t.label, color = c.sub, modifier = Modifier.padding(bottom = 6.dp))
+                Box(Modifier.horizontalScroll(rememberScrollState())) {
+                    Box(Modifier.size(TableRules.CANVAS_W.dp, TableRules.CANVAS_H.dp).clip(Pos.metrics.card).background(c.control)) {
+                        Text("入口", style = t.label, color = c.sub, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp))
+                        Text("通道", style = t.label, color = c.sub, modifier = Modifier.align(Alignment.Center))
+                        cards.forEach { item ->
+                            val tb = item.table
+                            val tone = tb.status.tone()
+                            val sel = tb.id == state.selected?.table?.id
+                            Card(
+                                { onSelect(tb.id) },
+                                Modifier.offset(item.x.dp, item.y.dp).size(TableRules.CARD_W.dp, TableRules.CARD_H.dp).semantics { selected = sel; contentDescription = "${tb.id} ${tb.status.label}" },
+                                shape = Pos.metrics.card, colors = CardDefaults.cardColors(containerColor = tone.bg),
+                                elevation = CardDefaults.cardElevation(0.dp),
+                                border = if (sel) BorderStroke(2.dp, tone.ink) else null,
+                            ) {
+                                Column(Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(tb.id, style = t.section.num(), color = c.ink, modifier = Modifier.weight(1f))
+                                        Box(Modifier.size(8.dp).clip(CircleShape).background(tone.dot))
+                                    }
+                                    Text("${tb.status.label} · ${tb.seats} 座", style = t.label, color = tone.ink)
+                                    Spacer(Modifier.weight(1f))
+                                    Text(if (tb.status == TableStatus.Dining) yuan(item.totals.due) else "—", style = t.body.num(), color = c.ink)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 调整平面位置：X 0–744、Y 0–332（画布单位），越界拒绝。 */
+@Composable
+private fun PositionDialog(item: TableCardItem, onDismiss: () -> Unit, onSave: (String, String, (String?) -> Unit) -> Unit) {
+    var x by remember { mutableStateOf(item.x.toString()) }
+    var y by remember { mutableStateOf(item.y.toString()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    PosDialog("调整 ${item.table.id} 位置", onDismiss, maxWidth = 420.dp, subtitle = "画布 ${TableRules.CANVAS_W}×${TableRules.CANVAS_H}，卡片 ${TableRules.CARD_W}×${TableRules.CARD_H}", footer = {
+        PosButton("取消", onDismiss, size = BtnSize.Large)
+        PosButton("保存", { onSave(x, y) { e -> error = e; if (e == null) onDismiss() } }, variant = BtnVariant.Primary, size = BtnSize.Large)
+    }) {
+        PosTextField(x, { x = it }, "X（0–${TableRules.MAX_X}）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
+        PosTextField(y, { y = it }, "Y（0–${TableRules.MAX_Y}）", error = error, keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
     }
 }

@@ -12,6 +12,8 @@ import ai.neargo.fnb.pos.core.model.DiningTable
 import ai.neargo.fnb.pos.core.model.OrderRules
 import ai.neargo.fnb.pos.core.model.TableOrder
 import ai.neargo.fnb.pos.core.model.TableStatus
+import ai.neargo.fnb.pos.core.model.TableRules
+import ai.neargo.fnb.pos.core.data.PrintRepository
 import ai.neargo.fnb.pos.core.model.Totals
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -28,7 +30,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 
 /** minutes 为用餐时长（由开台时间计算，每 30 秒刷新）。 */
-data class TableCardItem(val table: DiningTable, val areaName: String, val totals: Totals, val minutes: Int)
+data class TableCardItem(val table: DiningTable, val areaName: String, val totals: Totals, val minutes: Int, val x: Int = 0, val y: Int = 0, val note: String = "")
+
+enum class TableView(val label: String) { Grid("卡片"), Floor("平面位置") }
 
 data class TablesUiState(
     val areas: List<Pair<String, String>> = emptyList(),
@@ -42,6 +46,11 @@ data class TablesUiState(
     val selectedPending: Int = 0,
     val detailSide: BillSide = BillSide.Right,
     val opening: DiningTable? = null,
+    val view: TableView = TableView.Grid,
+    /** 平面视图：按区域分组的卡片（含画布坐标）。 */
+    val floorAreas: List<Pair<String, List<TableCardItem>>> = emptyList(),
+    /** 换桌 / 并台的候选桌。 */
+    val all: List<DiningTable> = emptyList(),
 )
 
 sealed interface TablesAction {
@@ -58,6 +67,12 @@ sealed interface TablesAction {
     data class StartCleaning(val id: String) : TablesAction
     data class FinishCleaning(val id: String) : TablesAction
     data class Notice(val message: String) : TablesAction
+    data class SetView(val view: TableView) : TablesAction
+    data class SavePosition(val id: String, val x: String, val y: String, val done: (String?) -> Unit) : TablesAction
+    data class PreBill(val id: String) : TablesAction
+    data class SaveNote(val id: String, val note: String, val done: (String?) -> Unit) : TablesAction
+    data class Change(val from: String, val to: String, val done: (String?) -> Unit) : TablesAction
+    data class Merge(val from: String, val into: String, val done: (String?) -> Unit) : TablesAction
 }
 
 /** 一次性导航效果，与持久 UiState 分开。 */
@@ -70,12 +85,14 @@ class TablesViewModel(
     config: StoreConfigRepository,
     private val session: SessionRepository,
     private val floor: FloorRepository,
+    private val orders: OrderRepository,
+    private val print: PrintRepository,
     prefs: PreferencesRepository,
     private val messages: MessageBus,
     private val saved: SavedStateHandle,
 ) : ViewModel() {
 
-    private data class Local(val area: String, val status: TableStatus?, val query: String, val selected: String?, val opening: String?)
+    private data class Local(val area: String, val status: TableStatus?, val query: String, val selected: String?, val opening: String?, val view: TableView = TableView.Grid)
 
     private val local = MutableStateFlow(Local(saved["area"] ?: "all", null, "", saved["selected"], null))
     private val effects = Channel<TablesEffect>(Channel.BUFFERED)
@@ -86,7 +103,10 @@ class TablesViewModel(
     val state: StateFlow<TablesUiState> = combine(config.current, session.session, prefs.prefs, local, ticker) { store, s, p, l, now ->
         val tables = store?.tables.orEmpty()
         val all = store?.orders.orEmpty()
-        fun card(t: DiningTable) = TableCardItem(t, store?.areaName(t.areaId) ?: "", OrderRules.totals(all[t.id] ?: TableOrder()), t.minutes(now))
+        fun card(t: DiningTable): TableCardItem {
+            val (x, y) = TableRules.position(t, tables.filter { it.areaId == t.areaId }.indexOf(t))
+            return TableCardItem(t, store?.areaName(t.areaId) ?: "", OrderRules.totals(all[t.id] ?: TableOrder()), t.minutes(now), x, y, all[t.id]?.note.orEmpty())
+        }
         val inArea = tables.filter { l.area == "all" || it.areaId == l.area }
         val shown = inArea.filter { (l.status == null || it.status == l.status) && (l.query.isBlank() || it.id.contains(l.query.trim(), ignoreCase = true)) }
         val selId = l.selected ?: s.currentTableId
@@ -101,6 +121,9 @@ class TablesViewModel(
             selectedPending = sel?.let { all[it.id]?.pending?.sumOf { l -> l.qty } } ?: 0,
             detailSide = p.layout.bill,
             opening = l.opening?.let { id -> tables.firstOrNull { it.id == id } },
+            view = l.view,
+            floorAreas = store?.areas.orEmpty().filter { l.area == "all" || it.id == l.area }.map { a -> a.name to shown.filter { it.areaId == a.id }.map(::card) },
+            all = tables,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TablesUiState())
 
@@ -124,8 +147,24 @@ class TablesViewModel(
             is TablesAction.StartCleaning -> viewModelScope.launch { floor.startCleaning(a.id).report("${a.id} 进入清台") }
             is TablesAction.FinishCleaning -> viewModelScope.launch { floor.finishCleaning(a.id).report("${a.id} 已清台，可开台") }
             is TablesAction.Notice -> messages.post(a.message)
+            is TablesAction.SetView -> local.value = local.value.copy(view = a.view)
+            is TablesAction.SavePosition -> viewModelScope.launch {
+                val p = TableRules.validPosition(a.x, a.y).getOrElse { a.done(it.message); return@launch }
+                floor.setPosition(a.id, p.first, p.second).finish("${a.id} 位置已保存", a.done)
+            }
+            is TablesAction.PreBill -> viewModelScope.launch { print.preBill(a.id).report("${a.id} 预结单已加入打印队列") }
+            is TablesAction.SaveNote -> viewModelScope.launch { orders.setOrderNote(a.id, a.note).finish("${a.id} 整单备注已保存", a.done) }
+            is TablesAction.Change -> viewModelScope.launch {
+                floor.changeTable(a.from, a.to).finish("${a.from} 已换到 ${a.to}，原桌待清台", a.done)
+                saved["selected"] = a.to; local.value = local.value.copy(selected = a.to)
+            }
+            is TablesAction.Merge -> viewModelScope.launch {
+                floor.mergeTable(a.from, a.into).finish("${a.from} 已并入 ${a.into}，原桌待清台", a.done)
+                saved["selected"] = a.into; local.value = local.value.copy(selected = a.into)
+            }
         }
     }
 
+    private fun Result<Unit>.finish(ok: String, done: (String?) -> Unit) { onSuccess { messages.post(ok) }; done(exceptionOrNull()?.message) }
     private fun Result<Unit>.report(ok: String) = onSuccess { messages.post(ok) }.onFailure { messages.post(it.message ?: "操作失败") }
 }

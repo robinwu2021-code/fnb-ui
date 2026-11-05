@@ -5,6 +5,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
 import ai.neargo.fnb.pos.core.designsystem.component.EmptyState
 import ai.neargo.fnb.pos.core.designsystem.component.LocalPosLayout
+import ai.neargo.fnb.pos.core.designsystem.component.railWidth
 import ai.neargo.fnb.pos.core.designsystem.component.Panel
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
 import ai.neargo.fnb.pos.core.designsystem.component.PosChip
@@ -43,7 +44,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.outlined.ViewAgenda
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,7 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 /** 路由入口：取 ViewModel，订阅状态，交给无状态内容。 */
 @Composable
 fun OrderRoute(onCheckout: (String) -> Unit, onChangeTable: () -> Unit) {
-    val vm = posViewModel { c, h -> OrderViewModel(c.session, c.config, c.orders, c.prefs, c.device, c.messages, h) }
+    val vm = posViewModel { c, h -> OrderViewModel(c.session, c.config, c.orders, c.floor, c.print, c.prefs, c.device, c.messages, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     OrderScreen(state, vm::onAction, onCheckout = { state.table?.let { onCheckout(it.id) } }, onChangeTable = onChangeTable)
 }
@@ -134,7 +135,7 @@ private fun CategoryRail(state: OrderUiState, onSelect: (String) -> Unit, vertic
     val c = Pos.colors
     if (vertical) {
         LazyColumn(
-            Modifier.width(PosSize.rail).fillMaxHeight().background(c.tile),
+            Modifier.width(railWidth()).fillMaxHeight().background(c.tile),
             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

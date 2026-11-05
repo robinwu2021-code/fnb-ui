@@ -45,7 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -91,6 +91,7 @@ fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Uni
                 Section.Devices -> DevicesSection(state, vm)
                 Section.Payments -> PaymentsSection(state)
                 Section.Staff -> StaffSection()
+                Section.Gallery -> GallerySection()
                 Section.Display -> SimplePage("界面显示", "皮肤、密度、布局与字号为本机偏好，与门店业务配置分开保存") { PosButton("打开显示设置", onDisplay, variant = BtnVariant.Primary) }
                 Section.SwitchStore -> SimplePage("切换门店", "当前：${store.settings.shortName}。切店后桌台、商品、餐牌与账单均为该门店数据") { PosButton("选择门店", onSwitchStore, variant = BtnVariant.Primary) }
                 Section.Account -> SimplePage("账号登录", "当前账号：${state.user ?: "未登录"}。账号仅保存在本机（加盐哈希），联网服务接入后迁移") {

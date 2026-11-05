@@ -12,7 +12,15 @@ data class DisplayPrefs(
     val buttonShape: ButtonShape = ButtonShape.Standard,
     val layout: OrderLayout = OrderLayout.L1,
     val photos: Boolean = true,
+    val font: FontChoice = FontChoice.Manrope,
+    val lang: Lang = Lang.Zh,
 )
+
+/** 字体：Manrope 随包（拉丁文字与数字），中文回退系统 Noto Sans CJK；或全部使用系统字体。 */
+enum class FontChoice(val label: String) { Manrope("Manrope"), System("系统字体") }
+
+/** 界面语言。 */
+enum class Lang(val label: String) { Zh("中文"), En("English") }
 
 /** 八套皮肤（规范 §3.2）。 */
 enum class Skin(val label: String) { Pine("松绿"), Mono("墨黑"), Red("虹选红"), Blue("经典蓝"), Green("微信绿"), Teal("青碧"), Amber("琥珀"), Violet("紫") }

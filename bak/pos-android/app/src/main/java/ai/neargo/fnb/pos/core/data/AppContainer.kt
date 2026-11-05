@@ -2,6 +2,7 @@ package ai.neargo.fnb.pos.core.data
 
 import ai.neargo.fnb.pos.core.model.DeviceStatus
 import ai.neargo.fnb.pos.core.model.DisplayPrefs
+import ai.neargo.fnb.pos.core.model.PrintState
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -46,13 +47,18 @@ class AppContainer(context: Context) {
     val floor: FloorRepository = workspace
     val orders: OrderRepository = workspace
     val sync: SyncRepository = workspace
+    val print: PrintRepository = workspace
+    val shift: ShiftRepository = workspace
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
     val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
     val messages: MessageBus = SimpleMessageBus()
     /** 本机图片库：商品图片选择后复制到应用私有目录。 */
     val media = LocalMedia(context.applicationContext)
 
-    init { SyncEngine(device, sync, messages, appScope).start() }
+    init {
+        SyncEngine(device, sync, messages, appScope).start()
+        PrintEngine(device, print, messages, appScope).start()
+    }
 
     /** 显示设置里的「重置演示数据」：只重置当前门店。 */
     fun resetDemo() = appScope.launch { workspace.resetDemo() }
@@ -71,6 +77,23 @@ private class SyncEngine(private val device: DeviceRepository, private val sync:
                 val n = sync.syncNow()
                 if (n > 0) messages.post("网络已恢复，已同步 $n 项离线操作")
             }
+    }
+}
+
+/**
+ * 打印引擎：有排队或失败任务时处理；厨房打印机缺纸时厨房单失败并提示，换纸后自动重试。
+ * 当前为本机模拟打印（仅改变任务状态），阶段三对接打印机 SDK 回执。
+ */
+private class PrintEngine(private val device: DeviceRepository, private val print: PrintRepository, private val messages: MessageBus, private val scope: CoroutineScope) {
+    fun start() = scope.launch {
+        combine(device.status.map { it.printerOk }, print.jobs.map { js -> js.count { it.state == PrintState.Pending } to js.count { it.state == PrintState.Failed } }) { ok, (p, f) ->
+            Triple(ok, p, if (ok) f else 0)
+        }.distinctUntilChanged().collectLatest { (ok, pending, retry) ->
+            if (pending + retry == 0) return@collectLatest
+            delay(600)
+            val failed = print.process(ok)
+            if (failed > 0) messages.post("厨房打印机缺纸，$failed 张厨房单待重打（换纸后自动重试）")
+        }
     }
 }
 
@@ -113,6 +136,8 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
         /** v3 语义的布局键；不读取旧工程的 frame 值。 */
         val layout = stringPreferencesKey("order_layout_v3")
         val photos = booleanPreferencesKey("photos")
+        val font = stringPreferencesKey("font")
+        val lang = stringPreferencesKey("lang")
     }
 
     private inline fun <reified E : Enum<E>> Preferences.enum(key: Preferences.Key<String>, default: E): E =
@@ -124,6 +149,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             skin = p.enum(K.skin, d.skin), density = p.enum(K.density, d.density), scale = p.enum(K.scale, d.scale),
             panelShape = p.enum(K.panel, d.panelShape), buttonShape = p.enum(K.button, d.buttonShape),
             layout = p.enum(K.layout, d.layout), photos = p[K.photos] ?: d.photos,
+            font = p.enum(K.font, d.font), lang = p.enum(K.lang, d.lang),
         )
     }
 
@@ -132,7 +158,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
         ds.edit {
             it[K.skin] = n.skin.name; it[K.density] = n.density.name; it[K.scale] = n.scale.name
             it[K.panel] = n.panelShape.name; it[K.button] = n.buttonShape.name; it[K.layout] = n.layout.name
-            it[K.photos] = n.photos
+            it[K.photos] = n.photos; it[K.font] = n.font.name; it[K.lang] = n.lang.name
         }
     }
 }

@@ -1,5 +1,10 @@
 package ai.neargo.fnb.pos.feature.shift
 
+import ai.neargo.fnb.pos.app.posViewModel
+import ai.neargo.fnb.pos.core.data.MessageBus
+import ai.neargo.fnb.pos.core.data.SessionRepository
+import ai.neargo.fnb.pos.core.data.ShiftRepository
+import ai.neargo.fnb.pos.core.data.StoreConfigRepository
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
 import ai.neargo.fnb.pos.core.designsystem.component.DetailBlock
@@ -7,10 +12,16 @@ import ai.neargo.fnb.pos.core.designsystem.component.KeyValue
 import ai.neargo.fnb.pos.core.designsystem.component.LocalPosLayout
 import ai.neargo.fnb.pos.core.designsystem.component.Panel
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
+import ai.neargo.fnb.pos.core.designsystem.component.PosDialog
+import ai.neargo.fnb.pos.core.designsystem.component.PosTextField
 import ai.neargo.fnb.pos.core.designsystem.component.Workbench
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.model.BillSide
+import ai.neargo.fnb.pos.core.model.ManageRules
+import ai.neargo.fnb.pos.core.model.ShiftRecord
+import ai.neargo.fnb.pos.core.model.ShiftRules
+import ai.neargo.fnb.pos.core.model.ShiftState
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,70 +31,134 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-private const val EXPECTED_CASH = 248_400
+data class ShiftUiState(val shift: ShiftState = ShiftState(), val summary: ShiftRules.Summary = ShiftRules.summary(emptyList(), ShiftState()), val staff: String = "", val closing: Boolean = false)
 
-/**
- * 交班（演示，无状态）：当班汇总 + 钱箱核对。v3 原型中交班仅为页脚入口，
- * 正式流程（权限、钱箱指令、交班单打印回执）按后续规范接入，届时补 ViewModel 与 Repository。
- */
-@Composable
-fun ShiftScreen(onNotice: (String) -> Unit) {
-    val layout = LocalPosLayout.current
-    if (layout.wide) {
-        Workbench(BillSide.Right, layout.dockW, aside = { m -> CashCheck(onNotice, m) }) { m -> Summary(m) }
-    } else {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(Pos.metrics.gap), verticalArrangement = Arrangement.spacedBy(Pos.metrics.gap)) {
-            Summary(Modifier.fillMaxWidth())
-            CashCheck(onNotice, Modifier.fillMaxWidth())
-        }
+class ShiftViewModel(config: StoreConfigRepository, session: SessionRepository, private val shift: ShiftRepository, private val messages: MessageBus) : ViewModel() {
+    val state = combine(config.current, session.session) { s, ss ->
+        val st = s?.shift ?: ShiftState()
+        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st), ss.staff)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShiftUiState())
+
+    /** 交班：实盘金额（元）校验后生成交班记录与交班单，开启新班次。 */
+    fun close(counted: String, done: (String?) -> Unit) = viewModelScope.launch {
+        val fen = ManageRules.price(counted, "实盘金额").getOrElse { done(it.message); return@launch }
+        shift.closeShift(fen, state.value.staff)
+            .onSuccess { r -> messages.post("已交班，差额 ${yuan(r.cashCounted - r.cashExpected)}；交班单已加入打印队列"); done(null) }
+            .onFailure { done(it.message) }
     }
 }
 
 @Composable
-private fun Summary(modifier: Modifier) {
+fun ShiftRoute() {
+    val vm = posViewModel { c, _ -> ShiftViewModel(c.config, c.session, c.shift, c.messages) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    ShiftScreen(state, vm::close)
+}
+
+private val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.CHINA)
+
+/** 交班：本班收款汇总（按渠道）+ 钱箱核对 + 历史交班。数据来自本机收款记录。 */
+@Composable
+fun ShiftScreen(state: ShiftUiState, onClose: (String, (String?) -> Unit) -> Unit) {
+    val layout = LocalPosLayout.current
+    var closing by remember { mutableStateOf(false) }
+    if (layout.wide) {
+        Workbench(BillSide.Right, layout.dockW, aside = { m -> CashCheck(state, { closing = true }, m) }) { m -> Summary(state, m) }
+    } else {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(Pos.metrics.gap), verticalArrangement = Arrangement.spacedBy(Pos.metrics.gap)) {
+            Summary(state, Modifier.fillMaxWidth())
+            CashCheck(state, { closing = true }, Modifier.fillMaxWidth())
+        }
+    }
+    if (closing) CloseDialog(state, { closing = false }, onClose)
+}
+
+@Composable
+private fun Summary(state: ShiftUiState, modifier: Modifier) {
     val c = Pos.colors
     val t = Pos.type
+    val s = state.summary
     Panel(modifier) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             Text("当班汇总", style = t.title, color = c.ink)
-            Text("林晓 · 1号收银台 · 10:02 开班 · 演示数据", style = t.label, color = c.sub)
+            Text("${state.staff} · ${if (state.shift.start > 0) fmt.format(Date(state.shift.start)) + " 开班" else "未记录开班时间"}", style = t.label, color = c.sub)
             DetailBlock("营业额") {
-                Text(yuan(1_286_450), style = t.amount.num(), color = c.ink)
-                KeyValue("订单数", "86 单")
-                KeyValue("客单价", yuan(14_959))
+                Text(yuan(s.total), style = t.amount.num(), color = c.ink)
+                KeyValue("收款笔数", "${s.count} 笔")
+                KeyValue("结账桌台", "${s.tables} 桌")
+                KeyValue("客单价", if (s.count > 0) yuan(s.total / s.count) else "—")
             }
             DetailBlock("收款渠道") {
-                KeyValue("扫码", yuan(913_550)); KeyValue("现金", yuan(198_400)); KeyValue("银行卡", yuan(104_500)); KeyValue("储值卡", yuan(70_000))
+                if (s.byMethod.isEmpty()) Text("本班暂无收款", style = t.label, color = c.sub)
+                s.byMethod.forEach { (m, v) -> KeyValue(m, yuan(v)) }
             }
-            DetailBlock("调整", divider = false) {
-                KeyValue("退菜", "3 份 · ${yuan(-12_600)}", valueColor = c.danger)
-                KeyValue("赠送", "2 份 · ${yuan(-5_600)}")
+            DetailBlock("历史交班", divider = false) {
+                if (state.shift.history.isEmpty()) Text("暂无交班记录", style = t.label, color = c.sub)
+                state.shift.history.reversed().forEach { r: ShiftRecord ->
+                    KeyValue("${fmt.format(Date(r.start))} – ${fmt.format(Date(r.end))} · ${r.count} 笔", "${yuan(r.total)}（差额 ${yuan(r.cashCounted - r.cashExpected)}）")
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CashCheck(onNotice: (String) -> Unit, modifier: Modifier) {
+private fun CashCheck(state: ShiftUiState, onClose: () -> Unit, modifier: Modifier) {
     val c = Pos.colors
+    val s = state.summary
     Panel(modifier) {
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 DetailBlock("钱箱核对", divider = false) {
-                    KeyValue("备用金", yuan(50_000)); KeyValue("现金收入", yuan(198_400)); KeyValue("应有现金", yuan(EXPECTED_CASH)); KeyValue("实盘", yuan(EXPECTED_CASH))
-                    KeyValue("差额", yuan(0), valueColor = c.success)
+                    KeyValue("备用金", yuan(state.shift.float))
+                    KeyValue("现金收入", yuan(s.cash))
+                    KeyValue("应有现金", yuan(s.cashExpected))
+                    Text("交班时清点钱箱并填写实盘金额，系统计算差额并打印交班单", style = Pos.type.label, color = c.sub, modifier = Modifier.padding(top = 8.dp))
                 }
             }
             Row(Modifier.fillMaxWidth().background(c.control).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PosButton("打印交班单", { onNotice("交班单已加入打印队列（演示）") }, Modifier.weight(1f), size = BtnSize.Large)
-                PosButton("交班", { onNotice("交班需主管授权（演示）") }, Modifier.weight(1f), variant = BtnVariant.Primary, size = BtnSize.Large)
+                PosButton("清点并交班", onClose, Modifier.weight(1f), variant = BtnVariant.Primary, size = BtnSize.Large)
             }
         }
+    }
+}
+
+@Composable
+private fun CloseDialog(state: ShiftUiState, onDismiss: () -> Unit, onClose: (String, (String?) -> Unit) -> Unit) {
+    var counted by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val expected = state.summary.cashExpected
+    val diff = ManageRules.price(counted).getOrNull()?.minus(expected)
+    PosDialog("交班 · 钱箱实盘", onDismiss, maxWidth = 440.dp, subtitle = "应有现金 ${yuan(expected)}（备用金 + 现金收入）", footer = {
+        PosButton("取消", onDismiss, size = BtnSize.Large)
+        PosButton("确认交班", { onClose(counted) { e -> error = e; if (e == null) onDismiss() } }, variant = BtnVariant.Primary, size = BtnSize.Large)
+    }) {
+        PosTextField(counted, { counted = it }, "实盘金额（元）", error = error, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        Text(
+            if (diff == null) "输入实盘金额后显示差额" else "差额 ${yuan(diff)}${if (diff == 0) "（平账）" else if (diff > 0) "（长款）" else "（短款）"}",
+            style = Pos.type.body, color = if (diff == null || diff == 0) Pos.colors.sub else Pos.colors.warning, modifier = Modifier.padding(vertical = 8.dp),
+        )
     }
 }

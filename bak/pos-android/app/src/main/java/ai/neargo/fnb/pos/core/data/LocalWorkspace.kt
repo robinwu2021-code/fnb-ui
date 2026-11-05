@@ -12,6 +12,15 @@ import ai.neargo.fnb.pos.core.model.OrderRules
 import ai.neargo.fnb.pos.core.model.OutboxItem
 import ai.neargo.fnb.pos.core.model.OutboxKind
 import ai.neargo.fnb.pos.core.model.OutboxState
+import ai.neargo.fnb.pos.core.model.HeldTicket
+import ai.neargo.fnb.pos.core.model.PrintJob
+import ai.neargo.fnb.pos.core.model.PrintKind
+import ai.neargo.fnb.pos.core.model.PrintState
+import ai.neargo.fnb.pos.core.model.Receipts
+import ai.neargo.fnb.pos.core.model.ShiftRecord
+import ai.neargo.fnb.pos.core.model.ShiftRules
+import ai.neargo.fnb.pos.core.model.ShiftState
+import ai.neargo.fnb.pos.core.model.TableRules
 import ai.neargo.fnb.pos.core.model.PaymentRecord
 import ai.neargo.fnb.pos.core.model.Product
 import ai.neargo.fnb.pos.core.model.Session
@@ -64,7 +73,7 @@ class LocalWorkspace(
     private val store: SnapshotStore,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val state = MutableStateFlow(Vault(stores = DemoCatalog.stores(clock())))
@@ -95,6 +104,7 @@ class LocalWorkspace(
     override val tables: StateFlow<List<DiningTable>> = derive { it.store?.tables.orEmpty() }
     override val orders: StateFlow<Map<String, TableOrder>> = derive { it.store?.orders.orEmpty() }
     override val outbox: StateFlow<List<OutboxItem>> = derive { it.store?.outbox.orEmpty().sortedByDescending { o -> o.createdAt } }
+    override val jobs: StateFlow<List<PrintJob>> = derive { it.store?.printJobs.orEmpty().sortedByDescending { j -> j.createdAt } }
     override val pendingCount: StateFlow<Int> = derive { v -> v.stores.values.sumOf { s -> s.outbox.count { it.state == OutboxState.Pending } } }
 
     /** 原子修改并持久化（写入时取最新快照，后发起的保存不会被旧快照覆盖）。 */
@@ -240,8 +250,9 @@ class LocalWorkspace(
         return storeOp(check = { s -> OrderRules.checkoutBlock(OrderRules.totals(s.order(tableId))) }) { s ->
             val pay = PaymentRecord(pid, tableId, amount, method, clock(), synced = online)
             val out = if (online) s.outbox else s.outbox + OutboxItem(pid, OutboxKind.Payment, tableId, "$tableId $method 收款 ${yuan(amount)}", clock())
+            val receipt = PrintJob(newId("R"), PrintKind.Receipt, "$tableId 结账单", Receipts.bill("结账单", s, tableId, s.order(tableId), clock(), pay), clock())
             s.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
-                .copy(payments = s.payments + pay, outbox = out)
+                .copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + receipt)
         }
     }
 
@@ -253,6 +264,110 @@ class LocalWorkspace(
         if (t.status != from) "$tableId 当前为${t.status.label}" else null
     }) { it.withTable(tableId, f) }
 
+    override suspend fun setPosition(tableId: String, x: Int, y: Int) = storeOp(check = { s ->
+        when {
+            s.table(tableId) == null -> "桌台不存在"
+            x !in 0..TableRules.MAX_X || y !in 0..TableRules.MAX_Y -> "坐标范围：X 0–${TableRules.MAX_X}，Y 0–${TableRules.MAX_Y}"
+            else -> null
+        }
+    }) { it.withTable(tableId) { t -> t.copy(x = x, y = y) } }
+
+    override suspend fun changeTable(from: String, to: String) = storeOp(check = { s ->
+        val a = s.table(from); val b = s.table(to)
+        if (a == null || b == null) "桌台不存在" else TableRules.canChange(a, b)
+    }) { s ->
+        val a = s.table(from)!!
+        s.withTable(to) { it.copy(status = TableStatus.Dining, guests = a.guests, openedAt = a.openedAt, reservation = "") }
+            .withTable(from) { it.copy(status = TableStatus.Cleaning, guests = 0, openedAt = 0) }
+            .withOrder(to, s.order(from)).withOrder(from, TableOrder())
+            .copy(currentTableId = to)
+    }
+
+    override suspend fun mergeTable(from: String, into: String) = storeOp(check = { s ->
+        val a = s.table(from); val b = s.table(into)
+        if (a == null || b == null) "桌台不存在" else TableRules.canMerge(a, b)
+    }) { s ->
+        val a = s.table(from)!!
+        s.withTable(into) { it.copy(guests = it.guests + a.guests, openedAt = minOf(it.openedAt, a.openedAt)) }
+            .withTable(from) { it.copy(status = TableStatus.Cleaning, guests = 0, openedAt = 0) }
+            .withOrder(into, TableRules.merge(s.order(from), s.order(into))).withOrder(from, TableOrder())
+            .copy(currentTableId = into)
+    }
+
+    override suspend fun splitLines(from: String, uids: Set<Long>, to: String, guests: Int) = storeOp(check = { s ->
+        val b = s.table(to)
+        when {
+            s.table(from)?.status != TableStatus.Dining -> "$from 未在用餐"
+            b == null -> "桌台不存在"
+            from == to -> "请选择另一张桌台"
+            else -> TableRules.canSplit(s.order(from), uids, b, guests)
+        }
+    }) { s ->
+        val (rest, moved) = TableRules.split(s.order(from), uids)
+        val b = s.table(to)!!
+        val opened = if (b.status == TableStatus.Dining) s else s.withTable(to) { it.copy(status = TableStatus.Dining, guests = guests, openedAt = clock(), reservation = "") }
+        val target = opened.order(to)
+        opened.withOrder(from, rest).withOrder(to, target.copy(lines = target.lines + moved))
+    }
+
+    // —— 打印 ——
+    private fun StoreData.kitchenJob(tableId: String, batch: String): StoreData {
+        val lines = order(tableId).lines.filter { it.batchId == batch }
+        if (lines.isEmpty()) return this
+        return copy(printJobs = printJobs + PrintJob("P-$batch", PrintKind.Kitchen, "$tableId 厨房单 ${lines.sumOf { it.qty }} 份",
+            Receipts.kitchen(settings.shortName, tableId, lines, order(tableId).note, clock()), clock()))
+    }
+
+    override suspend fun preBill(tableId: String) = storeOp(check = { s ->
+        if (s.order(tableId).lines.isEmpty()) "$tableId 没有菜品" else null
+    }) { s -> s.copy(printJobs = s.printJobs + PrintJob(newId("B"), PrintKind.PreBill, "$tableId 预结单", Receipts.bill("预结单", s, tableId, s.order(tableId), clock()), clock())) }
+
+    override suspend fun reprint(jobId: String) = storeOp(check = { s -> if (s.printJobs.none { it.id == jobId }) "打印任务不存在" else null }) { s ->
+        val j = s.printJobs.first { it.id == jobId }
+        s.copy(printJobs = s.printJobs + j.copy(id = newId("RP"), title = "${j.title}（补打）", body = listOf("** 补打 **") + j.body, createdAt = clock(), state = PrintState.Pending, attempts = 0, reprint = true, error = ""))
+    }
+
+    override suspend fun process(kitchenOk: Boolean): Int {
+        var failed = 0
+        val s = currentStore() ?: return 0
+        if (s.printJobs.none { it.state != PrintState.Printed }) return 0
+        storeOp { st ->
+            st.copy(printJobs = st.printJobs.map { j ->
+                when {
+                    j.state == PrintState.Printed -> j
+                    j.kind.printer == "厨房" && !kitchenOk -> {
+                        if (j.state == PrintState.Pending) failed++
+                        j.copy(state = PrintState.Failed, attempts = j.attempts + if (j.state == PrintState.Pending) 1 else 0, error = "厨房打印机缺纸")
+                    }
+                    else -> j.copy(state = PrintState.Printed, attempts = j.attempts + 1, error = "")
+                }
+            })
+        }
+        return failed
+    }
+
+    override fun billPreview(tableId: String): List<String> {
+        val s = currentStore() ?: return emptyList()
+        return Receipts.bill("预结单预览", s, tableId, s.order(tableId), clock())
+    }
+
+    // —— 交班 ——
+    override suspend fun closeShift(counted: Int, staff: String): Result<ShiftRecord> {
+        if (counted < 0) return Result.failure(IllegalArgumentException("实盘金额应为非负"))
+        val s = currentStore() ?: return Result.failure(IllegalStateException("请先选择门店"))
+        val sum = ShiftRules.summary(s.payments, s.shift)
+        // 旧数据没有开班时间：取本班第一笔收款时间，避免显示 1970 年
+        val start = if (s.shift.start > 0) s.shift.start else s.payments.minOfOrNull { it.at } ?: clock()
+        val rec = ShiftRecord(newId("S"), start, clock(), staff, sum.total, sum.count, sum.byMethod, s.shift.float, sum.cashExpected, counted)
+        storeOp { st ->
+            st.copy(
+                shift = ShiftState(start = clock(), float = st.shift.float, history = st.shift.history + rec),
+                printJobs = st.printJobs + PrintJob(newId("SH"), PrintKind.Shift, "交班单 ${staff}", Receipts.shift(rec), clock()),
+            )
+        }
+        return Result.success(rec)
+    }
+
     // —— 订单 ——
     private suspend fun mutate(tableId: String, rule: (StoreData, TableOrder) -> OrderResult): OrderResult {
         val s = currentStore() ?: return OrderResult.Rejected("请先选择门店")
@@ -262,8 +377,40 @@ class LocalWorkspace(
         return r
     }
 
-    override suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int) =
-        mutate(tableId) { s, o -> OrderRules.add(o, product, sku, qty, s.seq) }
+    override suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String) =
+        mutate(tableId) { s, o -> OrderRules.add(o, product, sku, qty, s.seq, note) }
+
+    override suspend fun setLineNote(tableId: String, uid: Long, note: String) = mutate(tableId) { _, o -> OrderRules.setNote(o, uid, note) }
+
+    override suspend fun setOrderNote(tableId: String, note: String) = storeOp(check = { s ->
+        if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else if (note.length > 60) "整单备注最多 60 字" else null
+    }) { it.withOrder(tableId, it.order(tableId).copy(note = note.trim())) }
+
+    override suspend fun hold(tableId: String): Result<Int> {
+        val s = currentStore() ?: return Result.failure(IllegalStateException("请先选择门店"))
+        val draft = s.order(tableId).pending
+        if (draft.isEmpty()) return Result.failure(IllegalStateException("没有可挂起的新加菜品"))
+        storeOp { st ->
+            st.withOrder(tableId, OrderRules.clearNew(st.order(tableId)))
+                .copy(held = st.held + HeldTicket(newId("H"), tableId, draft, st.order(tableId).note, clock()))
+        }
+        return Result.success(draft.sumOf { it.qty })
+    }
+
+    override suspend fun retrieve(ticketId: String, tableId: String) = storeOp(check = { s ->
+        when {
+            s.held.none { it.id == ticketId } -> "挂单不存在或已取回"
+            s.table(tableId)?.status != TableStatus.Dining -> "$tableId 未在用餐，请先开台"
+            else -> null
+        }
+    }) { s ->
+        val t = s.held.first { it.id == ticketId }
+        var seq = s.seq
+        val lines = t.lines.map { it.copy(uid = seq++, status = LineStatus.New, batchId = null) }
+        val o = s.order(tableId)
+        val at = o.lines.indexOfLast { it.status == LineStatus.New } + 1
+        s.withOrder(tableId, o.copy(lines = o.lines.take(at) + lines + o.lines.drop(at))).copy(held = s.held - t, seq = seq)
+    }
 
     override suspend fun changeQty(tableId: String, uid: Long, delta: Int) = mutate(tableId) { s, o ->
         val line = o.lines.firstOrNull { it.uid == uid } ?: return@mutate OrderResult.Rejected("菜品已不在账单中")
@@ -280,7 +427,9 @@ class LocalWorkspace(
         val batch = "K-${s.id}-${s.seq}-${clock()}"
         storeOp { st ->
             val out = if (online) st.outbox else st.outbox + OutboxItem(batch, OutboxKind.Kitchen, tableId, "$tableId 送厨 $n 份", clock())
-            st.withOrder(tableId, OrderRules.send(st.order(tableId), batch, online)).copy(outbox = out, seq = st.seq + 1)
+            val sent = OrderRules.send(st.order(tableId), batch, online)
+            val withOrder = st.withOrder(tableId, sent).copy(outbox = out, seq = st.seq + 1)
+            if (online) withOrder.kitchenJob(tableId, batch) else withOrder
         }
         return SendResult(n, !online)
     }
@@ -300,7 +449,11 @@ class LocalWorkspace(
                 var st = s
                 s.outbox.filter { it.state == OutboxState.Pending }.sortedBy { it.createdAt }.forEach { item ->
                     st = when (item.kind) {
-                        OutboxKind.Kitchen -> st.withOrder(item.tableId, OrderRules.markBatchSent(st.order(item.tableId), item.id))
+                        // 换桌 / 拆单后批次可能已在其他桌，按批次号在全店查找
+                        OutboxKind.Kitchen -> {
+                            val table = st.orders.entries.firstOrNull { (_, o) -> o.lines.any { it.batchId == item.id } }?.key ?: item.tableId
+                            st.withOrder(table, OrderRules.markBatchSent(st.order(table), item.id)).kitchenJob(table, item.id)
+                        }
                         OutboxKind.Payment -> st.copy(payments = st.payments.map { if (it.id == item.id) it.copy(synced = true) else it })
                     }
                     st = st.copy(outbox = st.outbox.map { if (it.id == item.id) it.copy(state = OutboxState.Done, attempts = it.attempts + 1, doneAt = clock()) else it })

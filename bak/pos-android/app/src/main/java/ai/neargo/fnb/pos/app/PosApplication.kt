@@ -23,6 +23,7 @@ class PosApplication : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        ai.neargo.fnb.pos.core.designsystem.component.Translator.load(this)
     }
 
     // 演示菜品图来自 Wikimedia，其 UA 策略拒绝 OkHttp 默认 User-Agent（403），需带应用标识。上线换门店自有图床。

@@ -87,6 +87,9 @@ data class DiningTable(
     val openedAt: Long = 0,
     val reservation: String = "",
     val paid: Int = 0,
+    /** 平面位置（画布单位 900×460，卡片 140×112）；-1 表示按区域内顺序自动排布。 */
+    val x: Int = -1,
+    val y: Int = -1,
 ) {
     fun minutes(now: Long) = if (status == TableStatus.Dining && openedAt > 0) ((now - openedAt) / 60_000).toInt().coerceAtLeast(0) else 0
 }
@@ -110,10 +113,12 @@ data class OrderLine(
     val status: LineStatus,
     val skuKey: String? = null,
     val batchId: String? = null,
+    /** 菜品备注（少辣、不要葱…）；同菜同 SKU 同备注才合并。 */
+    val note: String = "",
 )
 
 @Serializable
-data class TableOrder(val lines: List<OrderLine> = emptyList(), val member: Boolean = false) {
+data class TableOrder(val lines: List<OrderLine> = emptyList(), val member: Boolean = false, val note: String = "") {
     val pending get() = lines.filter { it.status == LineStatus.New }
     val queued get() = lines.filter { it.status == LineStatus.Queued }
     val sent get() = lines.filter { it.status != LineStatus.New }
@@ -164,6 +169,11 @@ data class StoreData(
     val outbox: List<OutboxItem> = emptyList(),
     val currentTableId: String,
     val seq: Long = 1,
+    /** 挂单：暂存的草稿菜品，可在任意用餐中的桌台取回。 */
+    val held: List<HeldTicket> = emptyList(),
+    /** 本机打印队列。 */
+    val printJobs: List<PrintJob> = emptyList(),
+    val shift: ShiftState = ShiftState(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {
@@ -171,6 +181,46 @@ data class StoreData(
         return products.filter { it.id in ids }
     }
 }
+
+/** 挂单票据：从某桌草稿暂存，取回时作为新加菜品并入目标桌。 */
+@Serializable data class HeldTicket(val id: String, val tableId: String, val lines: List<OrderLine>, val note: String, val at: Long)
+
+@Serializable enum class PrintKind(val label: String, val printer: String) {
+    Kitchen("厨房单", "厨房"), PreBill("预结单", "前台"), Receipt("结账单", "前台"), Shift("交班单", "前台"),
+}
+@Serializable enum class PrintState(val label: String) { Pending("排队中"), Printed("已打印"), Failed("打印失败") }
+
+/** 打印任务：缺纸等失败保留在队列，打印机恢复后自动重试；补打单独标识，不重复收款。 */
+@Serializable
+data class PrintJob(
+    val id: String,
+    val kind: PrintKind,
+    val title: String,
+    val body: List<String>,
+    val createdAt: Long,
+    val state: PrintState = PrintState.Pending,
+    val attempts: Int = 0,
+    val reprint: Boolean = false,
+    val error: String = "",
+)
+
+/** 交班记录：按本班收款汇总，钱箱实盘与应有现金比较。 */
+@Serializable
+data class ShiftRecord(
+    val id: String,
+    val start: Long,
+    val end: Long,
+    val staff: String,
+    val total: Int,
+    val count: Int,
+    val byMethod: Map<String, Int>,
+    val float: Int,
+    val cashExpected: Int,
+    val cashCounted: Int,
+)
+
+/** 当前班次：开班时间、备用金、历史交班。 */
+@Serializable data class ShiftState(val start: Long = 0, val float: Int = 50_000, val history: List<ShiftRecord> = emptyList())
 
 /** 本地账号：只存加盐哈希，不存明文密码。 */
 @Serializable data class Account(val email: String, val merchant: String, val salt: String, val hash: String)

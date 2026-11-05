@@ -14,6 +14,9 @@ import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.model.yuan
 import ai.neargo.fnb.pos.feature.order.OrderLineRow
+import ai.neargo.fnb.pos.feature.common.ReceiptDialog
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,10 +68,12 @@ import java.util.concurrent.TimeUnit
 
 @Composable
 fun CheckoutRoute(onBack: () -> Unit, onDone: () -> Unit) {
-    val vm = posViewModel { c, h -> CheckoutViewModel(c.floor, c.orders, c.device, c.messages, h) }
+    val vm = posViewModel { c, h -> CheckoutViewModel(c.floor, c.orders, c.config, c.print, c.device, c.messages, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(vm) { vm.effect.collect { onDone() } }
-    CheckoutScreen(state, vm::onAction, onBack)
+    var preview by remember { mutableStateOf<List<String>?>(null) }
+    CheckoutScreen(state, vm::onAction, onBack, onPreview = { preview = vm.preview() })
+    preview?.let { ReceiptDialog("小票预览 · ${state.table?.id ?: ""}", it, { preview = null }) { PosButton("打印预结单", { vm.onAction(CheckoutAction.PreBill); preview = null }, variant = BtnVariant.Soft, size = BtnSize.Large) } }
 }
 
 /**
@@ -77,7 +82,7 @@ fun CheckoutRoute(onBack: () -> Unit, onDone: () -> Unit) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, onBack: () -> Unit) {
+fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, onBack: () -> Unit, onPreview: () -> Unit = {}) {
     val c = Pos.colors
     val t = Pos.type
     val wide = LocalPosLayout.current.wide
@@ -104,6 +109,10 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
                 val left: @Composable (Modifier) -> Unit = { m -> BillColumn(state, onAction, onBack, m) }
                 val right: @Composable (Modifier) -> Unit = { m ->
                     Column(m, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PosButton("小票预览", onPreview, size = BtnSize.Small)
+                            PosButton("打印预结单", { onAction(CheckoutAction.PreBill) }, size = BtnSize.Small, enabled = state.order.lines.isNotEmpty())
+                        }
                         Section("优惠与资产") {
                             FlowRow(maxItemsInEachRow = 2, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val cm = Modifier.weight(1f)
@@ -187,15 +196,18 @@ private fun BillColumn(state: CheckoutUiState, onAction: (CheckoutAction) -> Uni
             if (state.order.lines.isEmpty()) Text("本单没有菜品", style = t.body, color = c.sub, modifier = Modifier.padding(vertical = 16.dp))
         }
         Spacer(Modifier.height(12.dp))
-        Text("已结账记录 1", style = t.section, color = c.ink)
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp).clip(Pos.metrics.card).background(c.surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("上一笔已结账（示例）", style = t.strong, color = c.ink)
-                Text("DEMO-001 · 12:10 · 扫码", style = t.label.num(), color = c.sub)
+        Text("已结账记录 ${state.history.size}", style = t.section, color = c.ink)
+        if (state.history.isEmpty()) Text("本桌今日暂无已结账记录", style = t.label, color = c.sub, modifier = Modifier.padding(top = 6.dp))
+        state.history.take(3).forEach { p ->
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp).clip(Pos.metrics.card).background(c.surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.id, style = t.strong, color = c.ink)
+                    Text("${java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(p.at))} · ${p.method}", style = t.label.num(), color = c.sub)
+                }
+                Text(yuan(p.amount), style = t.strong.num(), color = c.ink)
+                Spacer(Modifier.size(8.dp))
+                Tag(if (p.synced) "已结账" else "待同步", fg = if (p.synced) c.sub else c.warning)
             }
-            Text(yuan(8000), style = t.strong.num(), color = c.ink)
-            Spacer(Modifier.size(8.dp))
-            Tag("已结账")
         }
         Text("历史已结账金额独立展示，不计入本次应收。", style = t.label, color = c.sub, modifier = Modifier.padding(top = 6.dp))
     }

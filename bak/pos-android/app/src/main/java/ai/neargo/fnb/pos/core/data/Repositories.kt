@@ -7,6 +7,8 @@ import ai.neargo.fnb.pos.core.model.LineStatus
 import ai.neargo.fnb.pos.core.model.Menu
 import ai.neargo.fnb.pos.core.model.OrderResult
 import ai.neargo.fnb.pos.core.model.OutboxItem
+import ai.neargo.fnb.pos.core.model.PrintJob
+import ai.neargo.fnb.pos.core.model.ShiftRecord
 import ai.neargo.fnb.pos.core.model.Product
 import ai.neargo.fnb.pos.core.model.Session
 import ai.neargo.fnb.pos.core.model.Sku
@@ -59,6 +61,14 @@ interface FloorRepository {
     suspend fun settle(tableId: String, amount: Int, method: String, online: Boolean): Result<Unit>
     suspend fun startCleaning(tableId: String): Result<Unit>
     suspend fun finishCleaning(tableId: String): Result<Unit>
+    /** 平面位置（画布单位）。 */
+    suspend fun setPosition(tableId: String, x: Int, y: Int): Result<Unit>
+    /** 换桌：整单移到空闲 / 预订桌，原桌转待清台。 */
+    suspend fun changeTable(from: String, to: String): Result<Unit>
+    /** 并台：from 并入 into，人数相加，原桌转待清台。 */
+    suspend fun mergeTable(from: String, into: String): Result<Unit>
+    /** 拆单：选中行移到目标桌（空闲桌按 guests 开台）。 */
+    suspend fun splitLines(from: String, uids: Set<Long>, to: String, guests: Int): Result<Unit>
 }
 
 /** 送厨结果：份数与是否进入离线队列。 */
@@ -67,7 +77,13 @@ data class SendResult(val qty: Int, val queued: Boolean)
 /** 订单：按桌台隔离保存；规则校验失败返回 Rejected，不修改数据。 */
 interface OrderRepository {
     val orders: StateFlow<Map<String, TableOrder>>
-    suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int): OrderResult
+    suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String = ""): OrderResult
+    suspend fun setLineNote(tableId: String, uid: Long, note: String): OrderResult
+    suspend fun setOrderNote(tableId: String, note: String): Result<Unit>
+    /** 挂单：把草稿菜品暂存为票据并从桌台移除，返回份数。 */
+    suspend fun hold(tableId: String): Result<Int>
+    /** 取单：票据菜品作为新加并入目标桌（目标需用餐中）。 */
+    suspend fun retrieve(ticketId: String, tableId: String): Result<Unit>
     suspend fun changeQty(tableId: String, uid: Long, delta: Int): OrderResult
     suspend fun clearNew(tableId: String)
     suspend fun sendToKitchen(tableId: String, online: Boolean): SendResult
@@ -83,6 +99,22 @@ interface SyncRepository {
     val pendingCount: StateFlow<Int>
     /** 补发全部待同步项，返回本次完成数量。 */
     suspend fun syncNow(): Int
+}
+
+/** 本机打印队列：厨房单 / 预结单 / 结账单 / 交班单；缺纸失败保留，恢复后重试；补打单独标识。 */
+interface PrintRepository {
+    val jobs: StateFlow<List<PrintJob>>
+    suspend fun preBill(tableId: String): Result<Unit>
+    suspend fun reprint(jobId: String): Result<Unit>
+    /** 处理排队与失败任务：kitchenOk=false 时厨房任务失败，前台任务照常打印。返回本次新失败数。 */
+    suspend fun process(kitchenOk: Boolean): Int
+    /** 当前账单的小票预览文本（不入队）。 */
+    fun billPreview(tableId: String): List<String>
+}
+
+/** 交班：本班收款汇总、钱箱实盘、生成交班单并开启新班。 */
+interface ShiftRepository {
+    suspend fun closeShift(counted: Int, staff: String): Result<ShiftRecord>
 }
 
 /** 显示偏好：本机持久化，即时生效。 */

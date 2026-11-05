@@ -13,6 +13,19 @@ import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.designsystem.theme.tone
 import ai.neargo.fnb.pos.core.model.LineStatus
+import ai.neargo.fnb.pos.core.model.OrderLine
+import ai.neargo.fnb.pos.core.model.TableStatus
+import ai.neargo.fnb.pos.core.designsystem.component.PosCheckRow
+import ai.neargo.fnb.pos.core.designsystem.component.PosDialog
+import ai.neargo.fnb.pos.core.designsystem.component.PosDivider
+import ai.neargo.fnb.pos.feature.common.DishNoteTags
+import ai.neargo.fnb.pos.feature.common.NoteDialog
+import ai.neargo.fnb.pos.feature.common.OrderNoteTags
+import ai.neargo.fnb.pos.feature.common.TablePickDialog
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.remember
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,7 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material3.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +66,11 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
     val tb = state.table ?: return
     val totals = state.totals
     var detail by rememberSaveable { mutableStateOf(false) }
+    var dialog by remember(tb.id) { mutableStateOf<String?>(null) }
+    var noteLine by remember(tb.id) { mutableStateOf<OrderLine?>(null) }
+    var more by remember { mutableStateOf(false) }
+    DockDialogs(state, dialog, { dialog = null }, onAction)
+    noteLine?.let { l -> NoteDialog("${l.name} 备注", l.note, DishNoteTags, { noteLine = null }) { n, done -> onAction(OrderAction.LineNote(l.uid, n, done)) } }
 
     Panel(modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -64,16 +82,31 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                     Spacer(Modifier.weight(1f))
                     PosButton("加菜", { onClose?.invoke() }, variant = BtnVariant.Text, size = BtnSize.Small)
                     if (onClose != null) PosIconButton(Icons.Rounded.Close, "关闭账单", onClose, size = 36.dp)
-                    else PosIconButton(Icons.Rounded.MoreHoriz, "更多操作", { onAction(OrderAction.Notice("转台、并台、拆单按后续规范接入")) }, size = 36.dp)
+                    Box {
+                        PosIconButton(Icons.Rounded.MoreHoriz, "更多操作", { more = true }, size = 36.dp)
+                        DropdownMenu(more, { more = false }, containerColor = c.surface, shadowElevation = 2.dp) {
+                            val item: @Composable (String, Boolean, () -> Unit) -> Unit = { label, enabled, act ->
+                                DropdownMenuItem({ Text(label, style = t.body) }, { more = false; act() }, enabled = enabled)
+                            }
+                            item("换桌", state.canOrder) { dialog = "change" }
+                            item("并台", state.canOrder) { dialog = "merge" }
+                            item("拆单", state.canOrder && state.order.lines.size > 1) { dialog = "split" }
+                            item("整单备注", state.canOrder) { dialog = "note" }
+                            item("打印预结单", state.order.lines.isNotEmpty()) { onAction(OrderAction.PreBill) }
+                            item("取单（${state.held.size}）", state.held.isNotEmpty()) { dialog = "retrieve" }
+                        }
+                    }
                 }
                 Text("${tb.guests} 人 · 堂食 · 单号 #30${tb.id}", style = t.label.num(), color = c.sub)
+                if (state.order.note.isNotBlank()) Text("整单备注：${state.order.note}", style = t.label, color = c.warning, maxLines = 2)
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val m = Modifier.weight(1f)
                 PosButton("会员", { onAction(OrderAction.ToggleMember) }, m, size = BtnSize.Small, selected = state.order.member, textStyle = t.label, enabled = state.canOrder)
                 PosButton("优惠券", { onAction(OrderAction.Notice("优惠券：满200减10（演示，结账时核对）")) }, m, size = BtnSize.Small, textStyle = t.label)
-                PosButton("备注", { onAction(OrderAction.Notice("整单备注（演示）")) }, m, size = BtnSize.Small, textStyle = t.label)
-                PosButton("挂单", { onAction(OrderAction.Notice("已挂单 #30${tb.id}（演示）")) }, m, size = BtnSize.Small, textStyle = t.label)
+                PosButton("备注", { dialog = "note" }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder, selected = state.order.note.isNotBlank())
+                PosButton(if (state.order.pending.isEmpty() && state.held.isNotEmpty()) "取单 ${state.held.size}" else "挂单",
+                    { if (state.order.pending.isEmpty() && state.held.isNotEmpty()) dialog = "retrieve" else onAction(OrderAction.Hold) }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder)
             }
 
             // 新加 / 待同步分组插在顶部；数量变化时回到顶部，避免新行出现在可视区之外
@@ -85,7 +118,7 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                 val sent = state.order.sent.filter { it.status != LineStatus.Queued }
                 if (pending.isNotEmpty()) {
                     item(key = "g-new") { GroupTitle("新加 · 待送厨 · ${pending.sumOf { it.qty }} 份", action = "清空") { onAction(OrderAction.ClearNew) } }
-                    items(pending, key = { it.uid }) { l -> OrderLineRow(l, { onAction(OrderAction.ChangeQty(l.uid, it)) }, null) }
+                    items(pending, key = { it.uid }) { l -> OrderLineRow(l, { onAction(OrderAction.ChangeQty(l.uid, it)) }, null, onNote = { noteLine = l }) }
                 }
                 if (queued.isNotEmpty()) {
                     item(key = "g-queued") { GroupTitle("待同步 · ${queued.sumOf { it.qty }} 份 · ${if (state.online) "正在补发" else "联网后自动送厨"}") }
@@ -123,6 +156,44 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                     )
                     PosButton("结账", onCheckout, Modifier.weight(1.2f), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = totals.items > 0)
                 }
+            }
+        }
+    }
+}
+
+/** 账单坞弹窗：整单备注、换桌、并台、拆单、取单。 */
+@Composable
+private fun DockDialogs(state: OrderUiState, dialog: String?, close: () -> Unit, onAction: (OrderAction) -> Unit) {
+    val tb = state.table ?: return
+    when (dialog) {
+        "note" -> NoteDialog("${tb.id} 整单备注", state.order.note, OrderNoteTags, close) { n, done -> onAction(OrderAction.OrderNote(n, done)) }
+        "change" -> TablePickDialog("${tb.id} 换桌", "整单移到空闲或已预订的桌台，原桌转待清台",
+            state.tables.filter { it.id != tb.id && (it.status == TableStatus.Idle || it.status == TableStatus.Reserved) && it.seats >= tb.guests }, close, confirm = "换桌") { to, _, done ->
+            onAction(OrderAction.Change(to, done))
+        }
+        "merge" -> TablePickDialog("${tb.id} 并台", "并入另一张用餐中的桌台，人数相加，原桌转待清台",
+            state.tables.filter { it.id != tb.id && it.status == TableStatus.Dining }, close, confirm = "并台") { into, _, done -> onAction(OrderAction.Merge(into, done)) }
+        "split" -> {
+            var picked by remember { mutableStateOf(setOf<Long>()) }
+            TablePickDialog("${tb.id} 拆单", "选择菜品后选目标桌；空闲桌会按人数开台", state.tables.filter { it.id != tb.id && it.status in setOf(TableStatus.Idle, TableStatus.Reserved, TableStatus.Dining) },
+                close, needGuests = true, confirm = "拆到该桌", content = {
+                    Text("选择要拆出的菜品（${picked.size}）", style = Pos.type.section, color = Pos.colors.ink)
+                    state.order.lines.forEach { l ->
+                        PosCheckRow("${l.name} · ${l.spec} ×${l.qty}", l.uid in picked, { on -> picked = if (on) picked + l.uid else picked - l.uid }, trailing = l.status.label)
+                    }
+                }) { to, guests, done -> onAction(OrderAction.Split(picked, to, guests, done)) }
+        }
+        "retrieve" -> PosDialog("取单到 ${tb.id}", close, maxWidth = 520.dp, subtitle = "挂起的菜品作为新加并入当前桌", footer = { PosButton("关闭", close, size = BtnSize.Large) }) {
+            if (state.held.isEmpty()) Text("没有挂单", style = Pos.type.body, color = Pos.colors.sub)
+            state.held.forEach { h ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("来自 ${h.tableId} · ${h.lines.sumOf { it.qty }} 份", style = Pos.type.strong, color = Pos.colors.ink)
+                        Text(h.lines.joinToString("、") { "${it.name}×${it.qty}" }, style = Pos.type.label, color = Pos.colors.sub, maxLines = 2)
+                    }
+                    PosButton("取回", { onAction(OrderAction.Retrieve(h.id)); close() }, variant = BtnVariant.Soft, enabled = state.canOrder)
+                }
+                PosDivider()
             }
         }
     }

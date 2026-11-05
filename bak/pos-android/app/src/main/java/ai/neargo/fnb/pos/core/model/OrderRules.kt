@@ -19,7 +19,7 @@ object OrderRules {
     private fun qtyOfSku(order: TableOrder, key: String) = order.lines.filter { it.skuKey == key }.sumOf { it.qty }
 
     /** 加菜：有 SKU 时按所选 SKU 校验余量与单价；同菜同 SKU 的草稿行合并。 */
-    fun add(order: TableOrder, product: Product, sku: Sku?, qty: Int, newUid: Long): OrderResult {
+    fun add(order: TableOrder, product: Product, sku: Sku?, qty: Int, newUid: Long, note: String = ""): OrderResult {
         if (qty <= 0) return OrderResult.Rejected("数量必须大于 0")
         if (product.hasSpec && sku == null) return OrderResult.Rejected("请先选择${product.name}的规格")
         if (sku != null) {
@@ -33,12 +33,12 @@ object OrderRules {
         val spec = sku?.label ?: DEFAULT_SPEC
         val unit = sku?.price ?: product.price
         val lines = order.lines.toMutableList()
-        val i = lines.indexOfFirst { it.status == LineStatus.New && it.dishId == product.id && it.skuKey == sku?.key && it.spec == spec }
+        val i = lines.indexOfFirst { it.status == LineStatus.New && it.dishId == product.id && it.skuKey == sku?.key && it.spec == spec && it.note == note.trim() }
         if (i >= 0) {
             lines[i] = lines[i].copy(qty = lines[i].qty + qty)
         } else {
             val at = lines.indexOfLast { it.status == LineStatus.New } + 1
-            lines.add(at, OrderLine(newUid, product.id, product.name, spec, unit, qty, LineStatus.New, skuKey = sku?.key))
+            lines.add(at, OrderLine(newUid, product.id, product.name, spec, unit, qty, LineStatus.New, skuKey = sku?.key, note = note.trim()))
         }
         return OrderResult.Ok(order.copy(lines = lines))
     }
@@ -50,11 +50,19 @@ object OrderRules {
         if (delta > 0) {
             val sku = line.skuKey?.let { k -> product.skus.firstOrNull { it.key == k } }
             if (line.skuKey != null && sku == null) return OrderResult.Rejected("${line.name}的规格已下架")
-            return add(order, product, sku, delta, uid)
+            return add(order, product, sku, delta, uid, line.note)
         }
         val q = line.qty + delta
         val lines = if (q <= 0) order.lines.filterNot { it.uid == uid } else order.lines.map { if (it.uid == uid) it.copy(qty = q) else it }
         return OrderResult.Ok(order.copy(lines = lines))
+    }
+
+    /** 菜品备注只改草稿行；已送厨的备注需通过厨房沟通，不在此修改。 */
+    fun setNote(order: TableOrder, uid: Long, note: String): OrderResult {
+        val line = order.lines.firstOrNull { it.uid == uid } ?: return OrderResult.Rejected("菜品已不在账单中")
+        if (line.status != LineStatus.New) return OrderResult.Rejected("${line.name}已送厨，备注请通知厨房")
+        if (note.length > 40) return OrderResult.Rejected("备注最多 40 字")
+        return OrderResult.Ok(order.copy(lines = order.lines.map { if (it.uid == uid) it.copy(note = note.trim()) else it }))
     }
 
     fun clearNew(order: TableOrder) = order.copy(lines = order.lines.filterNot { it.status == LineStatus.New })

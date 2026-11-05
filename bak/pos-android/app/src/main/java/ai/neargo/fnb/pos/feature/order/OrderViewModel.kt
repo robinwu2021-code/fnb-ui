@@ -1,6 +1,9 @@
 package ai.neargo.fnb.pos.feature.order
 
 import ai.neargo.fnb.pos.core.data.DeviceRepository
+import ai.neargo.fnb.pos.core.data.FloorRepository
+import ai.neargo.fnb.pos.core.data.PrintRepository
+import ai.neargo.fnb.pos.core.model.HeldTicket
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.OrderRepository
 import ai.neargo.fnb.pos.core.data.PreferencesRepository
@@ -45,6 +48,8 @@ data class OrderUiState(
     val prefs: DisplayPrefs = DisplayPrefs(),
     val specGroups: List<SpecGroup> = emptyList(),
     val online: Boolean = true,
+    val held: List<HeldTicket> = emptyList(),
+    val tables: List<DiningTable> = emptyList(),
 ) {
     val canOrder get() = table?.status == TableStatus.Dining
     /** 某商品关联的规格组（按 ID 排序，与 SKU 生成顺序一致）。 */
@@ -63,6 +68,14 @@ sealed interface OrderAction {
     data class Advance(val uid: Long, val to: LineStatus) : OrderAction
     data object ToggleMember : OrderAction
     data class Notice(val message: String) : OrderAction
+    data class LineNote(val uid: Long, val note: String, val done: (String?) -> Unit) : OrderAction
+    data class OrderNote(val note: String, val done: (String?) -> Unit) : OrderAction
+    data object Hold : OrderAction
+    data class Retrieve(val ticketId: String) : OrderAction
+    data object PreBill : OrderAction
+    data class Change(val to: String, val done: (String?) -> Unit) : OrderAction
+    data class Merge(val into: String, val done: (String?) -> Unit) : OrderAction
+    data class Split(val uids: Set<Long>, val to: String, val guests: Int, val done: (String?) -> Unit) : OrderAction
 }
 
 const val HOT = "hot"
@@ -78,6 +91,8 @@ class OrderViewModel(
     private val session: SessionRepository,
     config: StoreConfigRepository,
     private val orders: OrderRepository,
+    private val floor: FloorRepository,
+    private val print: PrintRepository,
     prefs: PreferencesRepository,
     private val device: DeviceRepository,
     private val messages: MessageBus,
@@ -111,6 +126,8 @@ class OrderViewModel(
             prefs = p,
             specGroups = store.specGroups,
             online = d.online,
+            held = store.held,
+            tables = store.tables,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrderUiState())
 
@@ -139,8 +156,27 @@ class OrderViewModel(
                 messages.post(if (on) "已绑定会员 · 95 折（演示）" else "已解绑会员")
             }
             is OrderAction.Notice -> messages.post(a.message)
+            is OrderAction.LineNote -> viewModelScope.launch {
+                when (val r = orders.setLineNote(tableId, a.uid, a.note)) {
+                    is OrderResult.Ok -> a.done(null)
+                    is OrderResult.Rejected -> a.done(r.reason)
+                }
+            }
+            is OrderAction.OrderNote -> viewModelScope.launch { orders.setOrderNote(tableId, a.note).finish("整单备注已保存", a.done) }
+            OrderAction.Hold -> viewModelScope.launch {
+                orders.hold(tableId).onSuccess { messages.post("已挂单 $it 份，可在「取单」取回") }.onFailure { messages.post(it.message ?: "挂单失败") }
+            }
+            is OrderAction.Retrieve -> viewModelScope.launch {
+                orders.retrieve(a.ticketId, tableId).onSuccess { messages.post("已取单到 $tableId") }.onFailure { messages.post(it.message ?: "取单失败") }
+            }
+            OrderAction.PreBill -> viewModelScope.launch { print.preBill(tableId).onSuccess { messages.post("预结单已加入打印队列") }.onFailure { messages.post(it.message ?: "打印失败") } }
+            is OrderAction.Change -> viewModelScope.launch { val from = tableId; floor.changeTable(from, a.to).finish("$from 已换到 ${a.to}，原桌待清台", a.done) }
+            is OrderAction.Merge -> viewModelScope.launch { val from = tableId; floor.mergeTable(from, a.into).finish("$from 已并入 ${a.into}，原桌待清台", a.done) }
+            is OrderAction.Split -> viewModelScope.launch { floor.splitLines(tableId, a.uids, a.to, a.guests).finish("已拆出 ${a.uids.size} 道菜到 ${a.to}", a.done) }
         }
     }
+
+    private fun Result<Unit>.finish(ok: String, done: (String?) -> Unit) { onSuccess { messages.post(ok) }; done(exceptionOrNull()?.message) }
 
     private fun launchResult(block: suspend () -> OrderResult) = viewModelScope.launch {
         val r = block()
