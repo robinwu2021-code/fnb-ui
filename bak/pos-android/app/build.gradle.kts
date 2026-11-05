@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -49,8 +50,11 @@ dependencies {
     implementation(libs.shimmer)
     implementation(libs.lottie.compose)
     implementation(libs.konfetti.compose)
-    implementation(libs.haze)
-    implementation(libs.haze.blur)
     implementation(libs.telephoto.coil3)
-    implementation(libs.swipe)
+
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.datastore.preferences)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

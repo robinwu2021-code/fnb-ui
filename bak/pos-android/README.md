@@ -1,95 +1,84 @@
-# pos-android · 餐饮收银 Android 骨架
+# pos-android · 餐饮收银 Android 演示工程
 
-Jetpack Compose 原生实现的 Dining POS 骨架。功能区、布局和配色沿用：
+Jetpack Compose + Material 3 原生实现。界面对齐 v3 原型（组件规范 v3.5、落地 v3.6），扁平风格：无阴影、无渐变，分区靠色块与留白。演示数据与 `prototypes/v3/menu.mjs`、`workbenches/tables.mjs` 同源。
 
-- `pos-ds/project/README.md`、`tokens.json`（L1 布局 + B 端色块，默认皮肤松绿 #216857）
-- `docs/POS点餐页-功能区与方案.md`（Z1–Z7 功能区）
-- `pos-app/src/mock/data.ts`（示例数据同源）
+开发约定见 [docs/android](../../docs/android/README.md)；评审结论与改造记录见 [现有工程评审与v3对齐记录](../../docs/android/现有工程评审与v3对齐记录.md)。
 
-## 运行
-
-用 Android Studio 打开 `pos-android/` 目录即可。命令行构建：
+## 运行与测试
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-需要 JDK 17+ 和 Android SDK 37。
+```bash
+./gradlew :app:testDebugUnitTest
+```
 
-## 主框架与尺寸
+需要 JDK 17+ 和 Android SDK 37，首次构建需联网下载依赖。
 
-**主框架 L1–L6**（设置 → 主框架，所有平板页同时生效）：导航区放上 / 左 / 右，详情区放左 / 右。
-
-| 代号 | 导航区 | 详情区 | 说明 |
-|---|---|---|---|
-| L1（默认） | 左 | 右 | 右手结账 |
-| L2 | 上 | 右 | 宫格最宽 |
-| L3 | 上 | 左 | 已点在左（国内习惯） |
-| L4 | 右 | 左 | 左手看单 |
-| L5 | 左 | 左 | 右手点菜 |
-| L6 | 右 | 右 | 单手操作 |
-
-各页对应：点餐 = 分类 · 宫格 · 账单坞；桌台 = 桌区 · 桌台宫格 · 桌台详情；订单 = 状态 · 列表 · 订单详情；结账、交班不显示导航区，账单 / 钱箱核对放在详情区。导航在「上」时只盖住内容区，详情区保持满高。
-
-**断点**（按应用宽度，`ui/shell/Frame.kt`）：
-
-| 应用宽度 | 详情区 | 菜品列数 | 桌台列数 | 系统栏 |
-|---|---|---|---|---|
-| ≥ 1280dp | 360 | 5–6 | 5–6 | 全部带文字 |
-| 960–1279dp | 320 | 4 | 4–5 | 状态入口只留图标（异常时显示文字） |
-| < 960dp | 底部条 + 抽屉 | 3（手机 2） | 4（手机 2） | 手机顶栏 + 底部导航；导航强制在上 |
-
-窄屏断点按原型评审第 12 条从 1000 降到 960。列数按可用宽度和最小格宽算，规范值是上限：标准密度或侧边导航时宽度不够，少排一列，不让桌号、状态折行。
-
-**密度**（设置 → 密度）：紧凑（默认）控件 44 / 36 / 52、间距 8、文字卡 88、导航栏 96；标准控件 48 / 40 / 56、间距 12、文字卡 108、导航栏 108。
-
-**菜单视图**（工具栏右侧按钮或设置）：图文卡（图 3:2）/ 文字卡（固定 pos-tile-h，显示编号，一屏更多菜）。
-
-## 页面
-
-| 页面 | 文件 | 已有 |
-|---|---|---|
-| 点餐 | `ui/order/` | 分类与已点数量、搜索（菜名 / 编号）、标签筛选、宫格；单击加菜、规格弹窗、长按详情（大图可缩放）；沽清、限量；待下单改数量、左滑删除；已下单催菜；会员价、抹零；挂单、送厨、结账 |
-| 桌台 | `ui/tables/` | 桌区、状态筛选；桌台详情（预结单、点餐、去结账）；开台（人数）、预订到店开台 |
-| 订单 | `ui/orders/` | 按状态筛选；订单详情（补打、取单、退款入口） |
-| 结账 | `ui/checkout/` | 支付方式（离线时微信、支付宝写「离线不可用」）；现金键盘与找零；收款成功动画 |
-| 交班 | `ui/shift/` | 当班汇总 |
-| 设置 | `ui/shell/SettingsSheet.kt` | 主框架 L1–L6、密度、菜单视图、7 套皮肤、深色模式；模拟离线、打印机缺纸 |
-
-**还没做**：主管授权（赠送、退菜、整单折扣）、换桌 / 并台 / 拆单、套餐换菜、拼音首字母搜索、厨房显示屏、后端接入。
-
-## 代码结构
+## 分层
 
 ```
 app/src/main/java/ai/neargo/fnb/pos/
-├── theme/       PosColors（角色 token + 7 套皮肤）、PosTheme（字号八档、密度两档、圆角）
-├── data/        MockData（分类、菜品、桌台、订单、规格），yuan() 金额格式化
-├── state/       PosStore：当前订单、桌台、设置、提示条（ViewModel）
-└── ui/
-    ├── components/  PosButton、QuantityStepper、StatusLabel、FilterChip、Segmented、DishImage…
-    ├── shell/       PosApp（路由）、Frame（断点、L1–L6 三区框架、导航区、列数）、SysBar、设置
-    └── order/ tables/ orders/ checkout/ shift/
+├── core/model/          纯 Kotlin：实体、显示偏好枚举、OrderRules（加菜合并、库存上限、状态不回退、金额）
+├── core/data/           Repository 接口 + 演示实现 DemoWorkspace（DataStore 快照持久化）+ AppContainer（手动 DI）
+├── core/designsystem/
+│   ├── theme/           颜色角色、八套皮肤、桌台五态、角色字号、密度与圆角 → 映射到 MaterialTheme
+│   └── component/       基于 Material 3 的扁平组件：PosButton、PosIconButton、PosChip、RailItem、QuantityStepper、
+│                        SearchField、PosSwitch、Panel、CountBadge、Tag、GroupTitle、KeyValue、DetailBlock、
+│                        PosDialog、PosSheet、ProductImage、Workbench / PosLayout
+├── feature/order/       OrderViewModel → OrderUiState + OrderAction；DishCard、OrderLineRow、OrderDock、规格 / 详情弹窗
+├── feature/tables/      TablesViewModel（含一次性导航 Effect）；TableCard、TableDetail、开台弹窗
+├── feature/checkout/    CheckoutViewModel（读取路由参数 tableId）；结账与收款结果
+├── feature/display/     DisplayViewModel；显示设置 Sheet
+├── feature/shift/       交班（演示，无状态）
+├── navigation/          类型安全路由：TablesRoute、OrderRoute、CheckoutRoute(tableId)、ShiftRoute
+└── app/                 PosApplication、ShellViewModel、PosApp（页头、页脚、导航宿主、提示）
 ```
 
-接后端时，把 `PosStore` 里的 mock 换成 repository 即可，界面层不需要改。
+约定：
+
+- Screen 只接收 `UiState` 和 `onAction`，不碰 Repository；`XxxRoute` 负责取 ViewModel、订阅状态、处理导航 Effect。
+- 一次性提示走 `MessageBus`，导航走各 ViewModel 的 Effect 通道，都不放进持久 UiState。
+- 界面不 import 演示数据；`DemoCatalog` 只在 data 层使用。
+- 订单按桌台隔离；草稿、送厨状态、当前桌台、显示偏好在进程重启后恢复。
+
+## 组件与 Material 3 对应
+
+| 组件 | Material 3 基础 | 扁平化处理 |
+|---|---|---|
+| PosButton | Button / TextButton | 零阴影；选中只换浅底与主色字 |
+| PosIconButton | FilledIconButton / IconButton | 控件底色块 |
+| PosChip | FilterChip | 去描边、零阴影 |
+| RailItem | 可选中 Surface | 左侧 3dp 指示条；不用 NavigationDrawerItem（88dp 栏宽下会截断） |
+| QuantityStepper | IconButton | 轻底一体 |
+| CountBadge | Badge | 主色 |
+| DishCard、TableCard | Card | 零阴影；桌台选中用状态色 2dp 外环，网格铺轻底让白色空闲卡可辨 |
+| Panel、PosDialog、PosSheet | Surface、Dialog、ModalBottomSheet | 零色调提升、零阴影 |
+| PosDivider | HorizontalDivider | 1dp 极淡分隔，替代旧的渐变阴影 |
+| PosSwitch | Switch | 无描边轨道 |
+
+小于 48dp 的视觉控件依赖 Compose 的触控目标自动扩展满足命中下限。
+
+## 布局
+
+点餐布局 L1–L6（显示 → 布局）为菜单分类位置 × 账单位置：L1 左/右、L2 上/右、L3 上/左、L4 右/左、L5 下/右、L6 下/左。偏好键为 `order_layout_v3`，不读取旧工程的布局值。桌台详情跟随账单所在侧。
+
+断点按应用实际宽度：≥ 960dp 双栏（≥ 1190dp 账单坞 350dp，否则 340dp）；< 960dp 分类横排在上，账单为底部摘要 + 全屏 Sheet，导航移到底部。
 
 ## 用到的库
 
-| 库 | 用在哪 |
+| 库 | 用途 |
 |---|---|
-| Material 3（Compose BOM 2026.09.00） | 基础组件；颜色由 `PosColors` 映射到 `ColorScheme` |
-| Coil 3 | 菜品图加载与缓存 |
-| compose-shimmer | 菜品图加载中的骨架 |
-| Telephoto | 菜品详情大图双指缩放 |
-| saket/swipe | 待下单行左滑删除 |
-| Haze 2 | 手机版底部购物车条毛玻璃 |
-| Lottie | 收款成功对勾（`assets/lottie/success.json`，颜色跟随皮肤） |
-| Konfetti | 收款成功彩带 |
+| Compose BOM 2026.09.00、Material 3 | UI 与组件基础 |
+| navigation-compose 2.10 + kotlinx-serialization 1.11 | 类型安全带参路由、快照序列化 |
+| DataStore Preferences 1.2.1 | 显示偏好与演示工作台持久化 |
+| Coil 3 + OkHttp、compose-shimmer、Telephoto | 菜品图加载、骨架、大图缩放；带应用 User-Agent（Wikimedia 拒绝默认 UA） |
+| Lottie、Konfetti | 收款成功动画 |
+| JUnit 4、kotlinx-coroutines-test | 单元测试 |
 
-Balloon（气泡提示）和 Maps Compose（配送地图）这次没有加。收银堂食场景暂时用不上，做外卖配送时再加。
-
-示例菜品图来自 TheMealDB，仅用于演示，上线前要换成门店自己的图。
+演示菜品图来自 Wikimedia Commons，上线前换成门店自有图片。所有送厨、收款、打印、会员与优惠都是本地演示，不代表真实服务已接通。
 
 ## 截图
 
-`docs/screenshots/`：L1 / L3 / L4 点餐、L5 桌台、1100dp 中屏、手机、标准密度 + 文字视图、设置里的主框架选择。已在 Android 16（API 36）平板模拟器上验证 L1–L6、两档密度、三档宽度和深色模式。
+`docs/screenshots/v3/`：平板点餐、桌台、开台、结账、蓝色皮肤 + L4（2560×1600，320dpi）；手机点餐、空账单（1080×2400，420dpi）。根目录下为旧版界面，仅作历史参考。
