@@ -17,7 +17,7 @@ import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.PosSize
 import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.model.CatSide
-import ai.neargo.fnb.pos.core.model.Dish
+import ai.neargo.fnb.pos.core.model.Product
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -57,7 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 /** 路由入口：取 ViewModel，订阅状态，交给无状态内容。 */
 @Composable
 fun OrderRoute(onCheckout: (String) -> Unit, onChangeTable: () -> Unit) {
-    val vm = posViewModel { c, h -> OrderViewModel(c.menu, c.session, c.floor, c.orders, c.prefs, c.messages, h) }
+    val vm = posViewModel { c, h -> OrderViewModel(c.session, c.config, c.orders, c.prefs, c.device, c.messages, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     OrderScreen(state, vm::onAction, onCheckout = { state.table?.let { onCheckout(it.id) } }, onChangeTable = onChangeTable)
 }
@@ -70,9 +70,9 @@ fun OrderRoute(onCheckout: (String) -> Unit, onChangeTable: () -> Unit) {
 @Composable
 fun OrderScreen(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: () -> Unit, onChangeTable: () -> Unit) {
     val layout = LocalPosLayout.current
-    var specDish by remember { mutableStateOf<Dish?>(null) }
-    var detailDish by remember { mutableStateOf<Dish?>(null) }
-    val onDish: (Dish) -> Unit = { d ->
+    var specDish by remember { mutableStateOf<Product?>(null) }
+    var detailDish by remember { mutableStateOf<Product?>(null) }
+    val onDish: (Product) -> Unit = { d ->
         when {
             d.soldOut -> onAction(OrderAction.Notice("${d.name}已沽清"))
             d.hasSpec -> specDish = d
@@ -90,8 +90,8 @@ fun OrderScreen(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout
     }
 
     specDish?.let { d ->
-        SpecDialog(d, state.specs, onDismiss = { specDish = null }) { spec, unit, qty ->
-            onAction(OrderAction.AddDish(d, spec, unit, qty)); specDish = null
+        SpecDialog(d, state.groupsOf(d), onDismiss = { specDish = null }) { sku, qty ->
+            onAction(OrderAction.AddDish(d, sku, qty)); specDish = null
         }
     }
     detailDish?.let { d ->
@@ -105,8 +105,8 @@ private fun Catalog(
     state: OrderUiState,
     side: CatSide,
     onAction: (OrderAction) -> Unit,
-    onDish: (Dish) -> Unit,
-    onLongPress: (Dish) -> Unit,
+    onDish: (Product) -> Unit,
+    onLongPress: (Product) -> Unit,
     onChangeTable: () -> Unit,
     modifier: Modifier,
 ) {
@@ -157,8 +157,8 @@ private fun CategoryRail(state: OrderUiState, onSelect: (String) -> Unit, vertic
 private fun MenuPane(
     state: OrderUiState,
     onAction: (OrderAction) -> Unit,
-    onDish: (Dish) -> Unit,
-    onLongPress: (Dish) -> Unit,
+    onDish: (Product) -> Unit,
+    onLongPress: (Product) -> Unit,
     onChangeTable: () -> Unit,
     modifier: Modifier,
 ) {

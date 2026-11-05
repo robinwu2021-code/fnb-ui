@@ -9,7 +9,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.ProductImage
 import ai.neargo.fnb.pos.core.designsystem.component.QuantityStepper
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.num
-import ai.neargo.fnb.pos.core.model.Dish
+import ai.neargo.fnb.pos.core.model.Product
 import ai.neargo.fnb.pos.core.model.LineStatus
 import ai.neargo.fnb.pos.core.model.OrderLine
 import ai.neargo.fnb.pos.core.model.yuan
@@ -48,14 +48,14 @@ import androidx.compose.ui.unit.dp
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DishCard(dish: Dish, qty: Int, photos: Boolean, arrange: Arrange, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun DishCard(dish: Product, qty: Int, photos: Boolean, arrange: Arrange, onClick: () -> Unit, onLongClick: () -> Unit) {
     val c = Pos.colors
     val picked = qty > 0
     val shape = Pos.metrics.card
     Card(
         modifier = Modifier.clip(shape)
             .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "详情")
-            .semantics { contentDescription = "${dish.name} ${yuan(dish.price)} ${dish.stockLabel}${if (picked) " 已点 $qty" else ""}" },
+            .semantics { contentDescription = "${dish.name} ${yuan(dish.displayPrice)} ${dish.stockLabel}${if (picked) " 已点 $qty" else ""}" },
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = if (picked) c.tint else c.tile, contentColor = c.ink),
         elevation = CardDefaults.cardElevation(0.dp),
@@ -83,14 +83,14 @@ fun DishCard(dish: Dish, qty: Int, photos: Boolean, arrange: Arrange, onClick: (
 }
 
 @Composable
-private fun DishInfo(d: Dish, modifier: Modifier) {
+private fun DishInfo(d: Product, modifier: Modifier) {
     val c = Pos.colors
     val t = Pos.type
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(d.name, style = t.strong, color = if (d.soldOut) c.sub else c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(d.note, style = t.label, color = c.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(yuan(d.price), style = t.body.num().copy(fontWeight = FontWeight.Bold), color = c.ink, maxLines = 1, softWrap = false)
+            Text(yuan(d.displayPrice), style = t.body.num().copy(fontWeight = FontWeight.Bold), color = c.ink, maxLines = 1, softWrap = false)
             if (d.hasSpec) Text(" 起", style = t.label, color = c.sub)
             Spacer(Modifier.weight(1f))
             Text(d.stockLabel, style = t.label, color = if (d.soldOut) c.danger else c.sub, maxLines = 1, softWrap = false)
@@ -123,14 +123,14 @@ fun OrderLineRow(
                 QuantityStepper(line.qty, onQty)
             } else {
                 val stateColor = when (line.status) {
-                    LineStatus.Rushing -> c.warning
+                    LineStatus.Queued, LineStatus.Rushing -> c.warning
                     LineStatus.Served -> c.success
                     else -> c.primary
                 }
                 Text("${line.status.label} · ×${line.qty}", style = t.label.num(), color = stateColor)
             }
         }
-        if (onAdvance != null && line.status != LineStatus.New && line.status != LineStatus.Served) {
+        if (onAdvance != null && (line.status == LineStatus.Sent || line.status == LineStatus.Rushing)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (line.status == LineStatus.Sent) PosButton("催菜", { onAdvance(LineStatus.Rushing) }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)
                 PosButton("已上菜", { onAdvance(LineStatus.Served) }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)

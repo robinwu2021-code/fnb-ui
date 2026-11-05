@@ -12,6 +12,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.TableStateLabel
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.designsystem.theme.tone
+import ai.neargo.fnb.pos.core.model.LineStatus
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -73,12 +76,20 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                 PosButton("挂单", { onAction(OrderAction.Notice("已挂单 #30${tb.id}（演示）")) }, m, size = BtnSize.Small, textStyle = t.label)
             }
 
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
+            // 新加 / 待同步分组插在顶部；数量变化时回到顶部，避免新行出现在可视区之外
+            val list = rememberLazyListState()
+            LaunchedEffect(state.order.pending.size, state.order.queued.size) { list.animateScrollToItem(0) }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = list) {
                 val pending = state.order.pending
-                val sent = state.order.sent
+                val queued = state.order.queued
+                val sent = state.order.sent.filter { it.status != LineStatus.Queued }
                 if (pending.isNotEmpty()) {
                     item(key = "g-new") { GroupTitle("新加 · 待送厨 · ${pending.sumOf { it.qty }} 份", action = "清空") { onAction(OrderAction.ClearNew) } }
                     items(pending, key = { it.uid }) { l -> OrderLineRow(l, { onAction(OrderAction.ChangeQty(l.uid, it)) }, null) }
+                }
+                if (queued.isNotEmpty()) {
+                    item(key = "g-queued") { GroupTitle("待同步 · ${queued.sumOf { it.qty }} 份 · ${if (state.online) "正在补发" else "联网后自动送厨"}") }
+                    items(queued, key = { it.uid }) { l -> OrderLineRow(l, {}, null) }
                 }
                 if (sent.isNotEmpty()) {
                     item(key = "g-sent") { GroupTitle("已下单 · ${sent.sumOf { it.qty }} 份", action = "批量") { onAction(OrderAction.Notice("批量催菜 / 上菜（演示）")) } }

@@ -38,7 +38,9 @@ data class CheckoutUiState(
     /** 收款成功的金额；非空时显示结果页。 */
     val paid: Int? = null,
 ) {
-    val canConfirm get() = totals.newItems == 0 && totals.due > 0 && !processing && (online || !method.needsNetwork)
+    /** 不能结账核对的原因（新加 / 待同步 / 空单）；null 表示可以。 */
+    val block get() = OrderRules.checkoutBlock(totals)
+    val canConfirm get() = block == null && !processing && (online || !method.needsNetwork)
 }
 
 sealed interface CheckoutAction {
@@ -82,8 +84,8 @@ class CheckoutViewModel(
                 (orders.changeQty(tableId, a.uid, a.delta) as? OrderResult.Rejected)?.let { messages.post(it.reason) }
             }
             CheckoutAction.SendToKitchen -> viewModelScope.launch {
-                val n = orders.sendToKitchen(tableId)
-                if (n > 0) messages.post("已送厨 $n 份（演示）")
+                val r = orders.sendToKitchen(tableId, state.value.online)
+                if (r.qty > 0) messages.post(if (r.queued) "离线：${r.qty} 份已存入同步队列" else "已送厨 ${r.qty} 份（演示）")
             }
             CheckoutAction.ToggleMember -> viewModelScope.launch {
                 val on = !state.value.order.member
@@ -96,8 +98,11 @@ class CheckoutViewModel(
                 local.value = local.value.copy(processing = true)
                 viewModelScope.launch {
                     delay(600) // 演示：模拟支付处理中，防重复提交
-                    floor.settle(tableId, s.totals.due)
-                        .onSuccess { local.value = local.value.copy(processing = false, paid = s.totals.due) }
+                    floor.settle(tableId, s.totals.due, s.method.label, s.online)
+                        .onSuccess {
+                            local.value = local.value.copy(processing = false, paid = s.totals.due)
+                            if (!s.online) messages.post("离线收款已记账，联网后自动同步")
+                        }
                         .onFailure { local.value = local.value.copy(processing = false); messages.post(it.message ?: "收款失败，账单已保留") }
                 }
             }

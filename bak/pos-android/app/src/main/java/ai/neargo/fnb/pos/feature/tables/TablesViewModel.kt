@@ -1,12 +1,12 @@
 package ai.neargo.fnb.pos.feature.tables
 
 import ai.neargo.fnb.pos.core.data.FloorRepository
-import ai.neargo.fnb.pos.core.data.MenuRepository
+import ai.neargo.fnb.pos.core.data.StoreConfigRepository
+import ai.neargo.fnb.pos.core.data.areaName
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.OrderRepository
 import ai.neargo.fnb.pos.core.data.PreferencesRepository
 import ai.neargo.fnb.pos.core.data.SessionRepository
-import ai.neargo.fnb.pos.core.model.Area
 import ai.neargo.fnb.pos.core.model.BillSide
 import ai.neargo.fnb.pos.core.model.DiningTable
 import ai.neargo.fnb.pos.core.model.OrderRules
@@ -24,8 +24,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 
-data class TableCardItem(val table: DiningTable, val areaName: String, val totals: Totals)
+/** minutes 为用餐时长（由开台时间计算，每 30 秒刷新）。 */
+data class TableCardItem(val table: DiningTable, val areaName: String, val totals: Totals, val minutes: Int)
 
 data class TablesUiState(
     val areas: List<Pair<String, String>> = emptyList(),
@@ -64,10 +67,9 @@ sealed interface TablesEffect {
 }
 
 class TablesViewModel(
-    private val menu: MenuRepository,
+    config: StoreConfigRepository,
     private val session: SessionRepository,
     private val floor: FloorRepository,
-    orders: OrderRepository,
     prefs: PreferencesRepository,
     private val messages: MessageBus,
     private val saved: SavedStateHandle,
@@ -77,17 +79,21 @@ class TablesViewModel(
 
     private val local = MutableStateFlow(Local(saved["area"] ?: "all", null, "", saved["selected"], null))
     private val effects = Channel<TablesEffect>(Channel.BUFFERED)
+    /** 用餐时长刷新节拍。 */
+    private val ticker = flow { while (true) { emit(System.currentTimeMillis()); delay(30_000) } }
     val effect = effects.receiveAsFlow()
 
-    val state: StateFlow<TablesUiState> = combine(floor.tables, orders.orders, session.session, prefs.prefs, local) { tables, all, s, p, l ->
-        fun card(t: DiningTable) = TableCardItem(t, menu.area(t.area).name, OrderRules.totals(all[t.id] ?: TableOrder()))
-        val inArea = tables.filter { l.area == "all" || it.area == l.area }
+    val state: StateFlow<TablesUiState> = combine(config.current, session.session, prefs.prefs, local, ticker) { store, s, p, l, now ->
+        val tables = store?.tables.orEmpty()
+        val all = store?.orders.orEmpty()
+        fun card(t: DiningTable) = TableCardItem(t, store?.areaName(t.areaId) ?: "", OrderRules.totals(all[t.id] ?: TableOrder()), t.minutes(now))
+        val inArea = tables.filter { l.area == "all" || it.areaId == l.area }
         val shown = inArea.filter { (l.status == null || it.status == l.status) && (l.query.isBlank() || it.id.contains(l.query.trim(), ignoreCase = true)) }
         val selId = l.selected ?: s.currentTableId
         val sel = tables.firstOrNull { it.id == selId } ?: tables.firstOrNull()
         TablesUiState(
-            areas = listOf("all" to "全部") + menu.areas.map(Area::id).zip(menu.areas.map(Area::short)),
-            areaCounts = (listOf("all") + menu.areas.map(Area::id)).associateWith { a -> tables.count { a == "all" || it.area == a } },
+            areas = listOf("all" to "全部") + store?.areas.orEmpty().map { it.id to it.name },
+            areaCounts = (listOf("all") + store?.areas.orEmpty().map { it.id }).associateWith { a -> tables.count { a == "all" || it.areaId == a } },
             area = l.area, status = l.status, query = l.query,
             statusCounts = (listOf<TableStatus?>(null) + TableStatus.entries).associateWith { st -> inArea.count { st == null || it.status == st } },
             cards = shown.map(::card),

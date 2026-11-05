@@ -163,7 +163,7 @@ fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, 
 
 /** PosSwitch：M3 Switch，未选中轨道用控件底，无描边。 */
 @Composable
-fun PosSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+fun PosSwitch(checked: Boolean, onChange: ((Boolean) -> Unit)?, modifier: Modifier = Modifier) {
     val c = Pos.colors
     Switch(
         checked, onChange, modifier,

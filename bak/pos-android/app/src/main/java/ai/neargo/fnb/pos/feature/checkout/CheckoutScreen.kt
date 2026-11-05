@@ -85,7 +85,7 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
     val totals = state.totals
 
     state.paid?.let { amount ->
-        PaidView(amount, state.method) { onAction(CheckoutAction.Done) }
+        PaidView(amount, state.method, state.online) { onAction(CheckoutAction.Done) }
         return
     }
 
@@ -130,7 +130,7 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
                                 }
                             }
                             Text(
-                                if (!state.online) "离线：扫码与储值卡不可用，请用现金或银行卡" else "原型演示，不执行真实收款或储值扣款",
+                                if (!state.online) "离线：扫码与储值卡不可用；现金、银行卡本地记账，联网后同步" else "原型演示，不执行真实收款或储值扣款",
                                 style = t.label, color = if (state.online) c.sub else c.warning, modifier = Modifier.padding(top = 6.dp),
                             )
                         }
@@ -154,7 +154,7 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
                     PosButton(
                         when {
                             state.processing -> "收款处理中"
-                            totals.newItems > 0 -> "先送厨再结账"
+                            state.block != null -> state.block!!
                             else -> "结账核对 ${yuan(totals.due)}"
                         },
                         { onAction(CheckoutAction.Confirm) }, Modifier.weight(1.6f), variant = BtnVariant.Primary, size = BtnSize.Large,
@@ -218,7 +218,7 @@ private fun BenefitCard(label: String, value: String, on: Boolean, modifier: Mod
 
 /** 支付结果（演示）。 */
 @Composable
-private fun PaidView(amount: Int, method: PayMethod, onDone: () -> Unit) {
+private fun PaidView(amount: Int, method: PayMethod, online: Boolean, onDone: () -> Unit) {
     val c = Pos.colors
     val t = Pos.type
     val composition by rememberLottieComposition(LottieCompositionSpec.Asset("lottie/success.json"))
@@ -237,7 +237,7 @@ private fun PaidView(amount: Int, method: PayMethod, onDone: () -> Unit) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 LottieAnimation(composition, { progress }, dynamicProperties = dynamic, modifier = Modifier.size(120.dp))
                 Text("已收款 ${yuan(amount)}", style = t.amount.num(), color = c.ink)
-                Text("${method.label} · 演示收款，未连接支付服务", style = t.label, color = c.sub, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                Text(if (online) "${method.label} · 演示收款，未连接支付服务" else "${method.label} · 离线记账，联网后自动同步", style = t.label, color = c.sub, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
                 Spacer(Modifier.height(20.dp))
                 PosButton("返回桌台", onDone, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large)
             }

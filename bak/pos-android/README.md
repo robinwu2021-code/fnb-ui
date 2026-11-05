@@ -20,20 +20,23 @@ Jetpack Compose + Material 3 原生实现。界面对齐 v3 原型（组件规�
 
 ```
 app/src/main/java/ai/neargo/fnb/pos/
-├── core/model/          纯 Kotlin：实体、显示偏好枚举、OrderRules（加菜合并、库存上限、状态不回退、金额）
-├── core/data/           Repository 接口 + 演示实现 DemoWorkspace（DataStore 快照持久化）+ AppContainer（手动 DI）
+├── core/model/          纯 Kotlin：实体（门店快照、商品 / SKU、餐牌、订单、收款、同步队列、账号）；
+│                        OrderRules（加菜、SKU 库存、离线送厨、批次幂等、结账拦截）、ManageRules（字段校验、SKU 组合、餐牌关联、密码哈希）
+├── core/data/           Repository 接口 + LocalWorkspace（完整离线本机仓库，DataStore 落盘）+ 同步引擎 + 网络检测 + 本机图片库
 ├── core/designsystem/
 │   ├── theme/           颜色角色、八套皮肤、桌台五态、角色字号、密度与圆角 → 映射到 MaterialTheme
-│   └── component/       基于 Material 3 的扁平组件：PosButton、PosIconButton、PosChip、RailItem、QuantityStepper、
-│                        SearchField、PosSwitch、Panel、CountBadge、Tag、GroupTitle、KeyValue、DetailBlock、
-│                        PosDialog、PosSheet、ProductImage、Workbench / PosLayout
-├── feature/order/       OrderViewModel → OrderUiState + OrderAction；DishCard、OrderLineRow、OrderDock、规格 / 详情弹窗
-├── feature/tables/      TablesViewModel（含一次性导航 Effect）；TableCard、TableDetail、开台弹窗
-├── feature/checkout/    CheckoutViewModel（读取路由参数 tableId）；结账与收款结果
-├── feature/display/     DisplayViewModel；显示设置 Sheet
-├── feature/shift/       交班（演示，无状态）
-├── navigation/          类型安全路由：TablesRoute、OrderRoute、CheckoutRoute(tableId)、ShiftRoute
-└── app/                 PosApplication、ShellViewModel、PosApp（页头、页脚、导航宿主、提示）
+│   └── component/       基于 Material 3 的扁平组件：按钮、图标按钮、Chip、分类栏、步进器、搜索、输入框、下拉选择、
+│                        复选行、开关、面板、角标、标签、分组标题、键值、详情区块、弹窗、底部弹层、商品图、双栏布局
+├── feature/auth/        本机账号登录 / 注册、选择门店
+├── feature/order/       点餐：菜单、SKU 规格弹窗、账单坞（新加 / 待同步 / 已下单）
+├── feature/tables/      桌台：筛选、五态卡片、详情、开台、清台
+├── feature/checkout/    结账：离线收款记账、未送厨 / 待同步拦截、收款结果
+├── feature/manage/      系统管理：多级菜单；桌台、区域、门店、分类、商品编辑器（六分区 + SKU + 图片）、规格组、库存盘点、餐牌、设备 / 收款 / 员工信息
+├── feature/sync/        同步队列
+├── feature/display/     显示设置（含强制离线、打印缺纸演示开关）
+├── feature/shift/       交班（演示）
+├── navigation/          类型安全路由：Tables、Order、Checkout(tableId)、Shift、Manage、Sync
+└── app/                 PosApplication、ShellViewModel、PosApp（会话守卫、页头图标工具栏、导航宿主、提示）
 ```
 
 约定：
@@ -41,7 +44,9 @@ app/src/main/java/ai/neargo/fnb/pos/
 - Screen 只接收 `UiState` 和 `onAction`，不碰 Repository；`XxxRoute` 负责取 ViewModel、订阅状态、处理导航 Effect。
 - 一次性提示走 `MessageBus`，导航走各 ViewModel 的 Effect 通道，都不放进持久 UiState。
 - 界面不 import 演示数据；`DemoCatalog` 只在 data 层使用。
-- 订单按桌台隔离；草稿、送厨状态、当前桌台、显示偏好在进程重启后恢复。
+- 全部业务数据按门店隔离保存在本机（schema v2），离线可完成登录、选店、配置、点餐、送厨、结账、清台；重启后恢复。
+- 断网时送厨批次与收款进入同步队列，联网后自动按顺序补发；批次号即幂等键。订单有新加或待同步菜品时不能结账核对。
+- 实现顺序见 [POS实现顺序](../../docs/android/POS实现顺序.md)。
 
 ## 组件与 Material 3 对应
 

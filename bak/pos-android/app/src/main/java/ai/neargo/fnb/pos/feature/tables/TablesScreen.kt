@@ -74,7 +74,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun TablesRoute(onOrder: () -> Unit, onCheckout: (String) -> Unit) {
-    val vm = posViewModel { c, h -> TablesViewModel(c.menu, c.session, c.floor, c.orders, c.prefs, c.messages, h) }
+    val vm = posViewModel { c, h -> TablesViewModel(c.config, c.session, c.floor, c.prefs, c.messages, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(vm) {
         vm.effect.collect { e ->
@@ -198,7 +198,7 @@ private fun TableCard(item: TableCardItem, selected: Boolean, onClick: () -> Uni
                 when (tb.status) {
                     TableStatus.Dining -> {
                         Text("${tb.guests} 人", style = mid.num(), color = c.ink, modifier = Modifier.weight(1f))
-                        Text("${tb.minutes} 分钟", style = t.label.num(), color = c.sub)
+                        Text("${item.minutes} 分钟", style = t.label.num(), color = c.sub)
                     }
                     TableStatus.Reserved -> {
                         Text(tb.reservation, style = mid.num(), color = c.ink)
@@ -245,7 +245,7 @@ private fun TableDetail(item: TableCardItem, pending: Int, onAction: (TablesActi
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                 DetailBlock("桌台信息") {
                     KeyValue("用餐人数", if (dining) "${tb.guests}" else "—")
-                    KeyValue("用餐时长", if (dining) "${tb.minutes} 分钟" else "—")
+                    KeyValue("用餐时长", if (dining) "${item.minutes} 分钟" else "—")
                     if (tb.reservation.isNotEmpty()) KeyValue("预订时间", tb.reservation)
                 }
                 DetailBlock("当前账单") {

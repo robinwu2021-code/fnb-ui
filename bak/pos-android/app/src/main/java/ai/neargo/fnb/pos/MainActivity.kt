@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         val light = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
         enableEdgeToEdge(statusBarStyle = light, navigationBarStyle = light)
         setContent {
-            val shell = posViewModel { c, _ -> ShellViewModel(c.session, c.device, c.prefs, c.messages) }
+            val shell = posViewModel { c, _ -> ShellViewModel(c.session, c.device, c.prefs, c.sync, c.messages) }
             val state by shell.state.collectAsStateWithLifecycle()
             // 偏好首次读出前不渲染，避免默认皮肤闪一下再切换
             val prefs = state.prefs ?: return@setContent

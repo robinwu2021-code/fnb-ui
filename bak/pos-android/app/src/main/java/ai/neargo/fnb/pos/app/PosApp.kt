@@ -17,6 +17,17 @@ import ai.neargo.fnb.pos.core.model.DisplayPrefs
 import ai.neargo.fnb.pos.core.model.Session
 import ai.neargo.fnb.pos.feature.checkout.CheckoutRoute as CheckoutScreenRoute
 import ai.neargo.fnb.pos.feature.display.DisplaySheetRoute
+import ai.neargo.fnb.pos.feature.auth.AuthRoute
+import ai.neargo.fnb.pos.feature.auth.StorePicker
+import ai.neargo.fnb.pos.feature.manage.ManageRoute as ManageScreenRoute
+import ai.neargo.fnb.pos.feature.sync.SyncRoute as SyncScreenRoute
+import ai.neargo.fnb.pos.navigation.ManageRoute
+import ai.neargo.fnb.pos.navigation.SyncRoute
+import ai.neargo.fnb.pos.core.data.SyncRepository
+import ai.neargo.fnb.pos.core.model.StoreSummary
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import kotlinx.coroutines.launch
 import ai.neargo.fnb.pos.feature.order.OrderRoute as OrderScreenRoute
 import ai.neargo.fnb.pos.feature.shift.ShiftScreen
 import ai.neargo.fnb.pos.feature.tables.TablesRoute as TablesScreenRoute
@@ -50,6 +61,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PointOfSale
+import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,17 +113,22 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
-data class ShellUiState(val session: Session? = null, val device: DeviceStatus = DeviceStatus(), val prefs: DisplayPrefs? = null)
+data class ShellUiState(
+    val session: Session? = null, val device: DeviceStatus = DeviceStatus(), val prefs: DisplayPrefs? = null,
+    val pending: Int = 0, val stores: List<StoreSummary> = emptyList(),
+)
 
 /** 应用壳 ViewModel：会话、设备状态、显示偏好（主题）。 */
-class ShellViewModel(session: SessionRepository, device: DeviceRepository, prefs: PreferencesRepository, val messages: MessageBus) : ViewModel() {
-    val state = combine(session.session, device.status, prefs.prefs) { s, d, p -> ShellUiState(s, d, p) }
+class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus) : ViewModel() {
+    val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, session.stores) { s, d, p, n, st -> ShellUiState(s, d, p, n, st) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ShellUiState())
+    fun selectStore(id: String) = viewModelScope.launch { session.selectStore(id) }
+    fun logout() = viewModelScope.launch { session.logout() }
 }
 
 /**
- * PosShell：页头 → 工作台内容 → 页脚；浮层（显示设置、提示）在最上层。
- * 宽屏页头含导航；窄屏导航移到底部，页脚保留。页头页脚样式不随业务页变化。
+ * PosShell：页头 → 工作台内容（直达底部，无页脚）；浮层（显示设置、提示）在最上层。
+ * 宽屏页头含导航与图标工具栏；窄屏导航移到底部。页头样式不随业务页变化。
  */
 @Composable
 fun PosApp(shell: ShellViewModel) {
@@ -100,36 +139,47 @@ fun PosApp(shell: ShellViewModel) {
     val dest = entry?.destination
     val current = when {
         dest?.hasRoute<TablesRoute>() == true -> TopLevel.Tables
+        dest?.hasRoute<ManageRoute>() == true -> TopLevel.Manage
         else -> TopLevel.Order
     }
     val session = state.session ?: return
+    var pickingStore by rememberSaveable { mutableStateOf(false) }
+    // 会话守卫：未登录 → 登录；未选店（或主动切店）→ 选择门店；否则进入工作台
+    if (session.user == null) { AuthRoute(); return }
+    if (session.storeId == null || pickingStore) {
+        StorePicker(state.stores, session.storeId, onPick = { shell.selectStore(it); pickingStore = false }, onLogout = { pickingStore = false; shell.logout() },
+            onCancel = if (session.storeId != null) ({ pickingStore = false }) else null)
+        return
+    }
     val notice: (String) -> Unit = shell.messages::post
-    val onManage = { notice("系统管理（桌台、商品、SKU、餐牌）按 v3.3 在后续版本接入") }
-    val go: (TopLevel) -> Unit = { nav.goTop(if (it == TopLevel.Tables) TablesRoute else OrderRoute) }
+    val onManage = { nav.goTop(ManageRoute) }
+    val go: (TopLevel) -> Unit = { nav.goTop(when (it) { TopLevel.Tables -> TablesRoute; TopLevel.Order -> OrderRoute; TopLevel.Manage -> ManageRoute }) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Pos.colors.canvas)) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                if (layout.wide) Header(session, state.device, current, go, onManage, notice) { displayOpen = true }
-                else CompactHeader(session, notice) { displayOpen = true }
-                Box(Modifier.weight(1f)) { PosNavHost(nav, notice) }
+                val actions = HeaderActions(state.device, state.pending, notice, onShift = { nav.goTop(ShiftRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true })
+                if (layout.wide) Header(session, current, go, onManage, actions)
+                else CompactHeader(session, actions)
+                Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
                 if (!layout.wide) Box(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(vertical = 2.dp), contentAlignment = Alignment.Center) { WorkNav(current, go, onManage) }
-                Footer(state.device, compact = !layout.wide, onShift = { nav.goTop(ShiftRoute) }, notice = notice)
             }
-            ToastHost(shell.messages, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = 64.dp))
+            ToastHost(shell.messages, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = if (layout.wide) 24.dp else 72.dp))
             if (displayOpen) DisplaySheetRoute(onDismiss = { displayOpen = false })
         }
     }
 }
 
 @Composable
-private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit) {
+private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDisplay: () -> Unit, onSwitchStore: () -> Unit) {
     NavHost(nav, startDestination = OrderRoute, enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None }) {
         composable<TablesRoute> { TablesScreenRoute(onOrder = { nav.goTop(OrderRoute) }, onCheckout = { nav.navigate(CheckoutRoute(it)) }) }
         composable<OrderRoute> { OrderScreenRoute(onCheckout = { nav.navigate(CheckoutRoute(it)) }, onChangeTable = { nav.goTop(TablesRoute) }) }
         composable<CheckoutRoute> { CheckoutScreenRoute(onBack = { nav.popBackStack() }, onDone = { nav.goTop(TablesRoute) }) }
         composable<ShiftRoute> { ShiftScreen(notice) }
+        composable<ManageRoute> { ManageScreenRoute(onDisplay, onSwitchStore) }
+        composable<SyncRoute> { SyncScreenRoute() }
     }
 }
 
@@ -144,65 +194,128 @@ private fun NavHostController.goTop(route: Any) = navigate(route) {
 @Composable
 private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        TopLevel.entries.forEach { r -> PosButton(r.label, { onNavigate(r) }, selected = current == r, textStyle = Pos.type.header) }
-        PosIconButton(Icons.Outlined.Settings, "系统管理", onManage)
+        listOf(TopLevel.Tables, TopLevel.Order).forEach { r -> PosButton(r.label, { onNavigate(r) }, selected = current == r, textStyle = Pos.type.header) }
+        PosIconButton(Icons.Outlined.Settings, "系统管理", onManage, selected = current == TopLevel.Manage)
     }
 }
 
-/** AppHeader（宽屏）：门店 / 员工·终端、工作台导航、消息、打印、语言、显示。 */
+/** 页头右侧操作：原页头（消息 / 打印 / 语言 / 显示）与原页脚（在线 / 钱箱 / 交班 / 帮助）合并，统一为图标。 */
+private class HeaderActions(
+    val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit,
+    val onShift: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit,
+)
+
+/** AppHeader（宽屏）：门店 / 员工·终端、工作台导航；右侧图标工具栏。无页脚，内容区直达底部。 */
 @Composable
-private fun Header(session: Session, device: DeviceStatus, current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage: () -> Unit, notice: (String) -> Unit, onDisplay: () -> Unit) {
+private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage: () -> Unit, actions: HeaderActions) {
     val c = Pos.colors
     val t = Pos.type
     Row(
-        Modifier.fillMaxWidth().heightIn(min = PosSize.header).background(c.surface).padding(horizontal = 14.dp),
+        Modifier.fillMaxWidth().heightIn(min = PosSize.header).background(c.surface).padding(start = 14.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(Modifier.width(130.dp)) {
+        Column(Modifier.width(140.dp).clickable(role = Role.Button, onClickLabel = "切换门店", onClick = actions.onStore)) {
             Text(session.store, style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(session.staff, style = t.label, color = c.sub, maxLines = 1)
         }
         WorkNav(current, onNavigate, onManage)
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            PosButton("消息 2", { notice("2 条消息：A06 预订 19:00 到店；厨房已出 A02 麻婆豆腐（演示）") }, variant = BtnVariant.Text, textStyle = t.header)
-            PosButton(
-                if (device.printerOk) "打印正常" else "打印缺纸",
-                { notice(if (device.printerOk) "厨房、前台打印机在线（演示）" else "厨房打印机缺纸，换纸后补打") },
-                variant = if (device.printerOk) BtnVariant.Text else BtnVariant.Danger, textStyle = t.header,
-            )
-            PosButton("EN", { notice("英文界面将随 i18n 资源接入（演示）") }, variant = BtnVariant.Text, textStyle = t.header)
-            PosButton("显示", onDisplay, textStyle = t.header)
+            StatusIcon(actions)
+            ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息：A06 预订 19:00 到店；厨房已出 A02 麻婆豆腐（演示）") }
+            PrinterIcon(actions)
+            ToolIcon(Icons.Outlined.PointOfSale, "钱箱") { actions.notice("钱箱操作需要权限，演示环境未连接钱箱") }
+            ToolIcon(Icons.Outlined.SwapHoriz, "交班", onClick = actions.onShift)
+            ToolIcon(Icons.Outlined.Translate, "语言：中文 / EN") { actions.notice("英文界面将随 i18n 资源接入（演示）") }
+            ToolIcon(Icons.AutoMirrored.Outlined.HelpOutline, "帮助") { actions.notice("帮助中心 · POS 3.0 演示终端") }
+            ToolIcon(Icons.Outlined.Tune, "显示设置", filled = true, onClick = actions.onDisplay)
         }
     }
 }
 
+/** 窄屏页头：门店名 + 状态、消息、显示；低频操作收进「更多」菜单。 */
 @Composable
-private fun CompactHeader(session: Session, notice: (String) -> Unit, onDisplay: () -> Unit) {
+private fun CompactHeader(session: Session, actions: HeaderActions) {
     val c = Pos.colors
-    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).background(c.surface).padding(start = 12.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(session.store, style = Pos.type.strong, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        PosButton("消息 2", { notice("2 条消息（演示）") }, variant = BtnVariant.Text, textStyle = Pos.type.header)
-        PosButton("EN", { notice("英文界面将随 i18n 资源接入（演示）") }, variant = BtnVariant.Text, textStyle = Pos.type.header)
-        PosButton("显示", onDisplay, textStyle = Pos.type.header)
+    var more by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).background(c.surface).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(session.store, style = Pos.type.strong, color = c.ink, modifier = Modifier.weight(1f).clickable(role = Role.Button, onClickLabel = "切换门店", onClick = actions.onStore), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        StatusIcon(actions)
+        ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息（演示）") }
+        ToolIcon(Icons.Outlined.Tune, "显示设置", filled = true, onClick = actions.onDisplay)
+        Box {
+            ToolIcon(Icons.Outlined.MoreVert, "更多") { more = true }
+            DropdownMenu(more, { more = false }, containerColor = c.surface, shadowElevation = 2.dp) {
+                val item: @Composable (androidx.compose.ui.graphics.vector.ImageVector, String, () -> Unit) -> Unit = { icon, label, act ->
+                    DropdownMenuItem(text = { Text(label, style = Pos.type.body) }, leadingIcon = { Icon(icon, null) }, onClick = { more = false; act() })
+                }
+                item(Icons.Outlined.Print, if (actions.device.printerOk) "打印正常" else "打印缺纸") { actions.notice(if (actions.device.printerOk) "打印机在线（演示）" else "厨房打印机缺纸，换纸后补打") }
+                item(Icons.Outlined.SwapHoriz, "交班", actions.onShift)
+                item(Icons.Outlined.Translate, "语言：中文 / EN") { actions.notice("英文界面将随 i18n 资源接入（演示）") }
+                item(Icons.AutoMirrored.Outlined.HelpOutline, "帮助") { actions.notice("帮助中心 · POS 3.0 演示终端") }
+            }
+        }
     }
 }
 
-/** AppFooter：在线 / 同步状态 + 钱箱、交班、帮助；版本标识。 */
+/** 在线 / 同步状态：在线为主色云勾，离线为警示色云叉；点按说明详情。 */
 @Composable
-private fun Footer(device: DeviceStatus, compact: Boolean, onShift: () -> Unit, notice: (String) -> Unit) {
+private fun StatusIcon(a: HeaderActions) {
+    val online = a.device.online
+    val label = when {
+        !online -> "离线 · ${a.pending} 项待同步，联网后自动补发"
+        a.pending > 0 -> "在线 · 正在同步 ${a.pending} 项"
+        else -> "在线 · 数据已同步"
+    }
+    // 点按进入同步队列；待同步数量作为角标
+    ToolIcon(
+        if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, label,
+        badge = a.pending.takeIf { it > 0 }, tint = if (online) Pos.colors.primary else Pos.colors.warning, onClick = a.onSync,
+    )
+}
+
+/** 打印机：正常为默认色，缺纸为危险色并带圆点。 */
+@Composable
+private fun PrinterIcon(a: HeaderActions) {
+    val ok = a.device.printerOk
+    ToolIcon(Icons.Outlined.Print, if (ok) "打印正常" else "打印缺纸", tint = if (ok) null else Pos.colors.danger, dot = !ok) {
+        a.notice(if (ok) "厨房、前台打印机在线（演示）" else "厨房打印机缺纸，换纸后补打")
+    }
+}
+
+/**
+ * 页头图标按钮：M3 IconButton + PlainTooltip（长按 / 悬停显示名称），名称同时作为无障碍描述。
+ * badge 为数量角标，dot 为异常圆点；filled 用于显示设置这类常驻入口。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ToolIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    badge: Int? = null,
+    dot: Boolean = false,
+    tint: androidx.compose.ui.graphics.Color? = null,
+    filled: Boolean = false,
+    onClick: () -> Unit,
+) {
     val c = Pos.colors
-    val t = Pos.type
-    Row(Modifier.fillMaxWidth().heightIn(min = PosSize.footer).background(c.surface).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(if (device.online) c.primary else c.warning))
-        Spacer(Modifier.width(6.dp))
-        Text(if (device.online) "在线 · 数据已同步（演示）" else "离线 · 2 单待同步（演示）", style = t.label, color = if (device.online) c.ink else c.warning, maxLines = 1, modifier = Modifier.weight(1f))
-        if (!compact) PosButton("钱箱", { notice("钱箱操作需要权限，演示环境未连接钱箱") }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)
-        PosButton("交班", onShift, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)
-        PosButton("帮助", { notice("帮助中心（演示）") }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)
-        if (!compact) {
-            Spacer(Modifier.width(12.dp))
-            Text("POS 3.0 · 演示终端", style = t.label, color = c.sub, maxLines = 1)
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+    ) {
+        BadgedBox(badge = {
+            when {
+                badge != null -> Badge(containerColor = c.primary, contentColor = c.onPrimary) { Text("$badge") }
+                dot -> Badge(containerColor = c.danger)
+            }
+        }) {
+            if (filled) {
+                FilledIconButton(onClick, Modifier.size(40.dp), shape = Pos.metrics.button,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = c.control, contentColor = tint ?: c.ink)) { Icon(icon, label, Modifier.size(20.dp)) }
+            } else {
+                IconButton(onClick, Modifier.size(40.dp), colors = IconButtonDefaults.iconButtonColors(contentColor = tint ?: c.ink)) { Icon(icon, label, Modifier.size(20.dp)) }
+            }
         }
     }
 }

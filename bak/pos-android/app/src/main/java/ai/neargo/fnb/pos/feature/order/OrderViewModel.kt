@@ -1,17 +1,18 @@
 package ai.neargo.fnb.pos.feature.order
 
-import ai.neargo.fnb.pos.core.data.FloorRepository
-import ai.neargo.fnb.pos.core.data.MenuRepository
+import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.OrderRepository
 import ai.neargo.fnb.pos.core.data.PreferencesRepository
 import ai.neargo.fnb.pos.core.data.SessionRepository
+import ai.neargo.fnb.pos.core.data.StoreConfigRepository
 import ai.neargo.fnb.pos.core.model.DiningTable
 import ai.neargo.fnb.pos.core.model.DisplayPrefs
-import ai.neargo.fnb.pos.core.model.Dish
 import ai.neargo.fnb.pos.core.model.LineStatus
 import ai.neargo.fnb.pos.core.model.OrderResult
 import ai.neargo.fnb.pos.core.model.OrderRules
+import ai.neargo.fnb.pos.core.model.Product
+import ai.neargo.fnb.pos.core.model.Sku
 import ai.neargo.fnb.pos.core.model.SpecGroup
 import ai.neargo.fnb.pos.core.model.TableOrder
 import ai.neargo.fnb.pos.core.model.TableStatus
@@ -28,11 +29,11 @@ import kotlinx.coroutines.launch
 /** 图文排列：图在上（卡片）/ 图在左（列表）。 */
 enum class Arrange(val label: String) { Top("图在上"), Left("图在左") }
 
-/** 菜单筛选（页面局部状态，保存在 SavedStateHandle，进程重建后保留）。 */
-data class MenuFilter(val cat: String = "hot", val query: String = "", val tag: String? = null, val arrange: Arrange = Arrange.Top)
+/** 菜单筛选（页面局部状态，保存在 SavedStateHandle）。 */
+data class MenuFilter(val cat: String = HOT, val query: String = "", val tag: String? = null, val arrange: Arrange = Arrange.Top)
 
 data class CategoryItem(val id: String, val name: String, val count: Int)
-data class DishItem(val dish: Dish, val qty: Int)
+data class DishItem(val dish: Product, val qty: Int)
 
 data class OrderUiState(
     val table: DiningTable? = null,
@@ -42,9 +43,12 @@ data class OrderUiState(
     val filter: MenuFilter = MenuFilter(),
     val dishes: List<DishItem> = emptyList(),
     val prefs: DisplayPrefs = DisplayPrefs(),
-    val specs: List<SpecGroup> = emptyList(),
+    val specGroups: List<SpecGroup> = emptyList(),
+    val online: Boolean = true,
 ) {
     val canOrder get() = table?.status == TableStatus.Dining
+    /** 某商品关联的规格组（按 ID 排序，与 SKU 生成顺序一致）。 */
+    fun groupsOf(p: Product) = specGroups.filter { it.id in p.specGroupIds }.sortedBy { it.id }
 }
 
 sealed interface OrderAction {
@@ -52,7 +56,7 @@ sealed interface OrderAction {
     data class Search(val query: String) : OrderAction
     data class Filter(val tag: String?) : OrderAction
     data object ToggleArrange : OrderAction
-    data class AddDish(val dish: Dish, val spec: String = "", val unit: Int = dish.price, val qty: Int = 1) : OrderAction
+    data class AddDish(val dish: Product, val sku: Sku? = null, val qty: Int = 1) : OrderAction
     data class ChangeQty(val uid: Long, val delta: Int) : OrderAction
     data object ClearNew : OrderAction
     data object SendToKitchen : OrderAction
@@ -61,48 +65,52 @@ sealed interface OrderAction {
     data class Notice(val message: String) : OrderAction
 }
 
+const val HOT = "hot"
+
 /** 快捷筛选：全部 / 辣味 / 素食（key 为标签）。 */
 val QuickFilters = listOf(null to "全部", "辣" to "辣味", "素" to "素食")
 
 /**
- * 点餐 ViewModel：读会话（当前桌）、订单、偏好与本地筛选，输出 OrderUiState；
- * 写操作经 OrderRepository，规则拒绝的原因通过 MessageBus 提示。
+ * 点餐 ViewModel：读当前门店（已发布餐牌商品）、当前桌订单、偏好、网络与本地筛选；
+ * 写操作经 OrderRepository，规则拒绝原因经 MessageBus 提示。离线送厨进入同步队列。
  */
 class OrderViewModel(
-    private val menu: MenuRepository,
     private val session: SessionRepository,
-    floor: FloorRepository,
+    config: StoreConfigRepository,
     private val orders: OrderRepository,
     prefs: PreferencesRepository,
+    private val device: DeviceRepository,
     private val messages: MessageBus,
     private val saved: SavedStateHandle,
 ) : ViewModel() {
 
-    private val filter = saved.getStateFlow(KEY_CAT, "hot").let { cat ->
-        combine(cat, saved.getStateFlow(KEY_QUERY, ""), saved.getStateFlow<String?>(KEY_TAG, null), saved.getStateFlow(KEY_ARRANGE, Arrange.Top.name)) { c, q, t, a ->
-            MenuFilter(c, q, t, Arrange.valueOf(a))
-        }
-    }
+    private val filter = combine(
+        saved.getStateFlow(KEY_CAT, HOT), saved.getStateFlow(KEY_QUERY, ""),
+        saved.getStateFlow<String?>(KEY_TAG, null), saved.getStateFlow(KEY_ARRANGE, Arrange.Top.name),
+    ) { c, q, t, a -> MenuFilter(c, q, t, Arrange.valueOf(a)) }
 
-    val state: StateFlow<OrderUiState> = combine(session.session, floor.tables, orders.orders, prefs.prefs, filter) { s, tables, all, p, f ->
-        val order = all[s.currentTableId] ?: TableOrder()
+    val state: StateFlow<OrderUiState> = combine(config.current, prefs.prefs, filter, device.status) { store, p, f, d ->
+        if (store == null) return@combine OrderUiState(prefs = p)
+        val order = store.orders[store.currentTableId] ?: TableOrder()
+        val visible = store.visibleProducts
         val q = f.query.trim()
         val base = when {
-            q.isNotEmpty() -> menu.dishes.filter { it.name.contains(q) || it.en.contains(q, ignoreCase = true) || it.id == q }
-            f.cat == "hot" -> menu.dishes.filter { it.hot }
-            else -> menu.dishes.filter { it.cat == f.cat }
+            q.isNotEmpty() -> visible.filter { it.name.contains(q) || it.en.contains(q, ignoreCase = true) || it.id == q }
+            f.cat == HOT -> visible.filter { it.hot }
+            else -> visible.filter { it.categoryId == f.cat }
         }.let { list -> if (f.tag == null) list else list.filter { f.tag in it.tags } }
+        fun inCat(id: String, pid: String) = store.products.firstOrNull { it.id == pid }?.let { if (id == HOT) it.hot else it.categoryId == id } == true
         OrderUiState(
-            table = tables.firstOrNull { it.id == s.currentTableId },
+            table = store.tables.firstOrNull { it.id == store.currentTableId },
             order = order,
             totals = OrderRules.totals(order),
-            categories = menu.categories.map { c ->
-                CategoryItem(c.id, c.name, order.lines.filter { l -> menu.dish(l.dishId).let { if (c.id == "hot") it.hot else it.cat == c.id } }.sumOf { it.qty })
-            },
+            categories = listOf(CategoryItem(HOT, "热销", order.lines.filter { inCat(HOT, it.dishId) }.sumOf { it.qty })) +
+                store.categories.map { c -> CategoryItem(c.id, c.name, order.lines.filter { inCat(c.id, it.dishId) }.sumOf { it.qty }) },
             filter = f,
             dishes = base.map { DishItem(it, OrderRules.qtyOf(order, it.id)) },
             prefs = p,
-            specs = menu.specs,
+            specGroups = store.specGroups,
+            online = d.online,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrderUiState())
 
@@ -114,12 +122,12 @@ class OrderViewModel(
             is OrderAction.Search -> saved[KEY_QUERY] = a.query
             is OrderAction.Filter -> saved[KEY_TAG] = a.tag
             OrderAction.ToggleArrange -> saved[KEY_ARRANGE] = (if (state.value.filter.arrange == Arrange.Top) Arrange.Left else Arrange.Top).name
-            is OrderAction.AddDish -> launchResult { orders.addDish(tableId, a.dish, a.spec, a.unit, a.qty) }
+            is OrderAction.AddDish -> launchResult { orders.addDish(tableId, a.dish, a.sku, a.qty) }
             is OrderAction.ChangeQty -> launchResult { orders.changeQty(tableId, a.uid, a.delta) }
             OrderAction.ClearNew -> viewModelScope.launch { orders.clearNew(tableId); messages.post("已清空新加菜品") }
             OrderAction.SendToKitchen -> viewModelScope.launch {
-                val n = orders.sendToKitchen(tableId)
-                if (n > 0) messages.post("已送厨 $n 份（演示）")
+                val r = orders.sendToKitchen(tableId, device.status.value.online)
+                if (r.qty > 0) messages.post(if (r.queued) "离线：${r.qty} 份已存入同步队列，联网后自动送厨" else "已送厨 ${r.qty} 份（演示）")
             }
             is OrderAction.Advance -> viewModelScope.launch {
                 orders.advance(tableId, a.uid, a.to)

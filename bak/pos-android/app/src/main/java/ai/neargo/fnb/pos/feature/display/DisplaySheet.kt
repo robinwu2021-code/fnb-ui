@@ -49,6 +49,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.selected
@@ -67,7 +69,8 @@ data class DisplayUiState(val prefs: DisplayPrefs = DisplayPrefs(), val device: 
 sealed interface DisplayAction {
     data class Update(val transform: (DisplayPrefs) -> DisplayPrefs) : DisplayAction
     data object RestoreDefaults : DisplayAction
-    data class Device(val status: DeviceStatus) : DisplayAction
+    data class ForceOffline(val on: Boolean) : DisplayAction
+    data class PrinterOk(val ok: Boolean) : DisplayAction
     data object ResetDemoData : DisplayAction
 }
 
@@ -84,7 +87,8 @@ class DisplayViewModel(
         when (a) {
             is DisplayAction.Update -> viewModelScope.launch { prefs.update(a.transform) }
             DisplayAction.RestoreDefaults -> viewModelScope.launch { prefs.update { DisplayPrefs() } }
-            is DisplayAction.Device -> device.set(a.status)
+            is DisplayAction.ForceOffline -> device.setForceOffline(a.on)
+            is DisplayAction.PrinterOk -> device.setPrinterOk(a.ok)
             DisplayAction.ResetDemoData -> { resetDemo(); messages.post("已重置演示桌台与订单") }
         }
     }
@@ -158,9 +162,9 @@ fun DisplaySheet(state: DisplayUiState, onAction: (DisplayAction) -> Unit, onDis
                 }
             }
             Label("演示")
-            Toggle("模拟离线", !state.device.online) { onAction(DisplayAction.Device(state.device.copy(online = !it))) }
-            Toggle("模拟打印机缺纸", !state.device.printerOk) { onAction(DisplayAction.Device(state.device.copy(printerOk = !it))) }
-            PosButton("重置演示桌台与订单", { onAction(DisplayAction.ResetDemoData) }, variant = BtnVariant.Danger)
+            Toggle("强制离线（演示断网，送厨与收款进入同步队列）", state.device.forceOffline) { onAction(DisplayAction.ForceOffline(it)) }
+            Toggle("模拟打印机缺纸", !state.device.printerOk) { onAction(DisplayAction.PrinterOk(!it)) }
+            PosButton("重置当前门店演示数据", { onAction(DisplayAction.ResetDemoData) }, variant = BtnVariant.Danger)
         }
     }
 }
@@ -206,8 +210,9 @@ private fun LayoutOption(l: OrderLayout, selected: Boolean, onClick: () -> Unit)
 
 @Composable
 private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+    // 整行可切换（含标签），开关本身不再单独接收点击
+    Row(Modifier.fillMaxWidth().height(48.dp).toggleable(checked, role = Role.Switch, onValueChange = onChange), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = Pos.type.body, color = Pos.colors.ink, modifier = Modifier.weight(1f))
-        PosSwitch(checked, onChange)
+        PosSwitch(checked, null)
     }
 }

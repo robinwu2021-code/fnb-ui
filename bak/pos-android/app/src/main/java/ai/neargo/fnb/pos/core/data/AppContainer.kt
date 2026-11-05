@@ -3,6 +3,9 @@ package ai.neargo.fnb.pos.core.data
 import ai.neargo.fnb.pos.core.model.DeviceStatus
 import ai.neargo.fnb.pos.core.model.DisplayPrefs
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -17,6 +20,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -26,27 +34,71 @@ private val Context.posStore: DataStore<Preferences> by preferencesDataStore(nam
 
 /**
  * 手动依赖容器（应用级单例）。页面越来越多或接入服务后，可平滑换成 Hilt。
- * 演示仓库在启动时同步恢复快照，避免首帧闪现初始数据后再跳变。
+ * 本机仓库在启动时同步恢复快照，避免首帧闪现初始数据后再跳变。
  */
 class AppContainer(context: Context) {
     private val dataStore = context.applicationContext.posStore
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val menu: MenuRepository = DemoMenuRepository()
-    private val workspace = DemoWorkspace(DataStoreSnapshot(dataStore), menu, appScope).also { runBlocking { it.restore() } }
+    private val workspace = LocalWorkspace(DataStoreSnapshot(dataStore), appScope).also { runBlocking { it.restore() } }
     val session: SessionRepository = workspace
+    val config: StoreConfigRepository = workspace
     val floor: FloorRepository = workspace
     val orders: OrderRepository = workspace
+    val sync: SyncRepository = workspace
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
-    val device: DeviceRepository = InMemoryDevice()
+    val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
     val messages: MessageBus = SimpleMessageBus()
+    /** 本机图片库：商品图片选择后复制到应用私有目录。 */
+    val media = LocalMedia(context.applicationContext)
 
-    /** 显示设置里的「重置演示数据」。 */
+    init { SyncEngine(device, sync, messages, appScope).start() }
+
+    /** 显示设置里的「重置演示数据」：只重置当前门店。 */
     fun resetDemo() = appScope.launch { workspace.resetDemo() }
 }
 
+/**
+ * 同步引擎：联网且有待同步项时自动补发（短暂延迟，等网络稳定）。离线时什么也不做，数据留在本机队列。
+ */
+private class SyncEngine(private val device: DeviceRepository, private val sync: SyncRepository, private val messages: MessageBus, private val scope: CoroutineScope) {
+    fun start() = scope.launch {
+        combine(device.status.map { it.online }, sync.pendingCount) { online, n -> online && n > 0 }
+            .distinctUntilChanged()
+            .collectLatest { ready ->
+                if (!ready) return@collectLatest
+                delay(1_200)
+                val n = sync.syncNow()
+                if (n > 0) messages.post("网络已恢复，已同步 $n 项离线操作")
+            }
+    }
+}
+
+/** 设备状态：系统默认网络回调 + 演示开关。 */
+private class NetworkDevice(context: Context, scope: CoroutineScope) : DeviceRepository {
+    private val s = MutableStateFlow(DeviceStatus(network = context.isNetworkUp()))
+    override val status = s.asStateFlow()
+    override fun setForceOffline(on: Boolean) = s.update { it.copy(forceOffline = on) }
+    override fun setPrinterOk(ok: Boolean) = s.update { it.copy(printerOk = ok) }
+
+    init {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                s.update { it.copy(network = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) }
+            }
+            override fun onLost(network: Network) = s.update { it.copy(network = false) }
+        })
+    }
+}
+
+private fun Context.isNetworkUp(): Boolean {
+    val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+    return cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+}
+
 private class DataStoreSnapshot(private val ds: DataStore<Preferences>) : SnapshotStore {
-    private val key = stringPreferencesKey("workspace_v1")
+    private val key = stringPreferencesKey("vault_v2")
     override suspend fun load(): String? = ds.data.first()[key]
     override suspend fun save(json: String) { ds.edit { it[key] = json } }
 }
@@ -83,12 +135,6 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             it[K.photos] = n.photos
         }
     }
-}
-
-private class InMemoryDevice : DeviceRepository {
-    private val s = MutableStateFlow(DeviceStatus())
-    override val status = s.asStateFlow()
-    override fun set(status: DeviceStatus) { s.value = status }
 }
 
 private class SimpleMessageBus : MessageBus {

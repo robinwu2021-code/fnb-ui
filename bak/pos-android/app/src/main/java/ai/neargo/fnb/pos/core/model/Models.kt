@@ -3,44 +3,73 @@ package ai.neargo.fnb.pos.core.model
 import kotlinx.serialization.Serializable
 
 /**
- * 业务实体。纯 Kotlin，不依赖 Android 或 UI，供 Repository、ViewModel 和单元测试共用。
- * 金额一律以「分」为单位。
+ * 业务实体。纯 Kotlin，不依赖 Android 或 UI。金额一律以「分」为单位，关联一律用稳定 ID，不用显示文案。
+ * 全部数据按门店隔离（StoreData），离线时完整保存在本机。
  */
 
-data class Category(val id: String, val name: String)
+@Serializable data class Area(val id: String, val name: String, val en: String = "")
 
-data class Dish(
+@Serializable data class Category(val id: String, val name: String, val en: String = "")
+
+/** 规格选项：delta 为加价（分）。 */
+@Serializable data class SpecOption(val id: String, val name: String, val delta: Int = 0)
+
+/** 规格组：单选。 */
+@Serializable data class SpecGroup(val id: String, val name: String, val en: String = "", val options: List<SpecOption>)
+
+/**
+ * SKU：规格组合。key 由排序后的「组 ID:选项 ID」拼成，改名不影响关联。
+ * manualPrice / manualStock 记录是否手动调整，调整基础价或规格时保留手动值。
+ */
+@Serializable
+data class Sku(
+    val key: String,
+    val optionIds: List<String>,
+    val label: String,
+    val price: Int,
+    val stock: Int,
+    val manualPrice: Boolean = false,
+    val manualStock: Boolean = false,
+)
+
+@Serializable
+data class Product(
     val id: String,
     val name: String,
-    val en: String,
-    val cat: String,
+    val en: String = "",
+    val categoryId: String,
+    /** 基础售价。 */
     val price: Int,
-    /** null 不限量；0 已沽清。 */
-    val stock: Int?,
-    val tags: List<String> = emptyList(),
-    val hasSpec: Boolean = false,
-    val hot: Boolean = false,
+    /** 无 SKU 时的可售份数；null 不限量；0 沽清。有 SKU 时以 SKU 库存为准。 */
+    val stock: Int? = null,
+    val specGroupIds: List<String> = emptyList(),
+    val skus: List<Sku> = emptyList(),
+    /** 远程 URL 或本机文件 URI。 */
     val image: String? = null,
+    val tags: List<String> = emptyList(),
+    val hot: Boolean = false,
 ) {
-    val soldOut get() = stock == 0
-    /** 卡片副标题：可选规格 > 口味 / 新品标签 > 门店现制。 */
+    val hasSpec get() = skus.isNotEmpty()
+    /** 展示价：有 SKU 取最低 SKU 价。 */
+    val displayPrice get() = skus.minOfOrNull { it.price } ?: price
+    val totalStock: Int? get() = if (hasSpec) skus.sumOf { it.stock } else stock
+    val soldOut get() = totalStock == 0
     val note get() = when {
         hasSpec -> "可选规格"
         else -> tags.firstOrNull { it != "招牌" } ?: "门店现制"
     }
-    val stockLabel get() = when {
-        stock == null -> "有货"
-        stock == 0 -> "已沽清"
-        stock <= 5 -> "仅剩 $stock"
-        else -> "有货"
+    val stockLabel get() = totalStock.let { s ->
+        when {
+            s == null -> "有货"
+            s == 0 -> "已沽清"
+            s <= 5 -> "仅剩 $s"
+            else -> "有货"
+        }
     }
 }
 
-/** 规格组：单选。delta 为加价（分）。 */
-data class SpecGroup(val name: String, val options: List<SpecOption>)
-data class SpecOption(val name: String, val delta: Int = 0)
-
-data class Area(val id: String, val name: String, val short: String)
+/** 餐牌：只有已发布餐牌中的商品进入点餐；多个已发布餐牌取并集；空餐牌不可发布。 */
+@Serializable data class Menu(val id: String, val name: String, val en: String = "", val productIds: List<String>, val published: Boolean)
 
 @Serializable
 enum class TableStatus(val label: String) {
@@ -50,20 +79,26 @@ enum class TableStatus(val label: String) {
 @Serializable
 data class DiningTable(
     val id: String,
-    val area: String,
+    val areaId: String,
     val seats: Int,
     val status: TableStatus,
     val guests: Int = 0,
-    val minutes: Int = 0,
+    /** 开台时间（毫秒），用餐时长由当前时间计算。 */
+    val openedAt: Long = 0,
     val reservation: String = "",
     val paid: Int = 0,
-)
+) {
+    fun minutes(now: Long) = if (status == TableStatus.Dining && openedAt > 0) ((now - openedAt) / 60_000).toInt().coerceAtLeast(0) else 0
+}
 
-/** 行状态：新加（草稿）→ 已下单 → 催菜中 → 已上菜。送厨后不可直接改数量，状态不回退。 */
+/**
+ * 行状态：新加（草稿）→ 待同步（离线送厨已落盘）→ 已下单 → 催菜中 → 已上菜。
+ * 送厨后不可直接改数量，状态只进不退。
+ */
 @Serializable
-enum class LineStatus(val label: String) { New("新加"), Sent("已下单"), Rushing("催菜中"), Served("已上菜") }
+enum class LineStatus(val label: String) { New("新加"), Queued("待同步"), Sent("已下单"), Rushing("催菜中"), Served("已上菜") }
 
-/** 订单行。同一道菜不同规格分成两行；unit 为下单时的价格快照。 */
+/** 订单行：商品、规格、SKU 与单价均为下单时快照；batchId 为送厨批次（幂等键）。 */
 @Serializable
 data class OrderLine(
     val uid: Long,
@@ -73,20 +108,90 @@ data class OrderLine(
     val unit: Int,
     val qty: Int,
     val status: LineStatus,
+    val skuKey: String? = null,
+    val batchId: String? = null,
 )
 
-/** 一张桌台的当前订单。member 为是否绑定会员（演示 95 折）。 */
 @Serializable
 data class TableOrder(val lines: List<OrderLine> = emptyList(), val member: Boolean = false) {
     val pending get() = lines.filter { it.status == LineStatus.New }
+    val queued get() = lines.filter { it.status == LineStatus.Queued }
     val sent get() = lines.filter { it.status != LineStatus.New }
 }
 
-/** 金额：小计、服务费 5%（演示）、优惠、应收；items 为份数，newItems 为待送厨份数。 */
-data class Totals(val sub: Int, val service: Int, val discount: Int, val due: Int, val items: Int, val newItems: Int)
+/** 金额：小计、服务费 5%（演示）、优惠、应收；items 份数；newItems 待送厨份数；queuedItems 待同步份数。 */
+data class Totals(val sub: Int, val service: Int, val discount: Int, val due: Int, val items: Int, val newItems: Int, val queuedItems: Int = 0)
 
-/** 门店会话：门店、员工终端、当前工作桌台。 */
-data class Session(val store: String, val staff: String, val currentTableId: String)
+/** 收款记录（本机落盘，联网后同步）。 */
+@Serializable
+data class PaymentRecord(val id: String, val tableId: String, val amount: Int, val method: String, val at: Long, val synced: Boolean = false)
 
-/** 设备与网络状态（演示开关）。 */
-data class DeviceStatus(val online: Boolean = true, val printerOk: Boolean = true)
+@Serializable enum class OutboxKind(val label: String) { Kitchen("送厨"), Payment("收款") }
+@Serializable enum class OutboxState(val label: String) { Pending("待同步"), Done("已同步") }
+
+/** 同步队列项：离线产生的业务操作，联网后按创建顺序补发；id 即幂等键。 */
+@Serializable
+data class OutboxItem(
+    val id: String,
+    val kind: OutboxKind,
+    val tableId: String,
+    val summary: String,
+    val createdAt: Long,
+    val state: OutboxState = OutboxState.Pending,
+    val attempts: Int = 0,
+    val doneAt: Long = 0,
+)
+
+@Serializable
+data class StoreSettings(val shortName: String, val receiptFooter: String = "谢谢惠顾，欢迎再来", val hours: String = "10:00–22:00")
+
+/** 一家门店的全部本地数据。 */
+@Serializable
+data class StoreData(
+    val id: String,
+    val name: String,
+    val code: String,
+    val address: String,
+    val settings: StoreSettings,
+    val areas: List<Area>,
+    val tables: List<DiningTable>,
+    val categories: List<Category>,
+    val specGroups: List<SpecGroup>,
+    val products: List<Product>,
+    val menus: List<Menu>,
+    val orders: Map<String, TableOrder> = emptyMap(),
+    val payments: List<PaymentRecord> = emptyList(),
+    val outbox: List<OutboxItem> = emptyList(),
+    val currentTableId: String,
+    val seq: Long = 1,
+) {
+    /** 点餐可见商品：属于任一已发布餐牌。 */
+    val visibleProducts get(): List<Product> {
+        val ids = menus.filter { it.published }.flatMap { it.productIds }.toSet()
+        return products.filter { it.id in ids }
+    }
+}
+
+/** 本地账号：只存加盐哈希，不存明文密码。 */
+@Serializable data class Account(val email: String, val merchant: String, val salt: String, val hash: String)
+
+/** 会话（页头展示用）。 */
+data class Session(
+    val user: String?,
+    val storeId: String?,
+    val store: String,
+    val staff: String,
+    val currentTableId: String,
+)
+
+/** 设备与网络：online = 系统网络可用且未强制离线。 */
+data class DeviceStatus(
+    val network: Boolean = true,
+    val forceOffline: Boolean = false,
+    val printerOk: Boolean = true,
+) {
+    val online get() = network && !forceOffline
+}
+
+/** 门店卡片（选店页）。 */
+data class StoreSummary(val id: String, val name: String, val code: String, val address: String, val tables: Int, val dining: Int)
