@@ -20,6 +20,8 @@ import ai.neargo.fnb.pos.core.designsystem.component.Tag
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.colors
 import ai.neargo.fnb.pos.core.designsystem.theme.num
+import ai.neargo.fnb.pos.core.designsystem.theme.typography
+import ai.neargo.fnb.pos.core.model.FontChoice
 import ai.neargo.fnb.pos.core.designsystem.theme.tone
 import ai.neargo.fnb.pos.core.model.LineStatus
 import ai.neargo.fnb.pos.core.model.OrderLine
@@ -66,6 +68,7 @@ import androidx.compose.ui.unit.dp
 internal fun ColumnScope.GallerySection() {
     val c = Pos.colors
     val t = Pos.type
+    var cash by remember { mutableStateOf("") }
     var chip by remember { mutableStateOf("全部") }
     var qty by remember { mutableIntStateOf(2) }
     var text by remember { mutableStateOf("宫保鸡丁") }
@@ -75,6 +78,17 @@ internal fun ColumnScope.GallerySection() {
     var q by remember { mutableStateOf("") }
     PageHeader("组件验收", "与点餐、桌台、管理页共用同一套组件；切换显示设置可检查皮肤、密度、圆角与字号")
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Block("现金键盘与找零") {
+            ai.neargo.fnb.pos.core.designsystem.component.CashPad(cash, 25620, { cash = it })
+        }
+        Block("字体对照：标题与正文") {
+            FontChoice.entries.forEach { font ->
+                val sample = font.typography(1f)
+                Text(font.label + " · Aa 0123456789", style = sample.title, color = c.ink)
+                Text("宫保鸡丁 · Kung Pao Chicken · ¥48.00", style = sample.body.num(), color = c.sub)
+                Spacer(Modifier.height(8.dp))
+            }
+        }
         Block("按钮：变体 × 尺寸 × 状态") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 BtnVariant.entries.forEach { v -> PosButton(v.name, {}, variant = v) }
@@ -94,7 +108,7 @@ internal fun ColumnScope.GallerySection() {
                     RailItem("热销", 8, true, {}); RailItem("一个很长的分类名称", null, false, {})
                 }
                 QuantityStepper(qty, { qty = (qty + it).coerceIn(0, 9) }, max = 9)
-                SearchField(q, { q = it }, "搜索菜名、英文或编号", Modifier.width(260.dp))
+                SearchField(q, { q = it }, "搜索菜名、拼音、英文或编号", Modifier.width(260.dp))
             }
         }
         Block("表单：输入、错误、选择、复选、开关") {

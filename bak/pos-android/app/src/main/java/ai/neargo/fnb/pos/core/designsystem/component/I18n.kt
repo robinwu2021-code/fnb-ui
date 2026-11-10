@@ -57,7 +57,7 @@ object Translator {
         }
         exact = ex
         // 字面量越长越具体，优先匹配
-        templates = tpl.sortedByDescending { it.first.pattern.length }
+        templates = tpl.sortedByDescending { it.first.pattern.replace("(.+?)", "").replace("\\Q", "").replace("\\E", "").length }
     }
 
     fun en(s: String): String {

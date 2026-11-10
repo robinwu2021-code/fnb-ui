@@ -76,7 +76,7 @@ fun OrderScreen(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout
     val onDish: (Product) -> Unit = { d ->
         when {
             d.soldOut -> onAction(OrderAction.Notice("${d.name}已沽清"))
-            d.hasSpec -> specDish = d
+            d.hasSpec || d.mealGroups.isNotEmpty() -> specDish = d
             else -> onAction(OrderAction.AddDish(d))
         }
     }
@@ -91,8 +91,8 @@ fun OrderScreen(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout
     }
 
     specDish?.let { d ->
-        SpecDialog(d, state.groupsOf(d), onDismiss = { specDish = null }) { sku, qty ->
-            onAction(OrderAction.AddDish(d, sku, qty)); specDish = null
+        SpecDialog(d, state.groupsOf(d), onDismiss = { specDish = null }) { sku, qty, mealChoiceIds ->
+            onAction(OrderAction.AddDish(d, sku, qty, mealChoiceIds)); specDish = null
         }
     }
     detailDish?.let { d ->
@@ -179,7 +179,7 @@ private fun MenuPane(
         }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            SearchField(f.query, { onAction(OrderAction.Search(it)) }, "搜索菜名、英文或编号", Modifier.weight(1f).widthIn(min = 120.dp))
+            SearchField(f.query, { onAction(OrderAction.Search(it)) }, "搜索菜名、拼音、英文或编号", Modifier.weight(1f).widthIn(min = 120.dp))
             QuickFilters.forEach { (k, label) -> PosChip(label, f.tag == k, { onAction(OrderAction.Filter(k)) }) }
             PosIconButton(
                 if (f.arrange == Arrange.Top) Icons.Outlined.ViewAgenda else Icons.AutoMirrored.Outlined.ViewList,

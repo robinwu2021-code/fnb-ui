@@ -32,29 +32,48 @@ import androidx.compose.ui.unit.sp
  * 关键状态与操作文字不低于 12sp。
  */
 @Immutable
-class PosTypography(private val f: Float, private val family: FontFamily? = null) {
+class PosTypography(private val f: Float, private val family: FontFamily? = null, private val headingFamily: FontFamily? = family) {
     private fun s(v: Int, lh: Float, w: FontWeight = FontWeight.Normal) =
         TextStyle(fontSize = (v * f).sp, lineHeight = (v * f * lh).sp, fontWeight = w, fontFamily = family)
 
-    val title = s(20, 1.3f, FontWeight.SemiBold)
+    val title = s(20, 1.3f, FontWeight.SemiBold).copy(fontFamily = headingFamily)
     val tableNo = s(22, 1.3f, FontWeight.SemiBold)
-    val hero = s(28, 1.2f, FontWeight.SemiBold)
+    val hero = s(28, 1.2f, FontWeight.SemiBold).copy(fontFamily = headingFamily)
     val body = s(14, 1.5f)
     val strong = s(14, 1.4f, FontWeight.SemiBold)
     val line = s(15, 1.4f, FontWeight.SemiBold)
     val button = s(14, 1.3f, FontWeight.Medium)
     val header = s(13, 1.3f, FontWeight.Medium)
     val label = s(12, 1.4f)
-    val section = s(14, 1.4f, FontWeight.SemiBold)
+    val section = s(14, 1.4f, FontWeight.SemiBold).copy(fontFamily = headingFamily)
     val amount = s(26, 1.2f, FontWeight.Bold)
     val amountM = s(24, 1.2f, FontWeight.SemiBold)
 }
 
-/** Manrope 可变字体（随包，OFL）：拉丁文字与数字；中文按字形回退系统 Noto Sans CJK。 */
+/** Bundled variable fonts (OFL); missing Chinese glyphs use the Android system fallback. */
 @OptIn(ExperimentalTextApi::class)
-val Manrope = FontFamily(listOf(400, 500, 600, 700).map { w ->
-    Font(R.font.manrope, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+private fun bundledFont(resource: Int) = FontFamily(listOf(400, 500, 600, 700).map { w ->
+    Font(resource, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
 })
+
+val Manrope = bundledFont(R.font.manrope)
+val Inter = bundledFont(R.font.inter)
+val Roboto = bundledFont(R.font.roboto)
+val NotoSans = bundledFont(R.font.notosans)
+val IBMPlexSans = bundledFont(R.font.ibmplexsans)
+val Outfit = bundledFont(R.font.outfit)
+
+fun FontChoice.typography(scale: Float): PosTypography {
+    val body = when (this) {
+        FontChoice.Manrope -> Manrope
+        FontChoice.Inter, FontChoice.Outfit -> Inter
+        FontChoice.Roboto -> Roboto
+        FontChoice.NotoSans -> NotoSans
+        FontChoice.IBMPlexSans -> IBMPlexSans
+        FontChoice.System -> null
+    }
+    return PosTypography(scale, body, if (this == FontChoice.Outfit) Outfit else body)
+}
 
 /** 金额、数量、桌号用等宽数字。 */
 fun TextStyle.num() = copy(fontFeatureSettings = "tnum")
@@ -105,7 +124,7 @@ fun metricsOf(p: DisplayPrefs): PosMetrics {
 @Composable
 fun PosTheme(prefs: DisplayPrefs, content: @Composable () -> Unit) {
     val c = prefs.skin.colors()
-    val t = PosTypography(prefs.scale.factor, if (prefs.font == FontChoice.Manrope) Manrope else null)
+    val t = prefs.font.typography(prefs.scale.factor)
     val m = metricsOf(prefs)
     val scheme = lightColorScheme(
         primary = c.primary, onPrimary = c.onPrimary, primaryContainer = c.tint, onPrimaryContainer = c.primary,

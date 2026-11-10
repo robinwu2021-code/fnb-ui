@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.shift
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.SessionRepository
@@ -58,12 +59,12 @@ data class ShiftUiState(val shift: ShiftState = ShiftState(), val summary: Shift
 class ShiftViewModel(config: StoreConfigRepository, session: SessionRepository, private val shift: ShiftRepository, private val messages: MessageBus) : ViewModel() {
     val state = combine(config.current, session.session) { s, ss ->
         val st = s?.shift ?: ShiftState()
-        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st), ss.staff)
+        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st, s?.adjustments.orEmpty()), ss.staff)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShiftUiState())
 
     /** 交班：实盘金额（元）校验后生成交班记录与交班单，开启新班次。 */
-    fun close(counted: String, done: (String?) -> Unit) = viewModelScope.launch {
-        val fen = ManageRules.price(counted, "实盘金额").getOrElse { done(it.message); return@launch }
+    fun close(counted: String, done: (String?) -> Unit) = viewModelScope.launchStorage(messages) {
+        val fen = ManageRules.price(counted, "实盘金额").getOrElse { done(it.message); return@launchStorage }
         shift.closeShift(fen, state.value.staff)
             .onSuccess { r -> messages.post("已交班，差额 ${yuan(r.cashCounted - r.cashExpected)}；交班单已加入打印队列"); done(null) }
             .onFailure { done(it.message) }
@@ -109,6 +110,12 @@ private fun Summary(state: ShiftUiState, modifier: Modifier) {
                 KeyValue("收款笔数", "${s.count} 笔")
                 KeyValue("结账桌台", "${s.tables} 桌")
                 KeyValue("客单价", if (s.count > 0) yuan(s.total / s.count) else "—")
+            }
+            DetailBlock("退赠统计") {
+                KeyValue("退菜笔数", "${s.voidCount}")
+                KeyValue("退菜金额", yuan(s.voidAmount))
+                KeyValue("赠送笔数", "${s.giftCount}")
+                KeyValue("赠送金额", yuan(s.giftAmount))
             }
             DetailBlock("收款渠道") {
                 if (s.byMethod.isEmpty()) Text("本班暂无收款", style = t.label, color = c.sub)

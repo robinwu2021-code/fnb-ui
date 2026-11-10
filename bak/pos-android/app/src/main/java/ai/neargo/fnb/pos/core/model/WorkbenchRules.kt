@@ -29,8 +29,13 @@ object TableRules {
         else -> null
     }
 
-    fun merge(a: TableOrder, b: TableOrder) = TableOrder(
+    fun compatible(a: TableOrder, b: TableOrder): String? =
+        if (b.lines.isNotEmpty() && (a.discountPercent != b.discountPercent || a.member != b.member || a.coupon != b.coupon || a.activity != b.activity)) "双方优惠不同，请先核对优惠再并单" else null
+
+    fun merge(a: TableOrder, b: TableOrder) = b.copy(
         lines = b.lines + a.lines, member = a.member || b.member,
+        discountPercent = if (b.lines.isEmpty()) a.discountPercent else b.discountPercent,
+        coupon = a.coupon || b.coupon, activity = a.activity || b.activity,
         note = listOf(b.note, a.note).filter { it.isNotBlank() }.joinToString("；"),
     )
 
@@ -78,19 +83,24 @@ object Receipts {
         add(s.settings.shortName); add("【$title】桌台 $table"); add(time.format(Date(at))); add(rule())
         order.lines.forEach { l ->
             add(row(l.name + if (l.spec != OrderRules.DEFAULT_SPEC) "（${l.spec}）" else "", "${l.qty} × ${yuan(l.unit).drop(1)}"))
+            if (l.gifted) add("  赠送 ${yuan(l.unit * l.qty)}")
             if (l.note.isNotBlank()) add("  备注：${l.note}")
         }
         add(rule())
         add(row("小计", yuan(t.sub))); add(row("服务费 5%", yuan(t.service)))
-        if (t.discount > 0) add(row("会员优惠", yuan(-t.discount)))
+        if (t.discount > 0) add(row("优惠合计", yuan(-t.discount)))
         add(row("应收", yuan(t.due)))
-        if (payment != null) add(row("实收（${payment.method}）", yuan(payment.amount)))
+        if (payment != null) {
+            add(row("实收（${payment.method}）", yuan(payment.received)))
+            if (payment.method == "现金") add(row("找零", yuan(payment.change)))
+        }
         if (order.note.isNotBlank()) add("备注：${order.note}")
         add(rule()); add(s.settings.receiptFooter); add("${s.code} · ${s.address}")
     }
 
     fun shift(r: ShiftRecord) = buildList {
         add("【交班单】${r.staff}"); add("${time.format(Date(r.start))} — ${time.format(Date(r.end))}"); add(rule())
+        add(row("退菜 ${r.voidCount} 笔", yuan(r.voidAmount))); add(row("赠送 ${r.giftCount} 笔", yuan(r.giftAmount)))
         add(row("收款笔数", "${r.count}")); add(row("营业额", yuan(r.total)))
         r.byMethod.forEach { (m, v) -> add(row("  $m", yuan(v))) }
         add(rule()); add(row("备用金", yuan(r.float))); add(row("应有现金", yuan(r.cashExpected))); add(row("实盘", yuan(r.cashCounted)))
@@ -100,12 +110,15 @@ object Receipts {
 
 /** 交班汇总：只统计本班开始后的收款。 */
 object ShiftRules {
-    data class Summary(val count: Int, val total: Int, val byMethod: Map<String, Int>, val cash: Int, val cashExpected: Int, val tables: Int)
+    data class Summary(val count: Int, val total: Int, val byMethod: Map<String, Int>, val cash: Int, val cashExpected: Int, val tables: Int, val voidAmount: Int = 0, val voidCount: Int = 0, val giftAmount: Int = 0, val giftCount: Int = 0)
 
-    fun summary(payments: List<PaymentRecord>, shift: ShiftState): Summary {
+    fun summary(payments: List<PaymentRecord>, shift: ShiftState, adjustments: List<AdjustmentAudit> = emptyList()): Summary {
         val ps = payments.filter { it.at >= shift.start }
         val by = ps.groupBy { it.method }.mapValues { (_, v) -> v.sumOf { it.amount } }
         val cash = by["现金"] ?: 0
-        return Summary(ps.size, ps.sumOf { it.amount }, by, cash, shift.float + cash, ps.map { it.tableId }.distinct().size)
+        val voids = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Void }
+        val gifts = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Gift }
+        return Summary(ps.size, ps.sumOf { it.amount }, by, cash, shift.float + cash, ps.map { it.tableId }.distinct().size,
+            voids.sumOf { it.amount }, voids.size, gifts.sumOf { it.amount }, gifts.size)
     }
 }

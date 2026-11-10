@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.manage
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.LocalMedia
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -45,6 +46,7 @@ data class ProductDraft(
     val isNew: Boolean,
     val name: String = "",
     val en: String = "",
+    val searchAliases: String = "",
     val categoryId: String = "",
     val image: String? = null,
     val imageState: ImageState = ImageState.Empty,
@@ -61,6 +63,8 @@ data class ProductDraft(
     val menuIds: Set<String> = emptySet(),
     val hot: Boolean = false,
     val tags: List<String> = emptyList(),
+    val mealGroups: List<ai.neargo.fnb.pos.core.model.MealGroup> = emptyList(),
+    val mealPrices: Map<String, String> = emptyMap(),
     val errors: Map<String, String> = emptyMap(),
     val saving: Boolean = false,
     /** 有未保存改动：关闭前需确认放弃。 */
@@ -93,14 +97,14 @@ class ManageViewModel(
     fun select(section: Section) { saved["section"] = section.name }
 
     /** 通用保存：成功提示并回调 null；失败把原因交回表单就地显示。 */
-    fun save(ok: String, op: suspend StoreConfigRepository.() -> Result<Unit>, done: (String?) -> Unit) = viewModelScope.launch {
+    fun save(ok: String, op: suspend StoreConfigRepository.() -> Result<Unit>, done: (String?) -> Unit) = viewModelScope.launchStorage(messages) {
         val r = config.op()
         r.onSuccess { messages.post(ok) }
         done(r.exceptionOrNull()?.message)
     }
 
     fun saveSettings(s: StoreSettings, done: (String?) -> Unit) = save("门店信息已保存", { saveSettings(s) }, done)
-    fun logout() = viewModelScope.launch { session.logout() }
+    fun logout() = viewModelScope.launchStorage(messages) { session.logout() }
     fun notice(msg: String) = messages.post(msg)
 
     // —— 商品编辑 ——
@@ -112,12 +116,12 @@ class ManageViewModel(
     fun editProduct(p: Product) {
         val st = state.value.store ?: return
         draft.value = ProductDraft(
-            id = p.id, isNew = false, name = p.name, en = p.en, categoryId = p.categoryId, image = p.image,
+            id = p.id, isNew = false, name = p.name, en = p.en, searchAliases = p.searchAliases, categoryId = p.categoryId, image = p.image,
             imageState = if (p.image != null) ImageState.Ready else ImageState.Empty,
             price = fenToInput(p.price), stock = (p.stock ?: 0).toString(), unlimited = !p.hasSpec && p.stock == null,
             groupIds = p.specGroupIds.toSet(), skus = p.skus,
             skuPrice = p.skus.associate { it.key to fenToInput(it.price) }, skuStock = p.skus.associate { it.key to it.stock.toString() },
-            menuIds = st.menus.filter { p.id in it.productIds }.map { it.id }.toSet(), hot = p.hot, tags = p.tags,
+            menuIds = st.menus.filter { p.id in it.productIds }.map { it.id }.toSet(), hot = p.hot, tags = p.tags, mealGroups = p.mealGroups,
         )
     }
 
@@ -158,7 +162,7 @@ class ManageViewModel(
     fun pickImage(uri: Uri) {
         val token = (draft.value?.imageToken ?: 0) + 1
         edit { it.copy(imageState = ImageState.Reading, imageError = null, imageToken = token) }
-        viewModelScope.launch {
+        viewModelScope.launchStorage(messages) {
             val r = media.import(uri)
             draft.update { d ->
                 if (d == null || d.imageToken != token) return@update d
@@ -174,6 +178,12 @@ class ManageViewModel(
         val d = draft.value ?: return
         if (d.saving) return
         val errors = mutableMapOf<String, String>()
+        val mealGroups = d.mealGroups.map { g -> g.copy(choices = g.choices.map { c ->
+            val input = d.mealPrices["${g.id}:${c.id}"] ?: fenToInput(c.delta)
+            val delta = ManageRules.price(input, "换菜加价").getOrElse { errors["mealGroups"] = it.message!!; c.delta }
+            c.copy(name = c.name.trim(), delta = delta)
+        }, name = g.name.trim()) }
+        ai.neargo.fnb.pos.core.model.MealRules.validate(mealGroups)?.let { errors["mealGroups"] = it }
         ManageRules.required(d.name, "商品名称")?.let { errors["name"] = it }
         ManageRules.required(d.en, "英文名称")?.let { errors["en"] = it }
         if (d.categoryId.isBlank()) errors["category"] = "请选择分类"
@@ -189,11 +199,11 @@ class ManageViewModel(
         }
         if (errors.isNotEmpty()) { draft.value = d.copy(errors = errors); return }
         val product = Product(
-            id = d.id, name = d.name.trim(), en = d.en.trim(), categoryId = d.categoryId, price = price, stock = stock,
-            specGroupIds = d.groupIds.sorted(), skus = skus, image = d.image, tags = d.tags, hot = d.hot,
+            id = d.id, name = d.name.trim(), en = d.en.trim(), searchAliases = d.searchAliases.trim(), categoryId = d.categoryId, price = price, stock = stock,
+            specGroupIds = d.groupIds.sorted(), skus = skus, image = d.image, tags = d.tags, hot = d.hot, mealGroups = mealGroups,
         )
         draft.value = d.copy(saving = true)
-        viewModelScope.launch {
+        viewModelScope.launchStorage(messages) {
             config.saveProduct(product, d.menuIds)
                 .onSuccess { messages.post(if (d.isNew) "已新建商品 ${product.name}" else "已保存 ${product.name}"); draft.value = null }
                 .onFailure { draft.value = d.copy(saving = false, errors = mapOf("name" to (it.message ?: "保存失败"))) }

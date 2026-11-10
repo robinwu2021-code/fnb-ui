@@ -1,0 +1,14 @@
+inter: https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf
+License: https://github.com/google/fonts/blob/main/ofl/inter/OFL.txt
+
+roboto: https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf
+License: https://github.com/google/fonts/blob/main/ofl/roboto/OFL.txt
+
+notosans: https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf
+License: https://github.com/google/fonts/blob/main/ofl/notosans/OFL.txt
+
+ibmplexsans: https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf
+License: https://github.com/google/fonts/blob/main/ofl/ibmplexsans/OFL.txt
+
+outfit: https://raw.githubusercontent.com/google/fonts/main/ofl/outfit/Outfit%5Bwght%5D.ttf
+License: https://github.com/google/fonts/blob/main/ofl/outfit/OFL.txt

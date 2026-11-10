@@ -117,7 +117,7 @@ fun OrderLineRow(
         Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
             Text(line.name, style = t.line, color = c.ink, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.width(8.dp))
-            Text(yuan(line.unit * line.qty), style = t.line.num(), color = c.ink, maxLines = 1, softWrap = false)
+            Text(yuan(if (line.gifted) 0 else line.unit * line.qty), style = t.line.num(), color = c.ink, maxLines = 1, softWrap = false)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).then(if (onNote != null) Modifier.clickable(role = Role.Button, onClickLabel = "菜品备注", onClick = onNote) else Modifier)) {
@@ -125,7 +125,8 @@ fun OrderLineRow(
                 if (line.note.isNotBlank()) Text("备注：${line.note}", style = t.label, color = c.warning, maxLines = 2)
                 else if (onNote != null) Text("+ 备注", style = t.label, color = c.primary)
             }
-            if (line.status == LineStatus.New) {
+            if (line.gifted) Text("赠送 · ×${line.qty}", style = t.label, color = c.primary)
+            else if (line.status == LineStatus.New) {
                 QuantityStepper(line.qty, onQty)
             } else {
                 val stateColor = when (line.status) {

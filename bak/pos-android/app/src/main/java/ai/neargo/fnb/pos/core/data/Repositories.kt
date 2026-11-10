@@ -56,9 +56,12 @@ interface StoreConfigRepository {
 /** 桌台状态流转。开台、结账会同时影响订单，由实现保证原子性。 */
 interface FloorRepository {
     val tables: StateFlow<List<DiningTable>>
+    suspend fun createReservation(tableId: String, name: String, phone: String, guests: Int, arrivesAt: Long, note: String): Result<Unit>
+    suspend fun cancelReservation(id: String): Result<Unit>
+    suspend fun checkInReservation(id: String): Result<Unit>
     suspend fun openTable(tableId: String, guests: Int): Result<Unit>
     /** 结账：有新加或待同步行时拒绝；离线收款进入同步队列。 */
-    suspend fun settle(tableId: String, amount: Int, method: String, online: Boolean): Result<Unit>
+    suspend fun settle(tableId: String, amount: Int, method: String, online: Boolean, received: Int = amount): Result<Unit>
     suspend fun startCleaning(tableId: String): Result<Unit>
     suspend fun finishCleaning(tableId: String): Result<Unit>
     /** 平面位置（画布单位）。 */
@@ -77,7 +80,9 @@ data class SendResult(val qty: Int, val queued: Boolean)
 /** 订单：按桌台隔离保存；规则校验失败返回 Rejected，不修改数据。 */
 interface OrderRepository {
     val orders: StateFlow<Map<String, TableOrder>>
-    suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String = ""): OrderResult
+    suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String = "", mealChoiceIds: List<String> = emptyList()): OrderResult
+    suspend fun authorizeAdjustment(tableId: String, request: ai.neargo.fnb.pos.core.model.AdjustmentRequest, email: String, password: String): Result<Unit>
+    suspend fun setBenefits(tableId: String, coupon: Boolean, activity: Boolean): Result<Unit>
     suspend fun setLineNote(tableId: String, uid: Long, note: String): OrderResult
     suspend fun setOrderNote(tableId: String, note: String): Result<Unit>
     /** 挂单：把草稿菜品暂存为票据并从桌台移除，返回份数。 */

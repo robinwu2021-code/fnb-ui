@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.display
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -81,17 +82,17 @@ class DisplayViewModel(
     private val prefs: PreferencesRepository,
     private val device: DeviceRepository,
     private val messages: MessageBus,
-    private val resetDemo: () -> Unit,
+    private val resetDemo: suspend () -> Unit,
 ) : ViewModel() {
     val state = combine(prefs.prefs, device.status, ::DisplayUiState).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DisplayUiState())
 
     fun onAction(a: DisplayAction) {
         when (a) {
-            is DisplayAction.Update -> viewModelScope.launch { prefs.update(a.transform) }
-            DisplayAction.RestoreDefaults -> viewModelScope.launch { prefs.update { DisplayPrefs() } }
+            is DisplayAction.Update -> viewModelScope.launchStorage(messages) { prefs.update(a.transform) }
+            DisplayAction.RestoreDefaults -> viewModelScope.launchStorage(messages) { prefs.update { DisplayPrefs() } }
             is DisplayAction.ForceOffline -> device.setForceOffline(a.on)
             is DisplayAction.PrinterOk -> device.setPrinterOk(a.ok)
-            DisplayAction.ResetDemoData -> { resetDemo(); messages.post("已重置演示桌台与订单") }
+            DisplayAction.ResetDemoData -> viewModelScope.launchStorage(messages) { resetDemo(); messages.post("已重置演示桌台与订单") }
         }
     }
 }
@@ -162,7 +163,7 @@ fun DisplaySheet(state: DisplayUiState, onAction: (DisplayAction) -> Unit, onDis
                     Options(TextScale.entries, p.scale, { it.label }) { v -> set { it.copy(scale = v) } }
                     Label("字体")
                     Options(FontChoice.entries, p.font, { it.label }) { v -> set { it.copy(font = v) } }
-                    Text("Manrope 随包提供（拉丁文字与数字），中文使用系统 Noto Sans CJK；其他字体方案按需随包加入", style = t.label, color = c.sub, modifier = Modifier.padding(top = 8.dp))
+                    Text("六种字体均随包提供；Outfit 用于标题、Inter 用于正文，中文使用系统 Noto Sans CJK", style = t.label, color = c.sub, modifier = Modifier.padding(top = 8.dp))
                     Label("语言")
                     Options(Lang.entries, p.lang, { it.label }) { v -> set { it.copy(lang = v) } }
                 }

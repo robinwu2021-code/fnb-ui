@@ -72,6 +72,7 @@ fun ProductEditor(d: ProductDraft, store: StoreData, vm: ManageViewModel) {
             Part("01", "基本资料与分类") {
                 PosTextField(d.name, { v -> vm.edit { it.copy(name = v) } }, "商品名称", error = d.errors["name"])
                 PosTextField(d.en, { v -> vm.edit { it.copy(en = v) } }, "英文名称", error = d.errors["en"])
+                PosTextField(d.searchAliases, { v -> vm.edit { it.copy(searchAliases = v) } }, "拼音 / 首字母（空格分隔）")
                 PosSelect("分类", store.categories, store.categories.firstOrNull { it.id == d.categoryId }, { it.name }, { cat -> vm.edit { it.copy(categoryId = cat.id) } })
                 PosCheckRow("热销推荐（出现在点餐「热销」分类）", d.hot, { on -> vm.edit { it.copy(hot = on) } })
             }
@@ -123,6 +124,7 @@ fun ProductEditor(d: ProductDraft, store: StoreData, vm: ManageViewModel) {
                 }
             }
         })
+        MealEditorSection(d, vm)
         if (d.skus.isNotEmpty() || d.errors["skus"] != null) {
             Part("SKU", "规格组合（${d.skus.size} / ${ManageRules.MAX_SKUS}）") {
                 d.errors["skus"]?.let { Text(it, style = Pos.type.label, color = c.danger) }

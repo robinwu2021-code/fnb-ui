@@ -88,6 +88,7 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                             val item: @Composable (String, Boolean, () -> Unit) -> Unit = { label, enabled, act ->
                                 DropdownMenuItem({ Text(label, style = t.body) }, { more = false; act() }, enabled = enabled)
                             }
+                            item("主管授权 · 退赠折扣", state.canOrder) { dialog = "adjust" }
                             item("换桌", state.canOrder) { dialog = "change" }
                             item("并台", state.canOrder) { dialog = "merge" }
                             item("拆单", state.canOrder && state.order.lines.size > 1) { dialog = "split" }
@@ -103,7 +104,7 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val m = Modifier.weight(1f)
                 PosButton("会员", { onAction(OrderAction.ToggleMember) }, m, size = BtnSize.Small, selected = state.order.member, textStyle = t.label, enabled = state.canOrder)
-                PosButton("优惠券", { onAction(OrderAction.Notice("优惠券：满200减10（演示，结账时核对）")) }, m, size = BtnSize.Small, textStyle = t.label)
+                PosButton("优惠券", { onAction(OrderAction.ToggleCoupon) }, m, size = BtnSize.Small, textStyle = t.label, selected = state.order.coupon)
                 PosButton("备注", { dialog = "note" }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder, selected = state.order.note.isNotBlank())
                 PosButton(if (state.order.pending.isEmpty() && state.held.isNotEmpty()) "取单 ${state.held.size}" else "挂单",
                     { if (state.order.pending.isEmpty() && state.held.isNotEmpty()) dialog = "retrieve" else onAction(OrderAction.Hold) }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder)
@@ -125,7 +126,7 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                     items(queued, key = { it.uid }) { l -> OrderLineRow(l, {}, null) }
                 }
                 if (sent.isNotEmpty()) {
-                    item(key = "g-sent") { GroupTitle("已下单 · ${sent.sumOf { it.qty }} 份", action = "批量") { onAction(OrderAction.Notice("批量催菜 / 上菜（演示）")) } }
+                    item(key = "g-sent") { GroupTitle("已下单 · ${sent.sumOf { it.qty }} 份", action = "批量") { dialog = "batch" } }
                     items(sent, key = { it.uid }) { l -> OrderLineRow(l, {}, { to -> onAction(OrderAction.Advance(l.uid, to)) }) }
                 }
                 if (state.order.lines.isEmpty()) {
@@ -166,6 +167,20 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
 private fun DockDialogs(state: OrderUiState, dialog: String?, close: () -> Unit, onAction: (OrderAction) -> Unit) {
     val tb = state.table ?: return
     when (dialog) {
+        "batch" -> {
+            var selected by remember { mutableStateOf(setOf<Long>()) }
+            val lines = state.order.lines.filter { it.status == LineStatus.Sent || it.status == LineStatus.Rushing }
+            PosDialog("批量菜品操作", close, maxWidth = 560.dp, footer = {
+                PosButton("取消", close)
+                PosButton("催菜", { onAction(OrderAction.BatchAdvance(selected, LineStatus.Rushing)); close() }, enabled = selected.isNotEmpty())
+                PosButton("已上菜", { onAction(OrderAction.BatchAdvance(selected, LineStatus.Served)); close() }, variant = BtnVariant.Primary, enabled = selected.isNotEmpty())
+            }) {
+                PosCheckRow("全选", lines.isNotEmpty() && selected.size == lines.size, { selected = if (it) lines.map { l -> l.uid }.toSet() else emptySet() })
+                lines.forEach { l -> PosCheckRow("${l.name} ×${l.qty}", l.uid in selected, { selected = if (it) selected + l.uid else selected - l.uid }, trailing = l.status.label) }
+                if (lines.isEmpty()) Text("没有可操作的菜品", style = Pos.type.body, color = Pos.colors.sub)
+            }
+        }
+        "adjust" -> ai.neargo.fnb.pos.feature.common.AdjustmentDialog(state.order, state.audits, close) { request, email, password, done -> onAction(OrderAction.Adjust(request, email, password, done)) }
         "note" -> NoteDialog("${tb.id} 整单备注", state.order.note, OrderNoteTags, close) { n, done -> onAction(OrderAction.OrderNote(n, done)) }
         "change" -> TablePickDialog("${tb.id} 换桌", "整单移到空闲或已预订的桌台，原桌转待清台",
             state.tables.filter { it.id != tb.id && (it.status == TableStatus.Idle || it.status == TableStatus.Reserved) && it.seats >= tb.guests }, close, confirm = "换桌") { to, _, done ->

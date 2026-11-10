@@ -44,22 +44,27 @@ import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SpecDialog(dish: Product, groups: List<SpecGroup>, onDismiss: () -> Unit, onConfirm: (sku: Sku, qty: Int) -> Unit) {
+fun SpecDialog(dish: Product, groups: List<SpecGroup>, onDismiss: () -> Unit, onConfirm: (sku: Sku?, qty: Int, mealChoiceIds: List<String>) -> Unit) {
     val c = Pos.colors
     val t = Pos.type
     // 默认选中第一个有库存的组合
     val first = dish.skus.firstOrNull { it.stock > 0 } ?: dish.skus.firstOrNull()
-    val picks = remember { mutableStateListOf(*groups.map { g -> first?.optionIds?.firstOrNull { id -> g.options.any { it.id == id } } ?: g.options.first().id }.toTypedArray()) }
-    var qty by remember { mutableIntStateOf(1) }
+    val picks = remember(dish.id) { mutableStateListOf(*groups.map { g -> first?.optionIds?.firstOrNull { id -> g.options.any { it.id == id } } ?: g.options.first().id }.toTypedArray()) }
+    var qty by remember(dish.id) { mutableIntStateOf(1) }
+    val mealPicks = remember(dish.id) { mutableStateListOf(*dish.mealGroups.map { it.choices.firstOrNull()?.id.orEmpty() }.toTypedArray()) }
     val sku = ManageRules.findSku(dish, picks.toList())
-    val soldOut = sku == null || sku.stock == 0
+    val meal = ai.neargo.fnb.pos.core.model.MealRules.resolve(dish, mealPicks.toList()).getOrNull()
+    val stock = if (dish.hasSpec) sku?.stock ?: 0 else dish.stock ?: Int.MAX_VALUE
+    val soldOut = stock == 0 || (dish.hasSpec && sku == null) || meal == null
+    val unitPrice = (sku?.price ?: dish.price).toLong() + (meal?.sumOf { it.delta.toLong() } ?: 0)
+    val affordable = unitPrice * qty <= Int.MAX_VALUE
 
     PosDialog(
-        dish.name, onDismiss, subtitle = "${dish.en} · ${if (sku == null) "组合不可售" else if (sku.stock == 0) "该组合已沽清" else "余 ${sku.stock} 份"}",
+        dish.name, onDismiss, subtitle = "${dish.en} · ${if (soldOut) "组合不可售" else if (stock == Int.MAX_VALUE) "不限量" else "余 $stock 份"}",
         footer = {
-            Text(if (sku == null) "—" else yuan(sku.price * qty), style = t.amountM.num(), color = c.ink, modifier = Modifier.weight(1f))
-            QuantityStepper(qty, { qty = (qty + it).coerceIn(1, (sku?.stock ?: 1).coerceAtLeast(1)) }, min = 1, max = sku?.stock ?: 1)
-            PosButton("加入账单", { sku?.let { onConfirm(it, qty) } }, variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !soldOut)
+            Text(if (soldOut || !affordable) "—" else yuan((unitPrice * qty).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), style = t.amountM.num(), color = c.ink, modifier = Modifier.weight(1f))
+            QuantityStepper(qty, { qty = (qty + it).coerceIn(1, stock.coerceIn(1, 999)) }, min = 1, max = stock.coerceIn(1, 999))
+            PosButton("加入账单", { onConfirm(sku, qty, mealPicks.toList()) }, variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !soldOut && affordable)
         },
     ) {
         groups.forEachIndexed { gi, g ->
@@ -68,7 +73,15 @@ fun SpecDialog(dish: Product, groups: List<SpecGroup>, onDismiss: () -> Unit, on
                 g.options.forEach { o -> PosChip(if (o.delta > 0) "${o.name} +${yuan(o.delta)}" else o.name, picks[gi] == o.id, { picks[gi] = o.id; qty = 1 }) }
             }
         }
-        Text(if (sku == null) "所选组合未配置 SKU" else "已选：${sku.label}", style = t.label, color = if (soldOut) c.danger else c.sub, modifier = Modifier.padding(vertical = 12.dp))
+        dish.mealGroups.forEachIndexed { index, group ->
+            Text(group.name, style = t.section, color = c.ink, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                group.choices.forEach { choice ->
+                    PosChip(choice.name + if (choice.delta > 0) " +${yuan(choice.delta)}" else "", mealPicks[index] == choice.id, { mealPicks[index] = choice.id; qty = 1 })
+                }
+            }
+        }
+        Text(if (dish.hasSpec && sku == null) "所选组合未配置 SKU" else "已选：" + listOfNotNull(sku?.label, meal?.joinToString(" / ") { it.label }?.takeIf { it.isNotEmpty() }).joinToString(" / "), style = t.label, color = if (soldOut) c.danger else c.sub, modifier = Modifier.padding(vertical = 12.dp))
     }
 }
 
@@ -82,7 +95,7 @@ fun DishDetailDialog(dish: Product, qty: Int, onDismiss: () -> Unit, onAdd: () -
         footer = {
             Text(yuan(dish.displayPrice) + if (dish.hasSpec) " 起" else "", style = t.amountM.num(), color = c.ink, modifier = Modifier.weight(1f))
             PosButton("关闭", onDismiss)
-            if (!dish.soldOut) PosButton(if (dish.hasSpec) "选规格" else "加一份", onAdd, variant = BtnVariant.Primary, size = BtnSize.Large)
+            if (!dish.soldOut) PosButton(if (dish.hasSpec || dish.mealGroups.isNotEmpty()) "选规格" else "加一份", onAdd, variant = BtnVariant.Primary, size = BtnSize.Large)
         },
     ) {
         val imgMod = Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(Pos.metrics.card)

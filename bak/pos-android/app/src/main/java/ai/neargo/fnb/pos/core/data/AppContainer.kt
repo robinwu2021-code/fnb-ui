@@ -41,7 +41,7 @@ class AppContainer(context: Context) {
     private val dataStore = context.applicationContext.posStore
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val workspace = LocalWorkspace(DataStoreSnapshot(dataStore), appScope).also { runBlocking { it.restore() } }
+    private val workspace = LocalWorkspace(MigratingSnapshotStore(SqliteSnapshotStore(context), DataStoreSnapshot(dataStore)), appScope).also { runBlocking { it.restore() } }
     val session: SessionRepository = workspace
     val config: StoreConfigRepository = workspace
     val floor: FloorRepository = workspace
@@ -61,7 +61,7 @@ class AppContainer(context: Context) {
     }
 
     /** 显示设置里的「重置演示数据」：只重置当前门店。 */
-    fun resetDemo() = appScope.launch { workspace.resetDemo() }
+    suspend fun resetDemo() { workspace.resetDemo() }
 }
 
 /**
@@ -74,8 +74,10 @@ private class SyncEngine(private val device: DeviceRepository, private val sync:
             .collectLatest { ready ->
                 if (!ready) return@collectLatest
                 delay(1_200)
-                val n = sync.syncNow()
-                if (n > 0) messages.post("网络已恢复，已同步 $n 项离线操作")
+                try {
+                    val n = sync.syncNow()
+                    if (n > 0) messages.post("网络已恢复，已同步 $n 项离线操作")
+                } catch (e: WorkspaceWriteException) { messages.post(requireNotNull(e.message)) }
             }
     }
 }
@@ -91,8 +93,10 @@ private class PrintEngine(private val device: DeviceRepository, private val prin
         }.distinctUntilChanged().collectLatest { (ok, pending, retry) ->
             if (pending + retry == 0) return@collectLatest
             delay(600)
-            val failed = print.process(ok)
-            if (failed > 0) messages.post("厨房打印机缺纸，$failed 张厨房单待重打（换纸后自动重试）")
+            try {
+                val failed = print.process(ok)
+                if (failed > 0) messages.post("厨房打印机缺纸，$failed 张厨房单待重打（换纸后自动重试）")
+            } catch (e: WorkspaceWriteException) { messages.post(requireNotNull(e.message)) }
         }
     }
 }

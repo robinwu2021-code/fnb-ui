@@ -37,6 +37,6 @@ class TranslatorTest {
     /** 所有词条都能加载（Android ICU 对正则更严格，模板必须可编译）。 */
     @Test fun everyTemplateCompiles() {
         val keys = Regex("\"((?:[^\"\\\\]|\\\\.)*)\"\\s*:").findAll(File("src/main/assets/i18n/en.json").readText()).count()
-        assertEquals(728, keys)
+        assertEquals(kotlinx.serialization.json.Json.parseToJsonElement(File("src/main/assets/i18n/en.json").readText()).let { (it as kotlinx.serialization.json.JsonObject).size }, keys)
     }
 }

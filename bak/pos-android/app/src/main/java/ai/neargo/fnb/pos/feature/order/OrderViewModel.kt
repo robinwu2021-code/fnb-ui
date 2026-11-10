@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.order
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.FloorRepository
 import ai.neargo.fnb.pos.core.data.PrintRepository
@@ -50,6 +51,7 @@ data class OrderUiState(
     val online: Boolean = true,
     val held: List<HeldTicket> = emptyList(),
     val tables: List<DiningTable> = emptyList(),
+    val audits: List<ai.neargo.fnb.pos.core.model.AdjustmentAudit> = emptyList(),
 ) {
     val canOrder get() = table?.status == TableStatus.Dining
     /** 某商品关联的规格组（按 ID 排序，与 SKU 生成顺序一致）。 */
@@ -61,12 +63,15 @@ sealed interface OrderAction {
     data class Search(val query: String) : OrderAction
     data class Filter(val tag: String?) : OrderAction
     data object ToggleArrange : OrderAction
-    data class AddDish(val dish: Product, val sku: Sku? = null, val qty: Int = 1) : OrderAction
+    data class AddDish(val dish: Product, val sku: Sku? = null, val qty: Int = 1, val mealChoiceIds: List<String> = emptyList()) : OrderAction
     data class ChangeQty(val uid: Long, val delta: Int) : OrderAction
     data object ClearNew : OrderAction
     data object SendToKitchen : OrderAction
     data class Advance(val uid: Long, val to: LineStatus) : OrderAction
     data object ToggleMember : OrderAction
+    data object ToggleCoupon : OrderAction
+    data class BatchAdvance(val uids: Set<Long>, val to: LineStatus) : OrderAction
+    data class Adjust(val request: ai.neargo.fnb.pos.core.model.AdjustmentRequest, val email: String, val password: String, val done: (String?) -> Unit) : OrderAction
     data class Notice(val message: String) : OrderAction
     data class LineNote(val uid: Long, val note: String, val done: (String?) -> Unit) : OrderAction
     data class OrderNote(val note: String, val done: (String?) -> Unit) : OrderAction
@@ -110,7 +115,7 @@ class OrderViewModel(
         val visible = store.visibleProducts
         val q = f.query.trim()
         val base = when {
-            q.isNotEmpty() -> visible.filter { it.name.contains(q) || it.en.contains(q, ignoreCase = true) || it.id == q }
+            q.isNotEmpty() -> visible.filter { ai.neargo.fnb.pos.core.model.ProductSearch.matches(it, q) }
             f.cat == HOT -> visible.filter { it.hot }
             else -> visible.filter { it.categoryId == f.cat }
         }.let { list -> if (f.tag == null) list else list.filter { f.tag in it.tags } }
@@ -128,6 +133,7 @@ class OrderViewModel(
             online = d.online,
             held = store.held,
             tables = store.tables,
+            audits = store.adjustments.filter { it.tableId == store.currentTableId },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrderUiState())
 
@@ -139,46 +145,49 @@ class OrderViewModel(
             is OrderAction.Search -> saved[KEY_QUERY] = a.query
             is OrderAction.Filter -> saved[KEY_TAG] = a.tag
             OrderAction.ToggleArrange -> saved[KEY_ARRANGE] = (if (state.value.filter.arrange == Arrange.Top) Arrange.Left else Arrange.Top).name
-            is OrderAction.AddDish -> launchResult { orders.addDish(tableId, a.dish, a.sku, a.qty) }
+            is OrderAction.AddDish -> launchResult { orders.addDish(tableId, a.dish, a.sku, a.qty, mealChoiceIds = a.mealChoiceIds) }
+            is OrderAction.BatchAdvance -> viewModelScope.launchStorage(messages) { a.uids.forEach { orders.advance(tableId, it, a.to) }; messages.post("已批量更新菜品状态") }
+            is OrderAction.Adjust -> viewModelScope.launchStorage(messages) { orders.authorizeAdjustment(tableId, a.request, a.email, a.password).onSuccess { a.done(null) }.onFailure { a.done(it.message) } }
+            OrderAction.ToggleCoupon -> viewModelScope.launchStorage(messages) { orders.setBenefits(tableId, !state.value.order.coupon, state.value.order.activity).onFailure { messages.post(it.message ?: "优惠不可用") } }
             is OrderAction.ChangeQty -> launchResult { orders.changeQty(tableId, a.uid, a.delta) }
-            OrderAction.ClearNew -> viewModelScope.launch { orders.clearNew(tableId); messages.post("已清空新加菜品") }
-            OrderAction.SendToKitchen -> viewModelScope.launch {
+            OrderAction.ClearNew -> viewModelScope.launchStorage(messages) { orders.clearNew(tableId); messages.post("已清空新加菜品") }
+            OrderAction.SendToKitchen -> viewModelScope.launchStorage(messages) {
                 val r = orders.sendToKitchen(tableId, device.status.value.online)
                 if (r.qty > 0) messages.post(if (r.queued) "离线：${r.qty} 份已存入同步队列，联网后自动送厨" else "已送厨 ${r.qty} 份（演示）")
             }
-            is OrderAction.Advance -> viewModelScope.launch {
+            is OrderAction.Advance -> viewModelScope.launchStorage(messages) {
                 orders.advance(tableId, a.uid, a.to)
                 messages.post(if (a.to == LineStatus.Rushing) "已催菜" else "已标记上菜")
             }
-            OrderAction.ToggleMember -> viewModelScope.launch {
+            OrderAction.ToggleMember -> viewModelScope.launchStorage(messages) {
                 val on = !state.value.order.member
                 orders.setMember(tableId, on)
                 messages.post(if (on) "已绑定会员 · 95 折（演示）" else "已解绑会员")
             }
             is OrderAction.Notice -> messages.post(a.message)
-            is OrderAction.LineNote -> viewModelScope.launch {
+            is OrderAction.LineNote -> viewModelScope.launchStorage(messages) {
                 when (val r = orders.setLineNote(tableId, a.uid, a.note)) {
                     is OrderResult.Ok -> a.done(null)
                     is OrderResult.Rejected -> a.done(r.reason)
                 }
             }
-            is OrderAction.OrderNote -> viewModelScope.launch { orders.setOrderNote(tableId, a.note).finish("整单备注已保存", a.done) }
-            OrderAction.Hold -> viewModelScope.launch {
+            is OrderAction.OrderNote -> viewModelScope.launchStorage(messages) { orders.setOrderNote(tableId, a.note).finish("整单备注已保存", a.done) }
+            OrderAction.Hold -> viewModelScope.launchStorage(messages) {
                 orders.hold(tableId).onSuccess { messages.post("已挂单 $it 份，可在「取单」取回") }.onFailure { messages.post(it.message ?: "挂单失败") }
             }
-            is OrderAction.Retrieve -> viewModelScope.launch {
+            is OrderAction.Retrieve -> viewModelScope.launchStorage(messages) {
                 orders.retrieve(a.ticketId, tableId).onSuccess { messages.post("已取单到 $tableId") }.onFailure { messages.post(it.message ?: "取单失败") }
             }
-            OrderAction.PreBill -> viewModelScope.launch { print.preBill(tableId).onSuccess { messages.post("预结单已加入打印队列") }.onFailure { messages.post(it.message ?: "打印失败") } }
-            is OrderAction.Change -> viewModelScope.launch { val from = tableId; floor.changeTable(from, a.to).finish("$from 已换到 ${a.to}，原桌待清台", a.done) }
-            is OrderAction.Merge -> viewModelScope.launch { val from = tableId; floor.mergeTable(from, a.into).finish("$from 已并入 ${a.into}，原桌待清台", a.done) }
-            is OrderAction.Split -> viewModelScope.launch { floor.splitLines(tableId, a.uids, a.to, a.guests).finish("已拆出 ${a.uids.size} 道菜到 ${a.to}", a.done) }
+            OrderAction.PreBill -> viewModelScope.launchStorage(messages) { print.preBill(tableId).onSuccess { messages.post("预结单已加入打印队列") }.onFailure { messages.post(it.message ?: "打印失败") } }
+            is OrderAction.Change -> viewModelScope.launchStorage(messages) { val from = tableId; floor.changeTable(from, a.to).finish("$from 已换到 ${a.to}，原桌待清台", a.done) }
+            is OrderAction.Merge -> viewModelScope.launchStorage(messages) { val from = tableId; floor.mergeTable(from, a.into).finish("$from 已并入 ${a.into}，原桌待清台", a.done) }
+            is OrderAction.Split -> viewModelScope.launchStorage(messages) { floor.splitLines(tableId, a.uids, a.to, a.guests).finish("已拆出 ${a.uids.size} 道菜到 ${a.to}", a.done) }
         }
     }
 
     private fun Result<Unit>.finish(ok: String, done: (String?) -> Unit) { onSuccess { messages.post(ok) }; done(exceptionOrNull()?.message) }
 
-    private fun launchResult(block: suspend () -> OrderResult) = viewModelScope.launch {
+    private fun launchResult(block: suspend () -> OrderResult) = viewModelScope.launchStorage(messages) {
         val r = block()
         if (r is OrderResult.Rejected) messages.post(r.reason)
     }

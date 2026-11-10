@@ -14,6 +14,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -55,6 +56,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.datastore.preferences)
 
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation(libs.junit)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

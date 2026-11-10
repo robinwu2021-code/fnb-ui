@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.app
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.PreferencesRepository
@@ -126,10 +127,10 @@ data class ShellUiState(
 class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, private val prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus) : ViewModel() {
     val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, session.stores) { s, d, p, n, st -> ShellUiState(s, d, p, n, st) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ShellUiState())
-    fun selectStore(id: String) = viewModelScope.launch { session.selectStore(id) }
-    fun logout() = viewModelScope.launch { session.logout() }
+    fun selectStore(id: String) = viewModelScope.launchStorage(messages) { session.selectStore(id) }
+    fun logout() = viewModelScope.launchStorage(messages) { session.logout() }
     /** 页头语言图标：中文 ⇄ English，写入显示偏好。 */
-    fun toggleLang() = viewModelScope.launch { prefs.update { it.copy(lang = if (it.lang == Lang.Zh) Lang.En else Lang.Zh) } }
+    fun toggleLang() = viewModelScope.launchStorage(messages) { prefs.update { it.copy(lang = if (it.lang == Lang.Zh) Lang.En else Lang.Zh) } }
 }
 
 /**

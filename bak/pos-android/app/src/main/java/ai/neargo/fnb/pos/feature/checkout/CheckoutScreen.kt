@@ -88,6 +88,8 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
     val wide = LocalPosLayout.current.wide
     val tb = state.table ?: return
     val totals = state.totals
+    var adjustment by remember { mutableStateOf(false) }
+    if (adjustment) ai.neargo.fnb.pos.feature.common.AdjustmentDialog(state.order, state.audits, { adjustment = false }) { request, email, password, done -> onAction(CheckoutAction.Adjust(request, email, password, done)) }
 
     state.paid?.let { amount ->
         PaidView(amount, state.method, state.online) { onAction(CheckoutAction.Done) }
@@ -114,18 +116,19 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
                             PosButton("打印预结单", { onAction(CheckoutAction.PreBill) }, size = BtnSize.Small, enabled = state.order.lines.isNotEmpty())
                         }
                         Section("优惠与资产") {
+                            PosButton("主管授权 · 退赠折扣", { adjustment = true }, size = BtnSize.Small, enabled = !state.processing && state.order.lines.isNotEmpty())
                             FlowRow(maxItemsInEachRow = 2, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val cm = Modifier.weight(1f)
                                 BenefitCard("会员优惠", if (state.order.member) "已享 95 折" else "绑定享 95 折", state.order.member, cm) { onAction(CheckoutAction.ToggleMember) }
-                                BenefitCard("优惠券", "满200减10", false, cm) { onAction(CheckoutAction.Notice("优惠券需服务端校验资格（演示）")) }
-                                BenefitCard("储值卡 · 演示", "余额 ¥500.00", false, cm) { onAction(CheckoutAction.Notice("储值支付需会员身份验证（演示）")) }
-                                BenefitCard("午市活动 · 演示", "满100减5", false, cm) { onAction(CheckoutAction.Notice("活动时段 11:00–14:00（演示）")) }
+                                BenefitCard("优惠券", "满200减10", state.order.coupon, cm) { onAction(CheckoutAction.ToggleCoupon) }
+                                BenefitCard("储值卡 · 演示", "余额 ${yuan(state.wallet)}", state.method == PayMethod.Stored, cm) { onAction(CheckoutAction.SelectMethod(PayMethod.Stored)) }
+                                BenefitCard("本机活动 · 演示", "满100减5", state.order.activity, cm) { onAction(CheckoutAction.ToggleActivity) }
                             }
                         }
                         Section("金额明细") {
                             KeyValue("菜品小计", yuan(totals.sub))
                             KeyValue("服务费 5%（演示）", yuan(totals.service))
-                            if (totals.discount > 0) KeyValue("会员优惠", yuan(-totals.discount), valueColor = c.primary)
+                            if (totals.discount > 0) KeyValue("优惠合计", yuan(-totals.discount), valueColor = c.primary)
                             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("本次应收", style = t.body, color = c.primary, modifier = Modifier.weight(1f))
                                 Text(yuan(totals.due), style = t.amount.num(), color = c.primary)
@@ -139,9 +142,12 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
                                 }
                             }
                             Text(
-                                if (!state.online) "离线：扫码与储值卡不可用；现金、银行卡本地记账，联网后同步" else "原型演示，不执行真实收款或储值扣款",
+                                if (!state.online) "离线：扫码不可用；现金、银行卡与本机储值演示可记账" else "本机演示；储值仅扣减本机演示余额，不执行真实支付",
                                 style = t.label, color = if (state.online) c.sub else c.warning, modifier = Modifier.padding(top = 6.dp),
                             )
+                        }
+                        if (state.method == PayMethod.Cash) Section("现金收款") {
+                            ai.neargo.fnb.pos.core.designsystem.component.CashPad(state.cash, totals.due, { onAction(CheckoutAction.CashInput(it)) }, enabled = !state.processing)
                         }
                     }
                 }
@@ -189,7 +195,7 @@ private fun BillColumn(state: CheckoutUiState, onAction: (CheckoutAction) -> Uni
             listOf("新加 · 待送厨" to state.order.pending, "已送厨 · 未结账" to state.order.sent).filter { it.second.isNotEmpty() }.forEach { (title, ls) ->
                 Row(Modifier.padding(top = 10.dp, bottom = 2.dp)) {
                     Text(title, style = t.label.copy(fontWeight = FontWeight.SemiBold), color = c.primary, modifier = Modifier.weight(1f))
-                    Text("${ls.sumOf { it.qty }} 份 · ${yuan(ls.sumOf { it.unit * it.qty })}", style = t.label.num(), color = c.sub)
+                    Text("${ls.sumOf { it.qty }} 份 · ${yuan(ls.sumOf { if (it.gifted) 0 else it.unit * it.qty })}", style = t.label.num(), color = c.sub)
                 }
                 ls.forEach { l -> OrderLineRow(l, { onAction(CheckoutAction.ChangeQty(l.uid, it)) }, null) }
             }

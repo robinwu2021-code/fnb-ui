@@ -16,8 +16,8 @@ data class DisplayPrefs(
     val lang: Lang = Lang.Zh,
 )
 
-/** 字体：Manrope 随包（拉丁文字与数字），中文回退系统 Noto Sans CJK；或全部使用系统字体。 */
-enum class FontChoice(val label: String) { Manrope("Manrope"), System("系统字体") }
+/** 字体随包提供，中文按字形回退系统 Noto Sans CJK。 */
+enum class FontChoice(val label: String) { Manrope("Manrope"), Inter("Inter"), Roboto("Roboto"), NotoSans("Noto Sans"), IBMPlexSans("IBM Plex Sans"), Outfit("Outfit + Inter"), System("系统字体") }
 
 /** 界面语言。 */
 enum class Lang(val label: String) { Zh("中文"), En("English") }

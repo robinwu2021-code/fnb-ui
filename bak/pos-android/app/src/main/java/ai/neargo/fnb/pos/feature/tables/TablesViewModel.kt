@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.tables
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.data.FloorRepository
 import ai.neargo.fnb.pos.core.data.StoreConfigRepository
 import ai.neargo.fnb.pos.core.data.areaName
@@ -14,6 +15,7 @@ import ai.neargo.fnb.pos.core.model.TableOrder
 import ai.neargo.fnb.pos.core.model.TableStatus
 import ai.neargo.fnb.pos.core.model.TableRules
 import ai.neargo.fnb.pos.core.data.PrintRepository
+import ai.neargo.fnb.pos.core.model.Reservation
 import ai.neargo.fnb.pos.core.model.Totals
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -51,9 +53,13 @@ data class TablesUiState(
     val floorAreas: List<Pair<String, List<TableCardItem>>> = emptyList(),
     /** 换桌 / 并台的候选桌。 */
     val all: List<DiningTable> = emptyList(),
+    val reservations: List<Reservation> = emptyList(),
 )
 
 sealed interface TablesAction {
+    data class Reserve(val tableId: String, val name: String, val phone: String, val guests: Int, val at: Long, val note: String, val done: (String?) -> Unit) : TablesAction
+    data class CancelReservation(val id: String, val done: (String?) -> Unit) : TablesAction
+    data class ArriveReservation(val id: String, val done: (String?) -> Unit) : TablesAction
     data class SelectArea(val id: String) : TablesAction
     data class SelectStatus(val status: TableStatus?) : TablesAction
     data class Search(val query: String) : TablesAction
@@ -124,11 +130,17 @@ class TablesViewModel(
             view = l.view,
             floorAreas = store?.areas.orEmpty().filter { l.area == "all" || it.id == l.area }.map { a -> a.name to shown.filter { it.areaId == a.id }.map(::card) },
             all = tables,
+            reservations = store?.reservations.orEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TablesUiState())
 
     fun onAction(a: TablesAction) {
         when (a) {
+            is TablesAction.Reserve -> viewModelScope.launchStorage(messages) { floor.createReservation(a.tableId, a.name, a.phone, a.guests, a.at, a.note).finish("预订已保存", a.done) }
+            is TablesAction.CancelReservation -> viewModelScope.launchStorage(messages) { floor.cancelReservation(a.id).finish("预订已取消", a.done) }
+            is TablesAction.ArriveReservation -> viewModelScope.launchStorage(messages) {
+                floor.checkInReservation(a.id).onSuccess { a.done(null); effects.send(TablesEffect.OpenOrder) }.onFailure { a.done(it.message ?: "开台失败") }
+            }
             is TablesAction.SelectArea -> { saved["area"] = a.id; local.value = local.value.copy(area = a.id) }
             is TablesAction.SelectStatus -> local.value = local.value.copy(status = a.status)
             is TablesAction.Search -> local.value = local.value.copy(query = a.query)
@@ -136,29 +148,29 @@ class TablesViewModel(
             TablesAction.ResetFilters -> local.value = local.value.copy(area = "all", status = null, query = "")
             is TablesAction.RequestOpen -> local.value = local.value.copy(opening = a.id)
             TablesAction.CancelOpen -> local.value = local.value.copy(opening = null)
-            is TablesAction.ConfirmOpen -> viewModelScope.launch {
-                val id = local.value.opening ?: return@launch
+            is TablesAction.ConfirmOpen -> viewModelScope.launchStorage(messages) {
+                val id = local.value.opening ?: return@launchStorage
                 floor.openTable(id, a.guests)
                     .onSuccess { local.value = local.value.copy(opening = null); messages.post("$id 已开台，${a.guests} 人"); effects.send(TablesEffect.OpenOrder) }
                     .onFailure { messages.post(it.message ?: "开台失败") }
             }
-            is TablesAction.ContinueOrder -> viewModelScope.launch { session.selectTable(a.id); effects.send(TablesEffect.OpenOrder) }
-            is TablesAction.Checkout -> viewModelScope.launch { session.selectTable(a.id); effects.send(TablesEffect.OpenCheckout(a.id)) }
-            is TablesAction.StartCleaning -> viewModelScope.launch { floor.startCleaning(a.id).report("${a.id} 进入清台") }
-            is TablesAction.FinishCleaning -> viewModelScope.launch { floor.finishCleaning(a.id).report("${a.id} 已清台，可开台") }
+            is TablesAction.ContinueOrder -> viewModelScope.launchStorage(messages) { session.selectTable(a.id); effects.send(TablesEffect.OpenOrder) }
+            is TablesAction.Checkout -> viewModelScope.launchStorage(messages) { session.selectTable(a.id); effects.send(TablesEffect.OpenCheckout(a.id)) }
+            is TablesAction.StartCleaning -> viewModelScope.launchStorage(messages) { floor.startCleaning(a.id).report("${a.id} 进入清台") }
+            is TablesAction.FinishCleaning -> viewModelScope.launchStorage(messages) { floor.finishCleaning(a.id).report("${a.id} 已清台，可开台") }
             is TablesAction.Notice -> messages.post(a.message)
             is TablesAction.SetView -> local.value = local.value.copy(view = a.view)
-            is TablesAction.SavePosition -> viewModelScope.launch {
-                val p = TableRules.validPosition(a.x, a.y).getOrElse { a.done(it.message); return@launch }
+            is TablesAction.SavePosition -> viewModelScope.launchStorage(messages) {
+                val p = TableRules.validPosition(a.x, a.y).getOrElse { a.done(it.message); return@launchStorage }
                 floor.setPosition(a.id, p.first, p.second).finish("${a.id} 位置已保存", a.done)
             }
-            is TablesAction.PreBill -> viewModelScope.launch { print.preBill(a.id).report("${a.id} 预结单已加入打印队列") }
-            is TablesAction.SaveNote -> viewModelScope.launch { orders.setOrderNote(a.id, a.note).finish("${a.id} 整单备注已保存", a.done) }
-            is TablesAction.Change -> viewModelScope.launch {
+            is TablesAction.PreBill -> viewModelScope.launchStorage(messages) { print.preBill(a.id).report("${a.id} 预结单已加入打印队列") }
+            is TablesAction.SaveNote -> viewModelScope.launchStorage(messages) { orders.setOrderNote(a.id, a.note).finish("${a.id} 整单备注已保存", a.done) }
+            is TablesAction.Change -> viewModelScope.launchStorage(messages) {
                 floor.changeTable(a.from, a.to).finish("${a.from} 已换到 ${a.to}，原桌待清台", a.done)
                 saved["selected"] = a.to; local.value = local.value.copy(selected = a.to)
             }
-            is TablesAction.Merge -> viewModelScope.launch {
+            is TablesAction.Merge -> viewModelScope.launchStorage(messages) {
                 floor.mergeTable(a.from, a.into).finish("${a.from} 已并入 ${a.into}，原桌待清台", a.done)
                 saved["selected"] = a.into; local.value = local.value.copy(selected = a.into)
             }

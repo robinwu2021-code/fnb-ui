@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.sync
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -41,8 +42,8 @@ class SyncViewModel(private val sync: SyncRepository, private val device: Device
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SyncUiState())
 
     /** 立即同步：离线时只提示，不清队列。 */
-    fun syncNow() = viewModelScope.launch {
-        if (!device.status.value.online) { messages.post("当前离线，联网后会自动同步"); return@launch }
+    fun syncNow() = viewModelScope.launchStorage(messages) {
+        if (!device.status.value.online) { messages.post("当前离线，联网后会自动同步"); return@launchStorage }
         val n = sync.syncNow()
         messages.post(if (n > 0) "已同步 $n 项" else "没有待同步的操作")
     }

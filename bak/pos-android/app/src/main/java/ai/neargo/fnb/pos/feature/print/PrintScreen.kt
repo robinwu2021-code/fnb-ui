@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.print
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -43,9 +44,9 @@ data class PrintUiState(val jobs: List<PrintJob> = emptyList(), val device: Devi
 
 class PrintViewModel(private val print: PrintRepository, private val device: DeviceRepository, private val messages: MessageBus) : ViewModel() {
     val state = combine(print.jobs, device.status, ::PrintUiState).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PrintUiState())
-    fun reprint(id: String) = viewModelScope.launch { print.reprint(id).onSuccess { messages.post("已加入补打（标注「补打」，不重复收款）") }.onFailure { messages.post(it.message ?: "补打失败") } }
-    fun retry() = viewModelScope.launch {
-        if (!device.status.value.printerOk) { messages.post("厨房打印机仍缺纸，换纸后会自动重试"); return@launch }
+    fun reprint(id: String) = viewModelScope.launchStorage(messages) { print.reprint(id).onSuccess { messages.post("已加入补打（标注「补打」，不重复收款）") }.onFailure { messages.post(it.message ?: "补打失败") } }
+    fun retry() = viewModelScope.launchStorage(messages) {
+        if (!device.status.value.printerOk) { messages.post("厨房打印机仍缺纸，换纸后会自动重试"); return@launchStorage }
         print.process(true)
     }
 }

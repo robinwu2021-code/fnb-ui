@@ -48,13 +48,17 @@ data class Product(
     val image: String? = null,
     val tags: List<String> = emptyList(),
     val hot: Boolean = false,
+    val mealGroups: List<MealGroup> = emptyList(),
+    /** 离线搜索别名：空格或逗号分隔的全拼、首字母。 */
+    val searchAliases: String = "",
 ) {
     val hasSpec get() = skus.isNotEmpty()
     /** 展示价：有 SKU 取最低 SKU 价。 */
-    val displayPrice get() = skus.minOfOrNull { it.price } ?: price
+    val displayPrice get() = (skus.minOfOrNull { it.price } ?: price) + mealGroups.sumOf { group -> group.choices.minOfOrNull { it.delta } ?: 0 }
     val totalStock: Int? get() = if (hasSpec) skus.sumOf { it.stock } else stock
     val soldOut get() = totalStock == 0
     val note get() = when {
+        mealGroups.isNotEmpty() -> "套餐可换菜"
         hasSpec -> "可选规格"
         else -> tags.firstOrNull { it != "招牌" } ?: "门店现制"
     }
@@ -115,10 +119,12 @@ data class OrderLine(
     val batchId: String? = null,
     /** 菜品备注（少辣、不要葱…）；同菜同 SKU 同备注才合并。 */
     val note: String = "",
+    val gifted: Boolean = false,
+    val mealSelections: List<MealSelection> = emptyList(),
 )
 
 @Serializable
-data class TableOrder(val lines: List<OrderLine> = emptyList(), val member: Boolean = false, val note: String = "") {
+data class TableOrder(val lines: List<OrderLine> = emptyList(), val member: Boolean = false, val note: String = "", val discountPercent: Int = 100, val coupon: Boolean = false, val activity: Boolean = false) {
     val pending get() = lines.filter { it.status == LineStatus.New }
     val queued get() = lines.filter { it.status == LineStatus.Queued }
     val sent get() = lines.filter { it.status != LineStatus.New }
@@ -129,7 +135,7 @@ data class Totals(val sub: Int, val service: Int, val discount: Int, val due: In
 
 /** 收款记录（本机落盘，联网后同步）。 */
 @Serializable
-data class PaymentRecord(val id: String, val tableId: String, val amount: Int, val method: String, val at: Long, val synced: Boolean = false)
+data class PaymentRecord(val id: String, val tableId: String, val amount: Int, val method: String, val at: Long, val synced: Boolean = false, val received: Int = amount, val change: Int = 0)
 
 @Serializable enum class OutboxKind(val label: String) { Kitchen("送厨"), Payment("收款") }
 @Serializable enum class OutboxState(val label: String) { Pending("待同步"), Done("已同步") }
@@ -174,6 +180,9 @@ data class StoreData(
     /** 本机打印队列。 */
     val printJobs: List<PrintJob> = emptyList(),
     val shift: ShiftState = ShiftState(),
+    val adjustments: List<AdjustmentAudit> = emptyList(),
+    val walletBalance: Int = 50000,
+    val reservations: List<Reservation> = emptyList(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {
@@ -217,13 +226,17 @@ data class ShiftRecord(
     val float: Int,
     val cashExpected: Int,
     val cashCounted: Int,
+    val voidAmount: Int = 0,
+    val voidCount: Int = 0,
+    val giftAmount: Int = 0,
+    val giftCount: Int = 0,
 )
 
 /** 当前班次：开班时间、备用金、历史交班。 */
 @Serializable data class ShiftState(val start: Long = 0, val float: Int = 50_000, val history: List<ShiftRecord> = emptyList())
 
 /** 本地账号：只存加盐哈希，不存明文密码。 */
-@Serializable data class Account(val email: String, val merchant: String, val salt: String, val hash: String)
+@Serializable data class Account(val email: String, val merchant: String, val salt: String, val hash: String, val supervisor: Boolean = true)
 
 /** 会话（页头展示用）。 */
 data class Session(

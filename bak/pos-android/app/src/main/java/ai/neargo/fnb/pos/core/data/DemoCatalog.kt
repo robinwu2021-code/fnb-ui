@@ -32,8 +32,16 @@ internal object DemoCatalog {
         SpecGroup("g2", "辣度", "Spice", listOf(SpecOption("g2-1", "微辣"), SpecOption("g2-2", "中辣"), SpecOption("g2-3", "不辣"))),
     )
 
+    private val demoAliases = mapOf(
+        "1" to "gongbaojiding gbjd", "2" to "shuizhuyu szy", "3" to "xiaochaohuangniurou xchnr",
+        "4" to "suanrongxilanhua srxlh", "5" to "mapodoufu mpdf", "6" to "suancaiyu scy",
+        "7" to "fuqifeipian fqfp", "8" to "paihuanggua phg", "9" to "mifan mf", "10" to "dandanmian ddm",
+        "11" to "fanqiedantang fqdt", "12" to "suanmeitang smt", "13" to "xianzhachengzhi xzcz",
+        "14" to "hongtangciba htcb", "15" to "shuangrentaocan srtc",
+    )
+
     private fun p(id: String, name: String, en: String, cat: String, price: Int, stock: Int?, tags: List<String> = emptyList(), spec: Boolean = false, hot: Boolean = false, image: String? = null): Product {
-        val base = Product(id, name, en, cat, price, if (spec) null else stock, if (spec) specs.map { it.id } else emptyList(), emptyList(), image, tags, hot)
+        val base = Product(id, name, en, cat, price, if (spec) null else stock, if (spec) specs.map { it.id } else emptyList(), emptyList(), image, tags, hot, searchAliases = demoAliases[id].orEmpty())
         return if (!spec) base else base.copy(skus = ManageRules.skus(specs, price, stock ?: 0, emptyList()).getOrThrow())
     }
 
@@ -56,7 +64,10 @@ internal object DemoCatalog {
         p("12", "酸梅汤", "Sour Plum Drink", "c-drink", 1200, 60, listOf("新品"), hot = true, image = WIKI + "6/60/Sour_plum_drink.jpg/500px-Sour_plum_drink.jpg"),
         p("13", "鲜榨橙汁", "Fresh Orange Juice", "c-drink", 1800, 3),
         p("14", "红糖糍粑", "Brown Sugar Ciba", "c-dessert", 2200, 10, listOf("新品")),
-        p("15", "双人套餐", "Set for Two", "c-set", 16800, 6, listOf("套餐")),
+        p("15", "双人套餐", "Set for Two", "c-set", 16800, 6, listOf("套餐")).copy(mealGroups = listOf(
+            ai.neargo.fnb.pos.core.model.MealGroup("set-main", "主菜", listOf(ai.neargo.fnb.pos.core.model.MealChoice("set-chicken", "宫保鸡丁"), ai.neargo.fnb.pos.core.model.MealChoice("set-fish", "水煮鱼", 4000))),
+            ai.neargo.fnb.pos.core.model.MealGroup("set-drink", "饮品", listOf(ai.neargo.fnb.pos.core.model.MealChoice("set-plum", "酸梅汤"), ai.neargo.fnb.pos.core.model.MealChoice("set-orange", "鲜榨橙汁", 600))),
+        )),
     )
 
     private val menus = listOf(

@@ -57,7 +57,7 @@ class AuthViewModel(private val session: SessionRepository) : ViewModel() {
         if (s.value.busy) return
         s.value = AuthUiState(busy = true)
         viewModelScope.launch {
-            val r = block()
+            val r = try { block() } catch (e: ai.neargo.fnb.pos.core.data.WorkspaceWriteException) { Result.failure(e) }
             s.value = AuthUiState(error = r.exceptionOrNull()?.message)
         }
     }

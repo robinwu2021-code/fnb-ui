@@ -306,7 +306,7 @@ private fun ColumnScope.PaymentsSection(state: ManageUiState) {
     PageHeader("收款与费用", "当前计费为本地演示规则，不修改真实费率或支付凭证")
     val cols = listOf(Col("渠道"), Col("离线可用"), Col("说明", 2f))
     DataTable(cols, Modifier.weight(1f)) {
-        listOf(Triple("现金", "是", "本地记账，联网后同步"), Triple("银行卡", "是", "外接刷卡终端，本地记账"), Triple("扫码", "否", "需联网"), Triple("储值卡", "否", "需会员验证"), Triple("服务费", "—", "菜品小计 × 5%（演示）"))
+        listOf(Triple("现金", "是", "本地记账，联网后同步"), Triple("银行卡", "是", "外接刷卡终端，本地记账"), Triple("扫码", "否", "需联网"), Triple("储值卡", "是", "本机会员演示余额，本地扣减"), Triple("服务费", "—", "菜品小计 × 5%（演示）"))
             .forEach { (a, b, c) -> item { TableRow(listOf({ Cell(a) }, { Cell(b) }, { Cell(c, sub = true) }), cols) } }
     }
     Text(if (state.device.online) "当前在线" else "当前离线：扫码与储值卡在结账页禁用", style = Pos.type.label, color = Pos.colors.sub)

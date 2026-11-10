@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.checkout
 
+import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.FloorRepository
 import ai.neargo.fnb.pos.core.data.PrintRepository
@@ -28,7 +29,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class PayMethod(val label: String, val needsNetwork: Boolean) {
-    Cash("现金", false), Scan("扫码", true), Card("银行卡", false), Stored("储值卡", true),
+    Cash("现金", false), Scan("扫码", true), Card("银行卡", false), Stored("储值卡", false),
 }
 
 data class CheckoutUiState(
@@ -42,9 +43,17 @@ data class CheckoutUiState(
     val paid: Int? = null,
     /** 本桌今日已结账记录（不计入本次应收）。 */
     val history: List<PaymentRecord> = emptyList(),
+    val cash: String = "",
+    val audits: List<ai.neargo.fnb.pos.core.model.AdjustmentAudit> = emptyList(),
+    val wallet: Int = 50000,
 ) {
     /** 不能结账核对的原因（新加 / 待同步 / 空单）；null 表示可以。 */
-    val block get() = OrderRules.checkoutBlock(totals)
+    val block get() = OrderRules.checkoutBlock(totals) ?: when {
+        method == PayMethod.Cash && ai.neargo.fnb.pos.core.model.CashRules.change(cash, totals.due) == null -> "请核对现金实收"
+        method == PayMethod.Stored && !order.member -> "请先绑定本机会员"
+        method == PayMethod.Stored && wallet < totals.due -> "本机储值余额不足"
+        else -> null
+    }
     val canConfirm get() = block == null && !processing && (online || !method.needsNetwork)
 }
 
@@ -53,6 +62,10 @@ sealed interface CheckoutAction {
     data class ChangeQty(val uid: Long, val delta: Int) : CheckoutAction
     data object SendToKitchen : CheckoutAction
     data object ToggleMember : CheckoutAction
+    data object ToggleCoupon : CheckoutAction
+    data object ToggleActivity : CheckoutAction
+    data class CashInput(val value: String) : CheckoutAction
+    data class Adjust(val request: ai.neargo.fnb.pos.core.model.AdjustmentRequest, val email: String, val password: String, val done: (String?) -> Unit) : CheckoutAction
     data object Confirm : CheckoutAction
     data object Done : CheckoutAction
     data object PreBill : CheckoutAction
@@ -72,33 +85,39 @@ class CheckoutViewModel(
     private val print: PrintRepository,
     device: DeviceRepository,
     private val messages: MessageBus,
-    saved: SavedStateHandle,
+    private val saved: SavedStateHandle,
 ) : ViewModel() {
     private val tableId = saved.toRoute<CheckoutRoute>().tableId
     /** 小票预览文本（当前账单）。 */
     fun preview(): List<String> = print.billPreview(tableId)
-    private data class Local(val method: PayMethod = PayMethod.Cash, val processing: Boolean = false, val paid: Int? = null)
-    private val local = MutableStateFlow(Local())
+    private data class Local(val method: PayMethod = PayMethod.Cash, val processing: Boolean = false, val paid: Int? = null, val cash: String = "")
+    private val local = MutableStateFlow(Local(cash = saved["cash"] ?: ""))
     private val effects = Channel<CheckoutEffect>(Channel.BUFFERED)
     val effect = effects.receiveAsFlow()
 
     val state: StateFlow<CheckoutUiState> = combine(config.current, device.status, local) { store, d, l ->
         val o = store?.orders?.get(tableId) ?: TableOrder()
         CheckoutUiState(store?.tables?.firstOrNull { it.id == tableId }, o, OrderRules.totals(o), l.method, d.online, l.processing, l.paid,
-            store?.payments.orEmpty().filter { it.tableId == tableId }.sortedByDescending { it.at })
+            store?.payments.orEmpty().filter { it.tableId == tableId }.sortedByDescending { it.at },
+            l.cash, store?.adjustments.orEmpty().filter { it.tableId == tableId }, store?.walletBalance ?: 50000)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CheckoutUiState())
 
     fun onAction(a: CheckoutAction) {
+        if (local.value.processing && a != CheckoutAction.Done) return
         when (a) {
+            is CheckoutAction.CashInput -> { saved["cash"] = a.value; local.value = local.value.copy(cash = a.value) }
+            is CheckoutAction.Adjust -> viewModelScope.launchStorage(messages) { orders.authorizeAdjustment(tableId, a.request, a.email, a.password).onSuccess { a.done(null) }.onFailure { a.done(it.message) } }
+            CheckoutAction.ToggleCoupon -> viewModelScope.launchStorage(messages) { orders.setBenefits(tableId, !state.value.order.coupon, state.value.order.activity).onFailure { messages.post(it.message ?: "优惠不可用") } }
+            CheckoutAction.ToggleActivity -> viewModelScope.launchStorage(messages) { orders.setBenefits(tableId, state.value.order.coupon, !state.value.order.activity).onFailure { messages.post(it.message ?: "优惠不可用") } }
             is CheckoutAction.SelectMethod -> local.value = local.value.copy(method = a.method)
-            is CheckoutAction.ChangeQty -> viewModelScope.launch {
+            is CheckoutAction.ChangeQty -> viewModelScope.launchStorage(messages) {
                 (orders.changeQty(tableId, a.uid, a.delta) as? OrderResult.Rejected)?.let { messages.post(it.reason) }
             }
-            CheckoutAction.SendToKitchen -> viewModelScope.launch {
+            CheckoutAction.SendToKitchen -> viewModelScope.launchStorage(messages) {
                 val r = orders.sendToKitchen(tableId, state.value.online)
                 if (r.qty > 0) messages.post(if (r.queued) "离线：${r.qty} 份已存入同步队列" else "已送厨 ${r.qty} 份（演示）")
             }
-            CheckoutAction.ToggleMember -> viewModelScope.launch {
+            CheckoutAction.ToggleMember -> viewModelScope.launchStorage(messages) {
                 val on = !state.value.order.member
                 orders.setMember(tableId, on)
                 messages.post(if (on) "已绑定会员 · 95 折（演示）" else "已解绑会员")
@@ -107,9 +126,9 @@ class CheckoutViewModel(
                 val s = state.value
                 if (!s.canConfirm) return
                 local.value = local.value.copy(processing = true)
-                viewModelScope.launch {
+                viewModelScope.launchStorage(messages) {
                     delay(600) // 演示：模拟支付处理中，防重复提交
-                    floor.settle(tableId, s.totals.due, s.method.label, s.online)
+                    floor.settle(tableId, s.totals.due, s.method.label, s.online, if (s.method == PayMethod.Cash) ai.neargo.fnb.pos.core.model.CashRules.amount(s.cash) ?: 0 else s.totals.due)
                         .onSuccess {
                             local.value = local.value.copy(processing = false, paid = s.totals.due)
                             if (!s.online) messages.post("离线收款已记账，联网后自动同步")
@@ -117,8 +136,8 @@ class CheckoutViewModel(
                         .onFailure { local.value = local.value.copy(processing = false); messages.post(it.message ?: "收款失败，账单已保留") }
                 }
             }
-            CheckoutAction.PreBill -> viewModelScope.launch { print.preBill(tableId).onSuccess { messages.post("预结单已加入打印队列") }.onFailure { messages.post(it.message ?: "打印失败") } }
-            CheckoutAction.Done -> viewModelScope.launch { effects.send(CheckoutEffect.BackToTables) }
+            CheckoutAction.PreBill -> viewModelScope.launchStorage(messages) { print.preBill(tableId).onSuccess { messages.post("预结单已加入打印队列") }.onFailure { messages.post(it.message ?: "打印失败") } }
+            CheckoutAction.Done -> viewModelScope.launchStorage(messages) { effects.send(CheckoutEffect.BackToTables) }
             is CheckoutAction.Notice -> messages.post(a.message)
         }
     }

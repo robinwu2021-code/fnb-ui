@@ -101,7 +101,9 @@ fun TablesRoute(onOrder: () -> Unit, onCheckout: (String) -> Unit) {
 fun TablesScreen(state: TablesUiState, onAction: (TablesAction) -> Unit) {
     val layout = LocalPosLayout.current
     var sheetOpen by remember { mutableStateOf(false) }
-    val board: @Composable (Modifier) -> Unit = { m -> Board(state, onAction, { onAction(TablesAction.Select(it)); if (!layout.wide) sheetOpen = true }, m) }
+    var reservationsOpen by remember { mutableStateOf(false) }
+    if (reservationsOpen) ReservationsDialog(state, onAction) { reservationsOpen = false }
+    val board: @Composable (Modifier) -> Unit = { m -> Board(state, onAction, { onAction(TablesAction.Select(it)); if (!layout.wide) sheetOpen = true }, m, { reservationsOpen = true }) }
 
     if (layout.wide) {
         Workbench(state.detailSide, layout.dockW, aside = { m -> state.selected?.let { TableDetail(it, state.selectedPending, state, onAction, m) } }) { m -> board(m) }
@@ -119,7 +121,7 @@ fun TablesScreen(state: TablesUiState, onAction: (TablesAction) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Board(state: TablesUiState, onAction: (TablesAction) -> Unit, onSelect: (String) -> Unit, modifier: Modifier) {
+private fun Board(state: TablesUiState, onAction: (TablesAction) -> Unit, onSelect: (String) -> Unit, modifier: Modifier, onReservations: () -> Unit) {
     val c = Pos.colors
     val t = Pos.type
     val pad = Pos.metrics.pad
@@ -142,8 +144,9 @@ private fun Board(state: TablesUiState, onAction: (TablesAction) -> Unit, onSele
                 Row(Modifier.padding(start = pad, end = pad, top = pad, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("桌台", style = t.title, color = c.ink)
-                        Text("堂食工作台 · 状态为本地演示", style = t.label, color = c.sub)
+                        Text("堂食工作台 · 本机保存", style = t.label, color = c.sub)
                     }
+                    PosButton("预订管理", onReservations, size = BtnSize.Small)
                     SearchField(state.query, { onAction(TablesAction.Search(it)) }, "搜索桌号", Modifier.width(if (layout.wide) 220.dp else 140.dp), height = PosSize.small)
                 }
                 FlowRow(Modifier.padding(horizontal = pad), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -216,7 +219,7 @@ private fun TableCard(item: TableCardItem, selected: Boolean, onClick: () -> Uni
                     TableStatus.Reserved -> {
                         Text(tb.reservation, style = mid.num(), color = c.ink)
                         Spacer(Modifier.width(8.dp))
-                        Text("待到店 · 演示预订", style = t.label, color = c.sub, maxLines = 1)
+                        Text("待到店", style = t.label, color = c.sub, maxLines = 1)
                     }
                     TableStatus.Idle -> Text("可开台", style = mid, color = c.ink)
                     TableStatus.Paid -> Text("已完成收款", style = mid, color = c.ink)

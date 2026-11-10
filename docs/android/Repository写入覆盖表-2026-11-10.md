@@ -1,0 +1,135 @@
+# Repository 写入覆盖表
+
+核对日期：2026-11-10。覆盖当前Repositories.kt及仓库外入口。已有事件仅指本地页面命令流，不代表真实同步或设备回执。待补项本轮不实施。
+
+## SessionRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `login` | 仅本机 | 本机账号/会话/选择；N4安全审计另做 |
+| `register` | 仅本机 | 本机账号/会话/选择；N4安全审计另做 |
+| `enterDemo` | 仅本机 | 本机账号/会话/选择；N4安全审计另做 |
+| `logout` | 仅本机 | 本机账号/会话/选择；N4安全审计另做 |
+| `selectStore` | 仅本机 | 本机账号/会话/选择；N4安全审计另做 |
+| `selectTable` | 仅本机 | 本机账号/会话/选择；N4安全审计另做 |
+
+## StoreConfigRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `addArea` | 待营业事件 | N1-03配置库存交班 |
+| `saveTable` | 待营业事件 | N1-03配置库存交班 |
+| `addCategory` | 待营业事件 | N1-03配置库存交班 |
+| `addSpecGroup` | 待营业事件 | N1-03配置库存交班 |
+| `saveProduct` | 待营业事件 | N1-03配置库存交班 |
+| `adjustStock` | 待营业事件 | N1-03配置库存交班 |
+| `saveMenu` | 待营业事件 | N1-03配置库存交班 |
+| `setPublished` | 待营业事件 | N1-03配置库存交班 |
+| `saveSettings` | 待营业事件 | N1-03配置库存交班 |
+
+## FloorRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `createReservation` | 待营业事件 | N1-02订单桌台 |
+| `cancelReservation` | 待营业事件 | N1-02订单桌台 |
+| `checkInReservation` | 待营业事件 | N1-02订单桌台 |
+| `openTable` | 已有事件 | TableOpened |
+| `settle` | 已有事件 | PaymentRecorded |
+| `startCleaning` | 待营业事件 | N1-02订单桌台 |
+| `finishCleaning` | 待营业事件 | N1-02订单桌台 |
+| `setPosition` | 待营业事件 | N1-02订单桌台 |
+| `changeTable` | 已有事件 | TableChanged |
+| `mergeTable` | 已有事件 | TableMerged |
+| `splitLines` | 已有事件 | OrderSplit |
+
+## OrderRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `addDish` | 已有事件 | DishAdded |
+| `authorizeAdjustment` | 已有事件 | DishVoided / DishGifted / OrderDiscounted |
+| `setBenefits` | 待营业事件 | N1-02订单桌台 |
+| `setLineNote` | 待营业事件 | N1-02订单桌台 |
+| `setOrderNote` | 待营业事件 | N1-02订单桌台 |
+| `hold` | 已有事件 | OrderHeld |
+| `retrieve` | 已有事件 | OrderRetrieved |
+| `changeQty` | 已有事件 | DishQuantityChanged |
+| `clearNew` | 待营业事件 | N1-02订单桌台 |
+| `sendToKitchen` | 已有事件 | KitchenSubmitted |
+| `advance` | 待营业事件 | N1-02订单桌台 |
+| `setMember` | 待营业事件 | N1-02订单桌台 |
+
+## SyncRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `syncNow` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
+
+## PrintRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `preBill` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
+| `reprint` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
+| `process` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
+| `billPreview` | 只读 | 仅文本预览，不入队 |
+
+## ShiftRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `closeShift` | 待营业事件 | N1-03配置库存交班 |
+
+## PreferencesRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `update` | 仅本机 | 偏好、观察/演示开关或瞬时提示，不进营业日志 |
+
+## DeviceRepository
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `setForceOffline` | 仅本机 | 偏好、观察/演示开关或瞬时提示，不进营业日志 |
+| `setPrinterOk` | 仅本机 | 偏好、观察/演示开关或瞬时提示，不进营业日志 |
+
+## MessageBus
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `post` | 仅本机 | 偏好、观察/演示开关或瞬时提示，不进营业日志 |
+
+## 部分覆盖及业务差距
+
+- `checkInReservation`间接生成TableOpened，但缺独立预订到店事件及关联，所以仍列待补。
+- `setPosition`是门店桌台布局，后续应同步配置，不等同于个人字体/布局偏好。
+- `adjustStock`缺库存调整前后数量、差量、原因和人员流水；`saveProduct`需记录SKU及餐牌关联。
+- `closeShift`已保存快照与打印任务，但缺ShiftClosed事件和账本范围契约。
+- `preBill/reprint`创建任务不代表出纸；需原任务/尝试关联和执行日志。
+- `process/syncNow`为模拟执行，会修改任务、订单/支付状态；不能把其成功标志升级为真实回执，也不确认command_events。
+- `advance`是本地催菜/上菜，不是KDS接单；`setMember/setBenefits`仍为本机演示，不代表资产已核验。
+- 当前账号/密码哈希、设备密钥及个人显示偏好不得混入营业事件。
+
+## Repository外的写入口
+
+| 入口 | 分类及限制 |
+| --- | --- |
+| `LocalWorkspace.resetDemo` | 仅演示管理；保留账号及命令版本，不是生产清库/恢复工具 |
+| `LocalWorkspace.restore` | 恢复/迁移，不能制造历史营业事件；坏库不得回退演示 |
+| `LocalMedia.import` | 本机文件写入，不代表商品保存或云上传成功 |
+| `SnapshotStore.save/saveCommand` | 持久化边界；当前默认命令保存兼容实现仅存快照，N2需明确能力、避免生产降级 |
+| `MigratingSnapshotStore.load` | 新库为空才导入旧库，保留原件，导入不得重执历史副作用 |
+| `CommandJournal.execute` | 业务、事件、Inbox同事务保存；仅已接入命令适用 |
+| `CommandJournal.ack` | 远端持久确认后才调用，不得由online开关触发 |
+| `DataStorePreferences.update` | PreferencesRepository的本机偏好实现 |
+| `NetworkDevice`回调 | 本机网络观察，不是云/厨房的业务确认 |
+
+## 完成口径
+
+- 已覆盖接口中的47个写/状态操作入口及1个只读方法billPreview；Flow属性均为观察入口。
+- 待营业事件、仅本机及模拟设备日志明确区分；尚不能以事件重建完整门店。
+- 管理、库存、交班、设备事件需专属载荷，不能伪造tableId套入现有页面构造器。
+- 后续新增接口必须同步更新此表；每项完成需有事务及失败回滚验证。
+
+依据：[实施方案](../architecture/下一阶段实施方案-2026-11-10.md)、[接口源码](../../bak/pos-android/app/src/main/java/ai/neargo/fnb/pos/core/data/Repositories.kt)。
