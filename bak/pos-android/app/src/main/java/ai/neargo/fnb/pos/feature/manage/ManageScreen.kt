@@ -94,6 +94,7 @@ fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Uni
                 Section.Gallery -> GallerySection()
                 Section.Members -> SimplePage("会员管理", "会员档案、储值充值与流水；绑定会员在点餐或结账页操作") { Column(Modifier.verticalScroll(rememberScrollState())) { ai.neargo.fnb.pos.feature.ops.MembersPanel() } }
                 Section.Promotions -> SimplePage("优惠活动", "满减与整单折扣；订单选用时保存快照，修改不影响已选的订单") { Column(Modifier.verticalScroll(rememberScrollState())) { ai.neargo.fnb.pos.feature.ops.PromotionsPanel() } }
+                Section.Stations -> SimplePage("厨房档口", "按菜品分类把送厨拆到不同档口的厨房屏") { ai.neargo.fnb.pos.feature.kds.StationsPanel() }
                 Section.Lan -> SimplePage("主副 POS", "局域网配对、主机仲裁与设备管理；副机失联时只读") { ai.neargo.fnb.pos.feature.lan.LanPanel() }
                 Section.Auth -> SimplePage("授权中心", "设备身份与离线授权：到期、撤销、时钟异常时暂停新营业写入，账本保留") { ai.neargo.fnb.pos.feature.authcenter.AuthCenterPanel() }
                 Section.Data -> SimplePage("数据与恢复", "备份、恢复点与迁移记录；恢复会替换本机数据，恢复前自动保留副本") { ai.neargo.fnb.pos.feature.recovery.DataRecoveryPanel() }

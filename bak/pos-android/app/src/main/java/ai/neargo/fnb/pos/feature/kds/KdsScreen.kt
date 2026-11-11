@@ -49,6 +49,8 @@ fun KdsScreen() {
     val link by c.lanLink.status.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    if (picking) StationPickDialog(station) { picking = false }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(15_000); now = System.currentTimeMillis() } }
     fun act(t: KdsTicket, to: KdsState) = scope.launch {
@@ -64,6 +66,7 @@ fun KdsScreen() {
             Tag(if (link.connected) "主 POS 已连接" else "主 POS 未连接 · 仅显示已收任务", bg = if (link.connected) Pos.colors.tint else Pos.colors.dangerBg, fg = if (link.connected) Pos.colors.primary else Pos.colors.danger)
             Text("待接单 ${pending.size} · 制作中 ${working.size}", style = Pos.type.body, color = Pos.colors.sub, modifier = Modifier.weight(1f))
             PosButton("刷新", { scope.launch { runCatching { c.lanLink.kdsSync() }.onFailure { message = it.message } } }, size = BtnSize.Small)
+            PosButton("切换档口", { picking = true }, size = BtnSize.Small)
             PosButton("退出厨房屏", { scope.launch { c.setKdsStation("") } }, size = BtnSize.Small, variant = BtnVariant.Text)
         }
         message?.let { Text(it, style = Pos.type.body, color = Pos.colors.danger, modifier = Modifier.fillMaxWidth().background(Pos.colors.dangerBg).padding(horizontal = 16.dp, vertical = 6.dp)) }

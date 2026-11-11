@@ -57,6 +57,7 @@ class AppContainer(context: Context) {
     /** 厨房屏（N7）：本机工位、收件箱、游标。 */
     val kdsDevice get() = workspace.kdsDevice
     suspend fun setKdsStation(station: String) = workspace.setKdsStation(station)
+    val kds: KdsRepository = workspace
     val session: SessionRepository = workspace
     // —— 主副 POS（N5）：副机写入经主机仲裁；主机执行器直接使用本机仓库 ——
     private val deviceKeys get() = identity.keys

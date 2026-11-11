@@ -313,6 +313,9 @@ data class StoreData(
     /** 厨房任务卡（主 POS 权威）与变更序号。 */
     val kdsTickets: List<KdsTicket> = emptyList(),
     val kdsSeq: Long = 0,
+    /** 厨房档口（第一个为默认档口）与菜品分类 → 档口映射。 */
+    val kdsStations: List<String> = listOf("厨房"),
+    val stationOf: Map<String, String> = emptyMap(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {

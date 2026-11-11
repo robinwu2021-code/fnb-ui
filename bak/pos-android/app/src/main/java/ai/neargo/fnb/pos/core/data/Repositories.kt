@@ -213,4 +213,9 @@ interface StaffRepository {
 /** 厨房屏（N7）：厨师操作经主机仲裁。 */
 interface KdsRepository {
     suspend fun kdsAdvance(ticketId: String, expectedRev: Int, to: ai.neargo.fnb.pos.core.model.KdsState): Result<Unit>
+    /** 档口配置：档口列表（第一个为默认）与分类映射。 */
+    suspend fun saveKdsStations(stations: List<String>, mapping: Map<String, String>): Result<Unit>
 }
+
+@kotlinx.serialization.Serializable
+internal data class KitchenStationsPayload(val stations: List<String>, val stationOf: Map<String, String>)

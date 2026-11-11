@@ -28,6 +28,25 @@ import kotlinx.serialization.Serializable
 }
 
 object KdsRules {
+    /** 菜品所属档口：按分类映射；未映射或档口已删除时归默认（第一个）档口。 */
+    fun stationFor(s: StoreData, dishId: String): String {
+        val cat = s.products.firstOrNull { it.id == dishId }?.categoryId
+        return s.stationOf[cat]?.takeIf { it in s.kdsStations } ?: s.kdsStations.firstOrNull() ?: "厨房"
+    }
+
+    /** 档口配置校验：1–8 个，名称 1–8 字且不重复；映射只能指向现有档口。 */
+    fun validateStations(stations: List<String>, mapping: Map<String, String>): String? = when {
+        stations.isEmpty() || stations.size > 8 -> "档口数量应为 1–8 个"
+        stations.any { it.isBlank() || it.trim().length > 8 } -> "档口名称 1–8 字"
+        stations.map { it.trim() }.toSet().size != stations.size -> "档口名称重复"
+        mapping.values.any { it !in stations } -> "分类指向了不存在的档口"
+        else -> null
+    }
+
+    /** 一个送厨批次中某菜品行所在的任务卡（单档口时卡号即批次号，多档口为「批次@档口」）。 */
+    fun ticketOf(tickets: List<KdsTicket>, batchId: String, uid: Long): KdsTicket? =
+        tickets.firstOrNull { (it.id == batchId || it.id.startsWith("$batchId@")) && it.lines.any { l -> l.uid == uid } }
+
     /** 厨师操作的合法流转；已取消为终态，已完成可撤回到制作中。 */
     fun transition(cur: KdsState, to: KdsState): String? = when {
         cur == KdsState.Cancelled -> "该单已取消（退菜），不能再操作"

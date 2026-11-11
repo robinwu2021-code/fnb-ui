@@ -411,8 +411,9 @@ class LocalWorkspace(
 
     // —— 厨房屏（N7）：主机权威任务卡 ——
     /** 退菜同步到任务卡：退菜份数计入，全部退完则取消（版本 +1，变更序号前进）。 */
-    private fun StoreData.kdsVoid(ticketId: String, uid: Long, qty: Int, reason: String): StoreData {
-        val t = kdsTickets.firstOrNull { it.id == ticketId } ?: return this
+    private fun StoreData.kdsVoid(batchId: String, uid: Long, qty: Int, reason: String): StoreData {
+        val t = KdsRules.ticketOf(kdsTickets, batchId, uid) ?: return this
+        val ticketId = t.id
         val lines = t.lines.map { if (it.uid == uid) it.copy(voidQty = (it.voidQty + qty).coerceAtMost(it.qty)) else it }
         val cancelled = lines.all { it.active == 0 }
         val n = t.copy(lines = lines, rev = t.rev + 1, seq = kdsSeq + 1, updatedAt = clock(), state = if (cancelled) KdsState.Cancelled else t.state,
@@ -461,10 +462,20 @@ class LocalWorkspace(
         }
     }
 
+    /** 厨房档口配置（门店设置权限）。 */
+    override suspend fun saveKdsStations(stations: List<String>, mapping: Map<String, String>) = storeOp(event = EventSpec { _, a ->
+        Triple("KitchenStationsSaved", kotlinx.serialization.json.Json.encodeToString(KitchenStationsPayload.serializer(), KitchenStationsPayload(a.kdsStations, a.stationOf)), listOf(Aggregates.CATALOG))
+    }, check = { s -> KdsRules.validateStations(stations.map { it.trim() }, mapping) ?: if (mapping.keys.any { k -> s.categories.none { it.id == k } }) "分类不存在" else null }) { s ->
+        s.copy(kdsStations = stations.map { it.trim() }, stationOf = mapping)
+    }
+
     // —— 厨房屏设备侧：持久收件箱 ——
     val kdsDevice: StateFlow<Triple<String, List<KdsTicket>, Long>> = derive { Triple(it.kdsStation, it.kdsInbox, it.kdsCursor) }
 
-    suspend fun setKdsStation(station: String) { commit { it.copy(kdsStation = station.trim(), kdsInbox = if (station.isBlank()) emptyList() else it.kdsInbox, kdsCursor = if (station.isBlank()) 0 else it.kdsCursor) } }
+    /** 设置/切换本机档口：档口变化时清空收件箱并从头拉取本档口任务。 */
+    suspend fun setKdsStation(station: String) {
+        commit { v -> val st = station.trim(); if (st == v.kdsStation) v else v.copy(kdsStation = st, kdsInbox = emptyList(), kdsCursor = 0) }
+    }
 
     /** 收到任务卡：去重合并后落盘，返回需回执的（id, rev）。 */
     suspend fun kdsReceive(tickets: List<KdsTicket>, cursor: Long): List<Pair<String, Int>> {
@@ -1327,9 +1338,14 @@ class LocalWorkspace(
         val out = if (online) s.outbox else s.outbox + OutboxItem(batch, OutboxKind.Kitchen, tableId, "$tableId 送厨 $n 份", clock())
         val sent = OrderRules.send(s.order(tableId), batch, online, clock())
         // 厨房单走本机/局域网，不依赖云端：离线也立即出单；云端待同步另由 outbox 与事件表示
-        val lines = sent.lines.filter { it.batchId == batch }.map { KdsLine(it.uid, it.name, it.spec, it.note, it.qty) }
-        val ticket = KdsTicket(batch, tableId, sent.orderId, "厨房", lines, clock(), seq = s.kdsSeq + 1, updatedAt = clock(), note = sent.note)
-        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1, kdsTickets = s.kdsTickets + ticket, kdsSeq = s.kdsSeq + 1).kitchenJob(tableId, batch)
+        // 按档口拆任务卡：单档口卡号即批次号，多档口为「批次@档口」；各卡独立接单与制作
+        val groups = sent.lines.filter { it.batchId == batch }.groupBy { KdsRules.stationFor(s, it.dishId) }
+        var seq = s.kdsSeq
+        val tickets = groups.entries.sortedBy { s.kdsStations.indexOf(it.key) }.map { (station, ls) ->
+            KdsTicket(if (groups.size == 1) batch else "$batch@$station", tableId, sent.orderId, station, ls.map { KdsLine(it.uid, it.name, it.spec, it.note, it.qty) },
+                clock(), seq = ++seq, updatedAt = clock(), note = sent.note)
+        }
+        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1, kdsTickets = s.kdsTickets + tickets, kdsSeq = seq).kitchenJob(tableId, batch)
         v.copy(stores = v.stores + (s.id to next)) to SendResult(n, !online)
     }
 

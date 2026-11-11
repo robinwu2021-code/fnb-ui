@@ -51,7 +51,7 @@ object StaffRules {
         "EmployeeSaved" -> Perm.Staff
         "StockAdjusted", "PromotionSaved", "StoreSettingsUpdated", "AreaCreated", "TableConfigCreated", "TableConfigUpdated",
         "CategoryCreated", "SpecGroupCreated", "ProductCreated", "ProductUpdated", "MenuCreated", "MenuUpdated",
-        "MenuPublished", "MenuUnpublished", "TablePositionChanged" -> Perm.Settings
+        "MenuPublished", "MenuUnpublished", "TablePositionChanged", "KitchenStationsSaved" -> Perm.Settings
         "DishVoided", "DishGifted", "OrderDiscounted" -> null
         // 厨房屏操作：由已配对工位设备授权
         "KdsTicketAdvanced" -> null

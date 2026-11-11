@@ -195,7 +195,7 @@ class LanLink(
     /** 后台循环：连接、重发、同步。 */
     fun start(intervalMs: Long = 2_000) = scope.launch(Dispatchers.IO) {
         while (isActive) {
-            if (isSecondary) runCatching { flushPending(); if (ws.lanSnapshot().kdsStation.isNotBlank()) kdsSync() else pull() }
+            if (isSecondary) runCatching { flushPending(); if (ws.lanSnapshot().kdsStation.isNotBlank()) { kdsSync(); pull() } else pull() }
             delay(intervalMs)
         }
     }

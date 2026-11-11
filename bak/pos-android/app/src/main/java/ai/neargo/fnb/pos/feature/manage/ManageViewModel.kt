@@ -31,7 +31,7 @@ enum class Section(val group: String, val label: String) {
     Tables("门店运营", "桌台管理"), Areas("门店运营", "桌台区域"), Store("门店运营", "门店与营业"),
     Members("会员与营销", "会员管理"), Promotions("会员与营销", "优惠活动"),
     Categories("商品管理", "商品分类"), Products("商品管理", "商品资料"), Specs("商品管理", "规格组"), Stock("商品管理", "库存盘点"), Menus("商品管理", "餐牌管理"),
-    Devices("设备与系统", "终端与打印"), Payments("设备与系统", "收款与费用"), Staff("设备与系统", "员工与权限"), Display("设备与系统", "界面显示"), Lan("设备与系统", "主副 POS"), Auth("设备与系统", "授权中心"), Data("设备与系统", "数据与恢复"), Gallery("设备与系统", "组件验收"),
+    Devices("设备与系统", "终端与打印"), Payments("设备与系统", "收款与费用"), Staff("设备与系统", "员工与权限"), Display("设备与系统", "界面显示"), Lan("设备与系统", "主副 POS"), Stations("设备与系统", "厨房档口"), Auth("设备与系统", "授权中心"), Data("设备与系统", "数据与恢复"), Gallery("设备与系统", "组件验收"),
     SwitchStore("账号与门店", "切换门店"), Account("账号与门店", "账号登录"),
 }
 

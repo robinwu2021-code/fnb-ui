@@ -118,4 +118,33 @@ class KdsTest {
         assertTrue(again.ok && again.duplicate)
         assertEquals(t.rev + 1, h.s().kdsTickets.single().rev)
     }
+
+    @Test fun stationsSplitTicketsAndRouteToTheirDisplays() = kdsRun { h, k, _, link, _ ->
+        assertTrue(h.saveKdsStations(listOf("热菜", "吧台"), mapOf("c-drink" to "吧台")).isSuccess)
+        assertTrue(h.saveKdsStations(listOf("热菜", "热菜"), emptyMap()).isFailure)
+        assertTrue(h.saveKdsStations(listOf("热菜"), mapOf("c-drink" to "吧台")).isFailure)
+        link.pull() // 副本获取档口配置
+        val t = h.s().tables.first { it.status == TableStatus.Idle }.id
+        h.openTable(t, 2)
+        h.addDish(t, h.s().products.first { it.id == "5" }, null, 1)  // 麻婆豆腐：热菜（默认档口）
+        h.addDish(t, h.s().products.first { it.id == "12" }, null, 2) // 酸梅汤：吧台
+        h.sendToKitchen(t, true)
+        val tickets = h.s().kdsTickets.filter { it.tableId == t }
+        assertEquals(setOf("热菜", "吧台"), tickets.map { it.station }.toSet())
+        assertTrue(tickets.all { it.id.contains("@") })
+        // 本机为「吧台」屏：只收到吧台卡
+        k.setKdsStation("吧台"); link.kdsSync()
+        assertEquals(listOf("吧台"), k.inbox().map { it.station })
+        assertEquals("酸梅汤", k.inbox().single().lines.single().name)
+        // 切换到「热菜」：清空并只收热菜卡
+        k.setKdsStation("热菜"); assertTrue(k.inbox().isEmpty()); link.kdsSync()
+        assertEquals(listOf("麻婆豆腐"), k.inbox().map { it.lines.single().name })
+        // 退吧台的酸梅汤：只取消吧台卡，热菜卡不受影响
+        val drink = h.s().orders.getValue(t).lines.first { it.dishId == "12" }
+        assertTrue(h.authorizeAdjustment(t, AdjustmentRequest(AdjustmentKind.Void, drink.uid, 2, reason = "不要了"), "manager@demo.local", "demo12345").isSuccess)
+        assertEquals(KdsState.Cancelled, h.s().kdsTickets.first { it.station == "吧台" && it.tableId == t }.state)
+        assertEquals(KdsState.Pending, h.s().kdsTickets.first { it.station == "热菜" && it.tableId == t }.state)
+        // 未映射分类归默认档口
+        assertEquals("热菜", ai.neargo.fnb.pos.core.model.KdsRules.stationFor(h.s(), "9"))
+    }
 }
