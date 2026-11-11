@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { DISHES, INITIAL_CAMPS, INITIAL_LINES, INITIAL_MEMBERS, INITIAL_MTAGS, INITIAL_ORDERS, INITIAL_PLANS, INITIAL_REDEEMED, INITIAL_TABLES, MEMBER, type Camp, type Dish, type Line, type Member, type OrderRow, type Plan, type Redeemed, type Table } from '@/data/sample';
 import { totals, type Totals } from '@/lib/pricing';
 import { ACT } from './actions';
+import { wireDomainEvents } from './wiring';
 import { DEFAULT_EXTRA, DEFAULT_QUICK, cleanSlots, readSlots, writeSlots, type ExtraSlots } from '@/data/slots';
 import { QUICK } from '@/data/sample';
 import { INITIAL_PLATS, INITIAL_SYNC, type PlatKey, type PlatState, type Region, type SyncMap } from '@/data/platforms';
@@ -86,6 +87,7 @@ export const useStore = create<PosState>((set, get) => ({
   act: (a) => { const i = a.indexOf(':'); const k = i < 0 ? a : a.slice(0, i), v = i < 0 ? '' : a.slice(i + 1); const f = ACT[k]; if (f) f(v, get, (p) => set(p as any)); },
 }));
 useStore.subscribe((s) => { try { const o: any = {}; STYLE_KEYS.forEach((k) => (o[k] = s[k])); localStorage.setItem(KEY, JSON.stringify(o)); } catch {} });
+wireDomainEvents(useStore.getState, (p) => useStore.setState(p as Partial<PosState>));
 export function useTotals(): Totals {
   const lines = useStore((s) => s.lines), pv = useStore((s) => s.pv), pAct = useStore((s) => s.pAct), cpn = useStore((s) => s.cpn), manual = useStore((s) => s.manual), paid = useStore((s) => s.paid);
   return useMemo(() => totals({ lines, pv, pAct, cpn, manual, paid }), [lines, pv, pAct, cpn, manual, paid]);

@@ -9,6 +9,12 @@ import * as cart from '@/domain/cart';
 import * as payment from '@/domain/payment';
 import * as catalog from '@/domain/catalog';
 import * as table from '@/domain/table';
+import * as member from '@/domain/member';
+import * as aftersale from '@/domain/aftersale';
+import * as shift from '@/domain/shift';
+import * as stock from '@/domain/stock';
+import * as events from '@/domain/events';
+import * as pricing from '@/domain/pricing';
 
 let fails = 0, passes = 0;
 const eq = (a: unknown, b: unknown, msg: string) => { const ok = JSON.stringify(a) === JSON.stringify(b); ok ? passes++ : (fails++, console.error('✗', msg, '\n  got     ', JSON.stringify(a), '\n  expected', JSON.stringify(b))); };
@@ -82,6 +88,31 @@ eq(catalog.parseWeighCode('210010001582012367'), { plu: '100100', amount: 15.82,
 eq(catalog.findByCode(ITEMS, '6954 7674 23579')?.id, 'cola', '按条码找商品（忽略空格）'); eq([catalog.stockState(0), catalog.stockState(3), catalog.stockState(null)], ['out', 'low', null], '库存状态');
 
 eq(table.canTableTransit('to_clear', 'free'), true, '待清台 → 空闲'); eq(table.canTableTransit('free', 'to_clear'), false, '空闲不能直接待清台');
+
+/* ---------- 会员营销 · 售后 · 班次 · 库存 · 事件 ---------- */
+eq([member.matchLayer('全部', '熟客', true), member.matchLayer('线索', '新客', true), member.matchLayer('熟客', '熟客', true), member.matchLayer('熟客', '熟客', false)], [true, true, false, true], '分层筛选：线索不计入分层');
+eq(member.toggleTag(Array.from({ length: 10 }, (_x, i) => 't' + i), 'new').length, 10, '标签最多 10 个'); eq(member.toggleTag(['a', 'b'], 'a'), ['b'], '标签再点去掉');
+const plans = [{ n: 'a', pay: 300, gift: 30, on: false }, { n: 'b', pay: 500, gift: 60, on: true }];
+eq(member.pickPlan(plans, 0).n, 'b', '选第 1 个启用的方案'); eq(member.recharge(520, plans[1]), 1080, '储值到账 = 余额 + 实付 + 赠送');
+eq([member.canCamp('running', 'paused'), member.canCamp('ended', 'running'), member.canCamp('draft', 'paused')], [true, false, false], '活动状态流转');
+
+eq([aftersale.voucherUndo({ undone: false, hoursAgo: 0.8, operator: '李敏' }, '李敏'), aftersale.voucherUndo({ undone: false, hoursAgo: 1.3, operator: '王芳' }, '李敏'), aftersale.voucherUndo({ undone: false, hoursAgo: 26, operator: '李敏' }, '李敏'), aftersale.voucherUndo({ undone: true, hoursAgo: 1, operator: '李敏' }, '李敏')], ['', 'auth', 'late', 'done'], '平台券撤销：本人 / 他人 / 超 24h / 已撤');
+const sold = [{ key: 'a', q: 2, amt: 60 }, { key: 'b', q: 1, amt: 30 }, { key: 'c', q: 1, amt: 10.01, weighed: true }];
+const net = aftersale.allocate(sold, 10); eq(r2(net.a + net.b + net.c), 90.01, '分摊后合计 = 整单实付');
+eq(aftersale.refundAmount(sold, 10, { a: 1 }), r2(net.a / 2), '退 1 件按分摊后单件实付'); eq(aftersale.refundAmount([{ key: 'x', q: 3, amt: 30, returned: 2 }], 0, { x: 5 }), 10, '超过可退数量按可退算');
+eq(aftersale.refundableQty({ key: 'w', q: 1, amt: 5, weighed: true, returned: 1 }), 0, '称重行退过就不能再退'); eq(aftersale.restockByDefault('quality'), false, '质量问题默认不回库存');
+
+eq(shift.drawerTotal([15, 3, 4, 3, 1, 5]), 1770, '钱箱实盘'); eq(shift.expectedCash({ float: 500, cashIn: 1280 }), 1780, '应有现金');
+eq(shift.variance(1780, 1770), { diff: -10, st: 'short' }, '盘亏 ¥10'); eq(shift.variance(1780, 1781, 2).st, 'ok', '容差内平账');
+
+eq(stock.receive({ a: 1 }, [{ id: 'a', q: 5 }, { id: 'b', q: 2 }]), { a: 6, b: 2 }, '入库累加');
+eq(stock.countDiff({ a: 10, b: 5 }, { a: 8, b: 5, c: 1 }), { rows: [{ id: 'a', book: 10, counted: 8, diff: -2 }, { id: 'c', book: 0, counted: 1, diff: 1 }], gain: 1, loss: 2 }, '盘点差异');
+eq([stock.nearExpiry('2026-11-13', '2026-11-11'), stock.nearExpiry('2026-11-20', '2026-11-11')], [true, false], '临期 3 天内');
+
+const got: string[] = []; const off = events.on('order.paid', (e) => got.push(e.biz + (e.table || '')));
+events.emit({ type: 'order.paid', biz: 'fnb', orderNo: '1', due: 1, table: 'A03', methods: [] }); events.emit({ type: 'order.held', biz: 'fnb', orderNo: '2' }); off();
+events.emit({ type: 'order.paid', biz: 'retail', orderNo: '3', due: 1, methods: [] }); eq(got, ['fnbA03'], '事件：只收订阅的类型，取消后不再收到');
+eq(pricing.rulesOf('retail').roundTo, 0.1, '按业态键取计价规则');
 
 console.log(fails ? `✗ ${fails} 失败，${passes} 通过` : `✓ 全部通过（${passes} 项断言）`);
 if (fails) process.exit(1);

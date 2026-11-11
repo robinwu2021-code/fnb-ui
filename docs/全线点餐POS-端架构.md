@@ -58,24 +58,28 @@
 
 | 文件 | 内容 | 调用方 |
 |---|---|---|
-| `pricing.ts` | 公共流水线（小计 → 行级促销 → 会员价 → 费用 → 平台券 → 整单活动 → 券 → 人工折扣 → 抹零 → 待收）+ 规则对象 `FNB_RULES`（服务费 5%、B01 活动与券互斥、B08 用券不抹零、抹零到元）/ `RETAIL_RULES`（无服务费、券在促销后、抹零到角）；券与平台券的可用性判断 | `lib/pricing.ts`（餐饮适配器）、`retail/data.ts`（零售适配器 `rTotals`） |
+| `pricing.ts` | 规则表 `RULES` / `rulesOf(BIZ[biz].pricing)`；公共流水线（小计 → 行级促销 → 会员价 → 费用 → 平台券 → 整单活动 → 券 → 人工折扣 → 抹零 → 待收）+ 规则对象 `FNB_RULES`（服务费 5%、B01 活动与券互斥、B08 用券不抹零、抹零到元）/ `RETAIL_RULES`（无服务费、券在促销后、抹零到角）；券与平台券的可用性判断 | `lib/pricing.ts`（餐饮适配器）、`retail/data.ts`（零售适配器 `rTotals`） |
 | `order.ts` | 餐饮订单行状态机 `LINE_FLOW`、加菜检查（沽清 / 限时 / 要选规格）、加减份数、送厨、催菜、退菜、拆单、改价与授权门槛、今日余量 | `store/actions.ts` |
 | `cart.ts` | 零售扫码加购合并（同商品同规格合并并移到最上，称重行不合并）、加减、撤销、赠送、件数、第二件半价 | `retail/RetailPos.tsx`、`retail/data.ts` |
 | `payment.ts` | 数字键盘输入、快捷金额、找零 / 还差、默认实收、组合支付这一笔、收款方式可用性（离线、储值的三种原因） | `store/actions.ts`、`components/pos/pay.tsx`、`CheckoutWB`、`RetailPos` |
 | `catalog.ts` | 码分类（标准码 / 店内码 / PLU / 称重码 / 会员码 / 付款码）、18 位称重码解析、按码找商品、库存状态 | `RetailPos.scanCode`（扫码框回车和页首「模拟扫码」都走它） |
-| `table.ts` | 桌台状态流转表、占用判断、改状态 | `store/actions.ts` |
+| `table.ts` | 桌台状态流转表、占用判断、改状态 | `store/actions.ts`、`store/wiring.ts` |
+| `member.ts` | 会员分层筛选（线索不计入分层）、标签开关（≤ 10 个）、储值方案选取与到账、活动状态流转 `CAMP_FLOW` | `MembersWB`、`store/actions.ts` |
+| `aftersale.ts` | 平台券撤销核销前置判断（本人 / 他人需授权 / 超 24 小时 / 已撤）；零售退货：可退数量（称重行整行退）、整单优惠按行分摊（尾差落在金额最大行）、退款金额、默认是否回库存、无单退货规则 | `data/sample.pvUndoWhy` → `OrdersWB`；零售退货界面第 4 期接 |
+| `shift.ts` | 面额、钱箱实盘、应有现金（备用金 + 现金收入 − 退款 − 取款）、盘差与容差 | `ShiftWB` |
+| `stock.ts` | 入库累加、扣减 / 回库、盘点差异（盘盈 / 盘亏）、临期、低库存 | 零售库存作业第 5 期接 |
+| `events.ts` | 领域事件 `order.paid` / `order.held` / `stock.changed`，`on` / `emit` | 餐饮结账、零售收款完成发 `order.paid`；`store/wiring.ts` 里桌台服务订阅后把桌台改待清台（零售事件没有桌台，不处理） |
 
-**回归方式**：`scripts/domain-selftest.ts` 里保留了抽层前的餐饮 `totals` 和零售 `rTotals` 原文，随机各 3000 组输入逐字段比对新引擎，加上订单行、购物车、支付、码解析、桌台的单元断言，共 6 万余项，全部通过。
+**回归方式**：`scripts/domain-selftest.ts` 里保留了抽层前的餐饮 `totals` 和零售 `rTotals` 原文，随机各 3000 组输入逐字段比对新引擎，加上订单行、购物车、支付、码解析、桌台、会员、售后、班次、库存、事件的单元断言，共 60,050 项，全部通过（`npm run test:domain`）。
 
 **还没做的**
 
 | 项 | 现状 | 补到 |
 |---|---|---|
-| 会员营销、班次、库存作业、售后（退货分摊） | 规则还在 `store/actions.ts` 或界面里写死的示例值 | `domain/{member,shift,stock,aftersale}` |
-| 计价入口统一 | 两业态各有一个适配器，规则对象由适配器选 | 适配器按 `BIZ[biz].pricing` 取规则，界面只调一个 `useTotals()` |
-| 模块间事件 | 结账后清台等联动仍在动作里直接改桌台 | `domain/events`：订单服务发「已结账」，桌台服务订阅（零售不装桌台服务） |
+| 零售退货、库存作业界面 | 规则已在 `aftersale.ts`、`stock.ts` 并自测，界面未做 | 零售方案第 4、5 期 |
+| 更多事件订阅 | 只有桌台服务订阅 `order.paid` | 班次服务订阅收款累计现金收入、库存服务订阅零售收款扣库存 |
 | 设备角色 | 只有设备列表与配对（设备发现方案） | 配对时选角色，按角色加载工作台 |
-| 同步 / 离线 | 只有离线横幅和能力置灰 | 本地库 + Outbox + 局域网总线（真实实现阶段） |
+| 同步 / 离线 | 只有离线横幅和能力置灰 | 本地库 + Outbox + 局域网总线（真实实现阶段）；事件可直接作为 Outbox 的记录 |
 
 ## 五、待定
 

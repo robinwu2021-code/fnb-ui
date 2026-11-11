@@ -22,6 +22,9 @@ export interface PricingRules {
 }
 export const FNB_RULES: PricingRules = { key: 'fnb', serviceRate: 0.05, svcStep: 0.1, campaign: (sub) => Math.min(20, round2(sub * 0.2)), couponWithCampaign: false, roundWithCoupon: false, roundTo: 1 };
 export const RETAIL_RULES: PricingRules = { key: 'retail', serviceRate: 0, svcStep: 0.1, campaign: null, couponWithCampaign: true, roundWithCoupon: true, roundTo: 0.1 };
+/** 按业态配置取规则（BIZ[biz].pricing 是这里的键） */
+export const RULES: Record<PricingRules['key'], PricingRules> = { fnb: FNB_RULES, retail: RETAIL_RULES };
+export const rulesOf = (k: PricingRules['key']) => RULES[k];
 
 export function couponAmt(c: Coupon, sub: number) { return c.disc ? Math.min(c.cap!, round2(sub * c.disc)) : c.amt!; }
 /** 券不可用的原因（空 = 可用）；has(n) 判断本单有没有某菜 / 商品 */

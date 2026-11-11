@@ -1,7 +1,7 @@
 // 零售收银 · 示例数据（关键画面用，本地模拟，不接后端）。方案见 docs/全线点餐POS-零售POS设计方案.md §三
 import { round2 } from '@/domain/money';
 import { promoOff, type CartLine } from '@/domain/cart';
-import { RETAIL_RULES, totals } from '@/domain/pricing';
+import { rulesOf, totals, type PricingRules } from '@/domain/pricing';
 
 export type RCat = 'common' | 'fresh' | 'bakery' | 'drinks' | 'snacks' | 'apparel';
 export const RCATS: { v: RCat; zh: string; en: string }[] = [
@@ -51,8 +51,8 @@ const memberSaveRaw = (l: RLine) => { const it = l.custom ? null : item(l.id); r
 export const lineMember = (l: RLine, member: boolean) => (member ? memberSaveRaw(l) : 0);
 
 /** 零售计价适配器：购物车行 → 价格行，用 RETAIL_RULES 算（方案 §八：行级促销 → 会员价 → 券在促销后 → 抹零到角） */
-export function rTotals(lines: RLine[], member: boolean) {
-  const t = totals({ lines: lines.map((l) => ({ gross: lineAmt(l), promo: linePromo(l), memberSave: memberSaveRaw(l), pcs: l.w != null ? 1 : l.q })), member }, RETAIL_RULES);
+export function rTotals(lines: RLine[], member: boolean, rules: PricingRules = rulesOf('retail')) {
+  const t = totals({ lines: lines.map((l) => ({ gross: lineAmt(l), promo: linePromo(l), memberSave: memberSaveRaw(l), pcs: l.w != null ? 1 : l.q })), member }, rules);
   return { ...t, mem: t.memberSave };
 }
 

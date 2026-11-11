@@ -1,4 +1,5 @@
 // 会员与营销（W1）：会员 · 标签 · 储值 · 活动 · 优惠券 · 积分
+import { matchLayer } from '@/domain/member';
 import { useStore } from '@/store';
 import { CPNT, LAYER_EN, LAYERS, RECH, type Member } from '@/data/sample';
 import { useLang, useT } from '@/i18n';
@@ -34,7 +35,7 @@ function MCard({ bal, spent, visits }: { bal: number; spent: number; visits: num
 }
 function List() {
   const t = useT(); const s = useStore(), dispatch = s.act, name = useName(), layer = useLayer(); const [seg, setSeg] = useState('all');
-  const match = (m: Member, l: string) => (l === '全部' ? true : l === '线索' ? !!m[9] : m[2] === l && !m[9]);
+  const match = (m: Member, l: string) => matchLayer(l, m[2], !!m[9]); /* 规则在 domain/member */
   const list = s.members.filter((m) => match(m, s.mlayer)); const m = s.members[s.msel] || s.members[0];
   const ledger: [string, string, string, string][] = [['10-23 12:02', t('mb.l1'), '+¥330.00', '¥520.00'], ['10-20 19:14', t('mb.l2'), '−¥186.00', '¥190.00'], ['10-12 18:40', t('mb.l3'), '+¥200.00', '¥376.00']];
   return (

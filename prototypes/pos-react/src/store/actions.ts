@@ -6,6 +6,8 @@ import { totals } from '@/lib/pricing';
 import * as order from '@/domain/order';
 import * as payment from '@/domain/payment';
 import { setTable } from '@/domain/table';
+import * as member from '@/domain/member';
+import { emit } from '@/domain/events';
 import { money, round2 } from '@/lib/money';
 import { tr } from '@/i18n';
 import type { Device } from '@/data/devices';
@@ -120,7 +122,9 @@ ACT.got = (v, _g, set) => set({ got: +v, ent: null });
 ACT.payother = (_v, get, set) => set({ ov: 'none', pay: 'cash', got: payment.defaultCash(totals(get()).rest) });
 ACT.paid = (_v, get, set) => {
   const s = get(); const redeemed = { ...s.redeemed }; if (s.pv.length) redeemed['#1024'] = s.pv.map((x) => [x.id, x.n, '12:31', 0, '李敏', 'redeemed'] as const) as any;
-  set({ tables: setTable(s.tables, s.table, 'to_clear'), ov: 'none', wb: 'tables', paid: [], change: 0, redeemed, cpn: '', pay: '', pv: [], pvLast: '', manual: 0, pAct: true, member: false });
+  /* 桌台改「待清台」不在这里做：发「已结账」事件，由桌台服务订阅（store/wiring.ts） */
+  emit({ type: 'order.paid', biz: 'fnb', orderNo: '#1024', due: totals(s).due, table: s.table, methods: s.paid.map((p) => p[0]) });
+  set({ ov: 'none', wb: 'tables', paid: [], change: 0, redeemed, cpn: '', pay: '', pv: [], pvLast: '', manual: 0, pAct: true, member: false });
   notify(get, 'pay.tablePaid', { t: s.table });
 };
 /* 订单 */
@@ -171,14 +175,14 @@ ACT.msel = (v, _g, set) => set({ msel: +v });
 ACT.mtsel = (v, _g, set) => set({ mtsel: +v });
 ACT.csel = (v, _g, set) => set({ csel: +v });
 ACT.cst = (v, _g, set) => set({ cst: v });
-ACT.camp = (v, get, set) => { const s = get(), camps = s.camps.map((c, i) => (i === s.csel ? ([...c.slice(0, 5), v, c[6]] as typeof c) : c)); set({ camps }); notify(get, 'mb.campSt', { n: s.camps[s.csel][1], st: tr(s.lang, 'st.campaign.' + v) }); };
-ACT.plan = (v, get, set) => { const plans = get().plans.map((p, i) => (i === +v ? { ...p, on: !p.on } : p)); set({ plans }); notify(get, plans[+v].on ? 'mb.planOn' : 'mb.planOff', { n: plans[+v].n }); };
+ACT.camp = (v, get, set) => { if (!member.canCamp(get().camps[get().csel][5], v)) return; const s = get(), camps = s.camps.map((c, i) => (i === s.csel ? ([...c.slice(0, 5), v, c[6]] as typeof c) : c)); set({ camps }); notify(get, 'mb.campSt', { n: s.camps[s.csel][1], st: tr(s.lang, 'st.campaign.' + v) }); };
+ACT.plan = (v, get, set) => { const plans = member.togglePlan(get().plans, +v); set({ plans }); notify(get, plans[+v].on ? 'mb.planOn' : 'mb.planOff', { n: plans[+v].n }); };
 ACT.plan_s = (v, _g, set) => set({ plan: +v });
 ACT.rcm = (v, _g, set) => set({ rcm: +v });
-ACT.rcgo = (_v, get, set) => { set({ rcState: 'wait' }); setTimeout(() => { const s = get(), p = s.plans.filter((x) => x.on)[s.plan] || s.plans[0]; const bal = s.memberBal + p.pay + p.gift; const members = s.members.slice(); members[0] = [...members[0]] as any; members[0][4] = bal; set({ rcState: 'done', memberBal: bal, members }); }, 900); };
+ACT.rcgo = (_v, get, set) => { set({ rcState: 'wait' }); setTimeout(() => { const s = get(), p = member.pickPlan(s.plans, s.plan); const bal = member.recharge(s.memberBal, p); const members = s.members.slice(); members[0] = [...members[0]] as any; members[0][4] = bal; set({ rcState: 'done', memberBal: bal, members }); }, 900); };
 ACT.rcdone = (_v, _g, set) => set({ rcState: '', ov: 'none' });
 ACT.msave = (v, get, set) => { const s = get(); const members = [...s.members, ['张女士', '7714', '新客', [], 0, 0, 0, '今天', '手工录入', 1] as any]; set({ members, msel: members.length - 1, ov: v === 'sv' ? 'recharge' : 'none' }); if (v !== 'sv') notify(get, 'mb.savedLead'); };
-ACT.mtog = (v, get, set) => { const s = get(), members = s.members.slice(), m = [...members[s.msel]] as any; const tl = m[3].slice(), i = tl.indexOf(v); if (i > -1) tl.splice(i, 1); else if (tl.length < 10) tl.push(v); m[3] = tl; members[s.msel] = m; set({ members }); };
+ACT.mtog = (v, get, set) => { const s = get(), members = s.members.slice(), m = [...members[s.msel]] as any; m[3] = member.toggleTag(m[3], v); members[s.msel] = m; set({ members }); };
 ACT.mtagadd = (_v, get, set) => { set({ mtags: [...get().mtags, ['爱喝茶', 0]], ov: 'none' }); notify(get, 'mb.tagAdded'); };
 ACT.plansave = (_v, get, set) => { set({ plans: [...get().plans, { n: '充 800 送 100', pay: 800, gift: 100, on: true }], ov: 'none' }); notify(get, 'mb.planAdded'); };
 ACT.redeem = (v, get, set) => { set({ redeem: v }); if (v === 'done') notify(get, 'mb.redeemed'); };

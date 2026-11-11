@@ -1,4 +1,5 @@
 // 示例数据：从 prototypes/bapp/ui/core.js 原样搬来（本地示例，不接后端）
+import { voucherUndo } from '@/domain/aftersale';
 export type Cat = { key: string; k: string; en: string };
 export const CATS: Cat[] = [['热销', 'red', 'Popular'], ['招牌', 'rose', 'Signature'], ['凉菜', 'green', 'Cold'], ['热菜', 'orange', 'Hot'], ['主食', 'yellow', 'Staples'], ['汤羹', 'teal', 'Soups'], ['饮品', 'blue', 'Drinks'], ['套餐', 'purple', 'Sets']].map(([key, k, en]) => ({ key, k, en }));
 export const CK: Record<string, string> = Object.fromEntries(CATS.map((c) => [c.key, c.k]));
@@ -90,7 +91,8 @@ export const INITIAL_ORDERS: OrderRow[] = [['#1024', 'A03', '堂食', 4, 6, '11:
 export type Redeemed = [string, number, string, number, string, 'redeemed' | 'undone'];
 export const INITIAL_REDEEMED: Record<string, Redeemed[]> = { '#1020': [['mt100', 2, '11:46', 0.8, '李敏', 'redeemed']], '#1021': [['dy116', 1, '11:12', 1.3, '王芳', 'redeemed']], '#1019': [['mt100', 1, '10-22 10:31', 26, '李敏', 'redeemed']] };
 export const ME = '李敏';
-export const pvUndoWhy = (r: Redeemed) => (r[5] === 'undone' ? 'done' : r[3] >= 24 ? 'late' : r[4] !== ME ? 'auth' : '');
+/** 撤销核销的前置判断：规则在 domain/aftersale.voucherUndo */
+export const pvUndoWhy = (r: Redeemed) => voucherUndo({ undone: r[5] === 'undone', hoursAgo: r[3], operator: r[4] }, ME);
 export const OST: Record<string, string[]> = { order: ['open', 'due', 'partial', 'held', 'paid', 'reopened', 'cancelled'], delivery: ['new', 'accepted', 'pickup', 'delivering', 'delivered', 'rejected', 'refunding', 'timeout'] };
 export const ALERT: Record<string, 1> = { due: 1, partial: 1, new: 1, timeout: 1 };
 

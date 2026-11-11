@@ -32,6 +32,7 @@ import { rt, useRT } from './dict';
 import * as cart from '@/domain/cart';
 import * as catalog from '@/domain/catalog';
 import * as payment from '@/domain/payment';
+import { emit } from '@/domain/events';
 import { BIZ } from '@/biz';
 
 /* ---------- 状态 ---------- */
@@ -368,7 +369,7 @@ function DoneDialog() {
         {r.member && <Cell k={t('done.points')} v="+150" num />}
       </Cells>
       <Note>{t('done.auto')}</Note>
-      <DialogActs><Button variant="muted" onClick={() => toast(t('done.reprint'))}><Ico name="printer" />{t('done.reprint')}</Button><Button onClick={() => goScreen('empty')}>{t('done.next')}</Button></DialogActs>
+      <DialogActs><Button variant="muted" onClick={() => toast(t('done.reprint'))}><Ico name="printer" />{t('done.reprint')}</Button><Button onClick={() => { emit({ type: 'order.paid', biz: 'retail', orderNo: '#R0158', due: tot.due, methods: [r.pay || 'cash'] }); goScreen('empty'); }}>{t('done.next')}</Button></DialogActs>
     </Dialog>
   );
 }
