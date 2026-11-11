@@ -385,6 +385,8 @@ data class PrintJob(
     /** 人工核对记录（人员：原因）。 */
     val resolution: String = "",
     val updatedAt: Long = 0,
+    /** 厨房类任务所属档口（空=默认档口），决定路由到哪台厨房打印机。 */
+    val station: String = "",
 )
 
 /** 交班记录：按本班收款汇总，钱箱实盘与应有现金比较。 */

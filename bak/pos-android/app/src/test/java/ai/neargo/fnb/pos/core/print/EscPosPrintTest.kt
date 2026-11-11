@@ -204,4 +204,42 @@ class EscPosPrintTest {
             printer.awaitJobs(1); assertTrue(printer.text(0).contains("打印测试") && printer.text(0).contains("80mm"))
         }
     }
+
+    @Test fun kitchenTicketsSplitByStationAndRouteToStationPrinters() = runBlocking {
+        FakeEscPosPrinter().use { hot -> FakeEscPosPrinter().use { bar ->
+            val w = ws()
+            assertTrue(w.saveKdsStations(listOf("热菜", "吧台", "凉菜"), mapOf("c-drink" to "吧台")).isSuccess)
+            w.savePrinter(PrinterConfig("k1", "热菜机", "127.0.0.1", hot.port)); w.savePrinter(PrinterConfig("b1", "吧台机", "127.0.0.1", bar.port))
+            w.setRoute("厨房", "k1") // 旧「厨房」路由：默认档口未单独设置时沿用
+            w.setRoute("吧台", "b1")
+            val t = w.s().tables.first { it.status == TableStatus.Idle }.id
+            w.openTable(t, 2)
+            w.addDish(t, w.s().products.first { it.id == "5" }, null, 1)
+            w.addDish(t, w.s().products.first { it.id == "12" }, null, 2)
+            w.sendToKitchen(t, true)
+            val jobs = w.s().printJobs.filter { it.kind == PrintKind.Kitchen }
+            assertEquals(listOf("热菜", "吧台"), jobs.map { it.station })
+            assertTrue(jobs.all { it.id.contains("@") })
+            // 打印单号与厨房屏任务卡一一对应
+            assertEquals(w.s().kdsTickets.map { "P-" + it.id }.toSet(), jobs.map { it.id }.toSet())
+            assertEquals(2, PrintGateway(w).drain())
+            hot.awaitJobs(1); bar.awaitJobs(1)
+            assertTrue(hot.text(0).contains("【厨房单·热菜】") && hot.text(0).contains("麻婆豆腐") && !hot.text(0).contains("酸梅汤"))
+            assertTrue(bar.text(0).contains("【厨房单·吧台】") && bar.text(0).contains("酸梅汤") && !bar.text(0).contains("麻婆豆腐"))
+            assertEquals(setOf("热菜打印机", "吧台打印机"), w.s().kitchenDeliveries.map { it.target }.toSet())
+            assertTrue(w.s().kitchenDeliveries.all { it.state == DeliveryState.Delivered })
+            // 退吧台饮品：退菜单只打到吧台打印机
+            val drink = w.s().orders.getValue(t).lines.first { it.dishId == "12" }
+            assertTrue(w.authorizeAdjustment(t, ai.neargo.fnb.pos.core.model.AdjustmentRequest(ai.neargo.fnb.pos.core.model.AdjustmentKind.Void, drink.uid, 1, reason = "不要了"), "manager@demo.local", "demo12345").isSuccess)
+            assertEquals(1, PrintGateway(w).drain())
+            bar.awaitJobs(2); assertTrue(bar.text(1).contains("退菜单·吧台")); assertEquals(1, hot.jobs.size)
+            // 未设置打印机的档口跟随默认档口；前台不受厨房路由影响
+            val rules = ai.neargo.fnb.pos.core.model.KdsRules
+            val cold = jobs.first().copy(station = "凉菜")
+            assertEquals("k1", rules.printRoute(w.s().printRoutes, w.s().kdsStations, cold))
+            w.setRoute("热菜", "b1")
+            assertEquals("b1", rules.printRoute(w.s().printRoutes, w.s().kdsStations, cold))
+            assertEquals("", rules.printRoute(w.s().printRoutes, w.s().kdsStations, cold.copy(kind = PrintKind.PreBill)))
+        } }
+    }
 }

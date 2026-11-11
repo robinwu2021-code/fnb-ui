@@ -1,6 +1,7 @@
 package ai.neargo.fnb.pos.feature.print
 
 import ai.neargo.fnb.pos.core.data.launchStorage
+import ai.neargo.fnb.pos.core.model.KdsRules
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -48,16 +49,17 @@ import java.util.Locale
 data class PrintUiState(
     val jobs: List<PrintJob> = emptyList(), val device: DeviceStatus = DeviceStatus(),
     val printers: List<PrinterConfig> = emptyList(), val routes: Map<String, String> = emptyMap(),
+    val stations: List<String> = emptyList(),
 ) {
     /** 已发出的任务显示实际目标；未发出的显示将按路由发往的打印机；模拟打印完成的历史任务标「模拟」。 */
     fun printerName(j: PrintJob): String {
-        val id = j.printerId.ifBlank { if (j.state == PrintState.Pending || j.state == PrintState.Failed) routes[j.kind.printer].orEmpty() else "" }
-        return printers.firstOrNull { it.id == id }?.name ?: "${j.kind.printer}（模拟）"
+        val id = j.printerId.ifBlank { if (j.state == PrintState.Pending || j.state == PrintState.Failed) KdsRules.printRoute(routes, stations, j) else "" }
+        return printers.firstOrNull { it.id == id }?.name ?: "${j.station.ifBlank { j.kind.printer }}（模拟）"
     }
 }
 
 class PrintViewModel(private val print: PrintRepository, private val device: DeviceRepository, config: StoreConfigRepository, private val messages: MessageBus) : ViewModel() {
-    val state = combine(print.jobs, device.status, config.current) { j, d, s -> PrintUiState(j, d, s?.printers.orEmpty(), s?.printRoutes.orEmpty()) }
+    val state = combine(print.jobs, device.status, config.current) { j, d, s -> PrintUiState(j, d, s?.printers.orEmpty(), s?.printRoutes.orEmpty(), s?.kdsStations.orEmpty()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PrintUiState())
     fun reprint(id: String) = viewModelScope.launchStorage(messages) { print.reprint(id).onSuccess { messages.post("已加入补打（标注「补打」，不重复收款）") }.onFailure { messages.post(it.message ?: "补打失败") } }
     fun retry() = viewModelScope.launchStorage(messages) {

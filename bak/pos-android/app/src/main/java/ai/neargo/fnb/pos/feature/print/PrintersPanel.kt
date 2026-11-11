@@ -54,10 +54,16 @@ fun PrintersPanel() {
         }
         PosButton("添加打印机", { editing = PrinterConfig("pr-" + UUID.randomUUID().toString().take(8), "", "") }, variant = BtnVariant.Primary)
         GroupTitle("档口路由")
-        listOf("厨房" to "送厨单、退菜单", "前台" to "预结单、结账单、交班单").forEach { (station, use) ->
+        val default = s.kdsStations.firstOrNull() ?: "厨房"
+        // 厨房按档口路由：默认档口未设置时兼容旧「厨房」路由；其他档口未设置时跟随默认档口
+        val kitchen = s.kdsStations.ifEmpty { listOf("厨房") }.map { it to "送厨单、退菜单" }
+        (kitchen + ("前台" to "预结单、结账单、交班单")).forEach { (station, use) ->
             val current = s.printRoutes[station]
-            KeyValue("$station · $use", s.printers.firstOrNull { it.id == current }?.name ?: "模拟打印") {
-                PosButton("模拟", { run({ c.print.setRoute(station, null) }, "$station 使用模拟打印") }, size = BtnSize.Small, selected = current == null)
+            val follower = station != "前台" && station != default
+            val fallback = if (station == default) s.printRoutes["厨房"] else null
+            val shown = s.printers.firstOrNull { it.id == (current ?: fallback) }?.name
+            KeyValue("$station · $use", shown ?: if (follower) "同默认档口（$default）" else "模拟打印") {
+                PosButton(if (follower) "同默认" else "模拟", { run({ c.print.setRoute(station, null) }, if (follower) "$station 跟随默认档口" else "$station 使用模拟打印") }, size = BtnSize.Small, selected = current == null)
                 s.printers.forEach { p -> PosButton(p.name, { run({ c.print.setRoute(station, p.id) }, "$station → ${p.name}") }, size = BtnSize.Small, selected = current == p.id) }
             }
         }

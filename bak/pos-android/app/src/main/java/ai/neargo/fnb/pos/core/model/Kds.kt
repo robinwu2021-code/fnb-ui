@@ -34,6 +34,14 @@ object KdsRules {
         return s.stationOf[cat]?.takeIf { it in s.kdsStations } ?: s.kdsStations.firstOrNull() ?: "厨房"
     }
 
+    /**
+     * 打印路由：厨房类任务先找本档口的打印机，未设置时跟随默认档口，再兼容旧的「厨房」路由；其他任务按前台等固定路由。
+     * 返回打印机 id，空串表示模拟打印。
+     */
+    fun printRoute(routes: Map<String, String>, stations: List<String>, j: PrintJob): String =
+        if (j.kind != PrintKind.Kitchen) routes[j.kind.printer].orEmpty()
+        else listOfNotNull(j.station.ifBlank { null }, stations.firstOrNull(), "厨房").firstNotNullOfOrNull { routes[it] }.orEmpty()
+
     /** 档口配置校验：1–8 个，名称 1–8 字且不重复；映射只能指向现有档口。 */
     fun validateStations(stations: List<String>, mapping: Map<String, String>): String? = when {
         stations.isEmpty() || stations.size > 8 -> "档口数量应为 1–8 个"

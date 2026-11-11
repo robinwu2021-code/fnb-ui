@@ -72,8 +72,8 @@ object Receipts {
     private fun row(left: String, right: String): String = left + " ".repeat((WIDTH - w(left) - w(right)).coerceAtLeast(1)) + right
     private fun rule() = "-".repeat(WIDTH)
 
-    fun kitchen(store: String, table: String, lines: List<OrderLine>, note: String, at: Long) = buildList {
-        add("【厨房单】$table"); add(time.format(Date(at))); add(rule())
+    fun kitchen(store: String, table: String, lines: List<OrderLine>, note: String, at: Long, station: String = "") = buildList {
+        add("【厨房单${if (station.isNotBlank()) "·$station" else ""}】$table"); add(time.format(Date(at))); add(rule())
         lines.forEach { l -> add(row(l.name, "×${l.qty}")); if (l.spec != OrderRules.DEFAULT_SPEC) add("  ${l.spec}"); if (l.note.isNotBlank()) add("  备注：${l.note}") }
         if (note.isNotBlank()) { add(rule()); add("整单备注：$note") }
         add(rule()); add(store)

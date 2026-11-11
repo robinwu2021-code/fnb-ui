@@ -267,7 +267,7 @@ class LocalWorkspace(
         s.printJobs.filter { it.state == PrintState.Sending }.forEach { j -> s = s.withJob(j.id) { it.copy(state = PrintState.Unknown, error = "应用重启时正在发送，结果未知") } }
         val printed = s.printJobs.map { it.id }.toSet()
         s.orders.forEach { (table, o) ->
-            o.lines.filter { it.status == LineStatus.Queued }.mapNotNull { it.batchId }.distinct().filter { "P-$it" !in printed }.forEach { b -> s = s.kitchenJob(table, b) }
+            o.lines.filter { it.status == LineStatus.Queued }.mapNotNull { it.batchId }.distinct().filter { b -> printed.none { it == "P-$b" || it.startsWith("P-$b@") } }.forEach { b -> s = s.kitchenJob(table, b) }
         }
         return ensureDeliveries(s, "simulation")
     }
@@ -1006,11 +1006,17 @@ class LocalWorkspace(
     }
 
     // —— 打印 ——
+    /** 厨房单按档口拆分：单档口时任务号为 P-批次（兼容旧数据），多档口为 P-批次@档口，与厨房屏任务卡一一对应。 */
     private fun StoreData.kitchenJob(tableId: String, batch: String): StoreData {
-        val lines = order(tableId).lines.filter { it.batchId == batch }
-        if (lines.isEmpty()) return this
-        return copy(printJobs = printJobs + PrintJob("P-$batch", PrintKind.Kitchen, "$tableId 厨房单 ${lines.sumOf { it.qty }} 份",
-            Receipts.kitchen(settings.shortName, tableId, lines, order(tableId).note, clock()), clock()))
+        val groups = order(tableId).lines.filter { it.batchId == batch }.groupBy { KdsRules.stationFor(this, it.dishId) }
+        if (groups.isEmpty()) return this
+        val multi = kdsStations.size > 1
+        val jobs = groups.entries.sortedBy { kdsStations.indexOf(it.key) }.map { (station, lines) ->
+            PrintJob(if (groups.size == 1) "P-$batch" else "P-$batch@$station", PrintKind.Kitchen,
+                "$tableId 厨房单${if (multi) "·$station" else ""} ${lines.sumOf { it.qty }} 份",
+                Receipts.kitchen(settings.shortName, tableId, lines, order(tableId).note, clock(), if (multi) station else ""), clock(), station = station)
+        }
+        return copy(printJobs = printJobs + jobs)
     }
 
     /** 打印状态 → 厨房送达状态：已发送视为送达打印机（非出纸确认），未知须人工核对。 */
@@ -1023,7 +1029,7 @@ class LocalWorkspace(
 
     /** 任务的真实目标打印机：已确定的目标优先（未知结果不改投备机），否则按档口路由；无则模拟打印。 */
     private fun StoreData.targetOf(j: PrintJob): PrinterConfig? {
-        val id = j.printerId.ifBlank { printRoutes[j.kind.printer].orEmpty() }
+        val id = j.printerId.ifBlank { KdsRules.printRoute(printRoutes, kdsStations, j) }
         return printers.firstOrNull { it.id == id && it.enabled }
     }
 
@@ -1130,6 +1136,7 @@ class LocalWorkspace(
             val table = j.title.substringBefore(' ')
             KitchenDelivery(
                 ticketId = j.id.removePrefix("P-"), jobId = j.id, tableId = table, orderId = s.orders[table]?.orderId.orEmpty(), label = j.title,
+                target = if (j.station.isNotBlank() && s.kdsStations.size > 1) "${j.station}打印机" else "厨房打印机",
                 state = deliveryOf(j.state, DeliveryState.Pending),
                 source = source, attempts = j.attempts, lastError = j.error, createdAt = j.createdAt, updatedAt = clock(),
             )
@@ -1279,8 +1286,12 @@ class LocalWorkspace(
             var next = s.withOrder(tableId, updated).copy(adjustments = s.adjustments + audit)
             if (request.kind == AdjustmentKind.Void && updated.lines.isEmpty()) next = next.withTable(tableId) { it.copy(status = TableStatus.Cleaning, guests = 0, openedAt = 0, paid = 0) }
             if (request.kind == AdjustmentKind.Void && line?.batchId != null) next = next.kdsVoid(line.batchId, line.uid, request.quantity, audit.reason)
-            if (request.kind == AdjustmentKind.Void) next = next.copy(printJobs = next.printJobs + PrintJob(newId("V"), PrintKind.Kitchen,
-                "$tableId 退菜单", listOf("【退菜单】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock()))
+            if (request.kind == AdjustmentKind.Void) {
+                val station = line?.let { KdsRules.stationFor(s, it.dishId) }.orEmpty()
+                val tag = if (s.kdsStations.size > 1 && station.isNotBlank()) "·$station" else ""
+                next = next.copy(printJobs = next.printJobs + PrintJob(newId("V"), PrintKind.Kitchen,
+                    "$tableId 退菜单$tag", listOf("【退菜单$tag】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock(), station = station))
+            }
             v.copy(stores = v.stores + (s.id to next))
         }
         Unit
