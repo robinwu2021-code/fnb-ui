@@ -1080,11 +1080,24 @@ class LocalWorkspace(
         else -> otherwise
     }
 
-    /** 任务的真实目标打印机：已确定的目标优先（未知结果不改投备机），否则按档口路由；无则模拟打印。 */
+    /**
+     * 任务的真实目标打印机：已确定的目标优先（未知结果不改投备机），否则按档口路由；无则模拟打印。
+     * 尚未发出的任务若目标打印机已停用/删除，改用该路由的备用打印机。
+     */
     private fun StoreData.targetOf(j: PrintJob): PrinterConfig? {
         val id = j.printerId.ifBlank { KdsRules.printRoute(printRoutes, kdsStations, j) }
+        if (id.isBlank()) return null
+        printers.firstOrNull { it.id == id && it.enabled }?.let { return it }
+        return if (j.state == PrintState.Pending || j.state == PrintState.Failed) backupOf(j)?.takeIf { it.id != id } else null
+    }
+
+    private fun StoreData.backupOf(j: PrintJob): PrinterConfig? {
+        val id = KdsRules.printBackup(printRoutes, printBackups, kdsStations, j)
         return printers.firstOrNull { it.id == id && it.enabled }
     }
+
+    private fun failoverBody(j: PrintJob, from: String, to: String, why: String) =
+        if (j.failoverFrom.isNotBlank()) j.body else listOf("** ${to}代打（原 $from ${why.substringBefore('：').take(16)}） **") + j.body
 
     private fun StoreData.withJob(id: String, f: (PrintJob) -> PrintJob): StoreData {
         val jobs = printJobs.map { if (it.id == id) f(it) else it }
@@ -1105,7 +1118,10 @@ class LocalWorkspace(
             val j = s.printJobs.sortedBy { it.createdAt }.firstOrNull { (it.state == PrintState.Pending || (it.state == PrintState.Failed && it.nextAt <= now)) && s.targetOf(it) != null }
                 ?: return@transaction v to null
             val p = s.targetOf(j)!!
-            val next = s.withJob(j.id) { it.copy(state = PrintState.Sending, printerId = p.id, attempts = it.attempts + 1, updatedAt = now) }
+            // 主打印机已停用/删除而改用备用：记下原打印机，便于队列显示
+            val primary = j.printerId.ifBlank { KdsRules.printRoute(s.printRoutes, s.kdsStations, j) }
+            val next = s.withJob(j.id) { it.copy(state = PrintState.Sending, printerId = p.id, attempts = it.attempts + 1, updatedAt = now,
+                failoverFrom = if (it.failoverFrom.isBlank() && primary.isNotBlank() && primary != p.id) primary else it.failoverFrom) }
                 .log(TaskLogKind.PrintAttempt, j.id, "Sending", "printer", "${p.name} ${p.host}:${p.port}")
             v.copy(stores = v.stores + (s.id to next)) to (next.printJobs.first { it.id == j.id } to p)
         }
@@ -1123,7 +1139,17 @@ class LocalWorkspace(
                 is ai.neargo.fnb.pos.core.print.SendOutcome.Unknown -> PrintState.Unknown to outcome.reason
             }
             val backoff = minOf(60_000L, 2_000L shl minOf(j.attempts, 5))
-            v.copy(stores = v.stores + (s.id to s.withJob(jobId) { it.copy(state = st, error = err, nextAt = if (st == PrintState.Failed) now + backoff else 0, updatedAt = now) }
+            val firstFail = if (st == PrintState.Failed && j.firstFailAt == 0L) now else j.firstFailAt
+            // 确定未发出且达到阈值：改投备用打印机（只改投一次；结果未知不改投，避免两台各出一张）
+            val backup = if (st == PrintState.Failed && j.failoverFrom.isBlank()) s.backupOf(j)?.takeIf { it.id != j.printerId } else null
+            if (backup != null && (j.attempts >= KdsRules.FAILOVER_ATTEMPTS || now - firstFail >= KdsRules.FAILOVER_MS)) {
+                val from = s.printers.firstOrNull { it.id == j.printerId }?.name ?: j.printerId
+                return@commit v.copy(stores = v.stores + (s.id to s.withJob(jobId) {
+                    it.copy(state = PrintState.Pending, printerId = backup.id, failoverFrom = j.printerId, firstFailAt = firstFail, nextAt = 0, updatedAt = now,
+                        error = "已改投备用 ${backup.name}（$from：$err）", body = failoverBody(j, from, "备用机", err))
+                }.log(TaskLogKind.PrintAttempt, jobId, "FailedOver", "printer", "$from → ${backup.name}：$err")))
+            }
+            v.copy(stores = v.stores + (s.id to s.withJob(jobId) { it.copy(state = st, error = err, nextAt = if (st == PrintState.Failed) now + backoff else 0, firstFailAt = firstFail, updatedAt = now) }
                 .log(TaskLogKind.PrintAttempt, jobId, st.name, "printer", err)))
         }
     }
@@ -1166,11 +1192,44 @@ class LocalWorkspace(
 
     override suspend fun removePrinter(id: String) = storeOp(check = { s ->
         need(Perm.Settings) ?: if (s.printJobs.any { it.printerId == id && it.state in setOf(PrintState.Sending, PrintState.Unknown) }) "该打印机有发送中或结果未知的任务，请先核对" else null
-    }) { s -> s.copy(printers = s.printers.filterNot { it.id == id }, printRoutes = s.printRoutes.filterValues { it != id }) }
+    }) { s -> s.copy(printers = s.printers.filterNot { it.id == id }, printRoutes = s.printRoutes.filterValues { it != id }, printBackups = s.printBackups.filterValues { it != id }) }
 
     override suspend fun setRoute(station: String, printerId: String?) = storeOp(check = { s ->
         need(Perm.Settings) ?: if (printerId != null && s.printers.none { it.id == printerId }) "打印机不存在" else null
     }) { s -> s.copy(printRoutes = if (printerId == null) s.printRoutes - station else s.printRoutes + (station to printerId)) }
+
+    /** 路由的备用打印机（门店设置权限）；不能与主打印机相同。 */
+    override suspend fun setBackup(station: String, printerId: String?) = storeOp(check = { s ->
+        need(Perm.Settings) ?: when {
+            printerId == null -> null
+            s.printers.none { it.id == printerId } -> "打印机不存在"
+            s.printRoutes[station] == printerId -> "备用打印机不能与主打印机相同"
+            else -> null
+        }
+    }) { s -> s.copy(printBackups = if (printerId == null) s.printBackups - station else s.printBackups + (station to printerId)) }
+
+    /** 手动改投：失败或排队中的任务改由指定打印机打印（结果未知须先核对）。 */
+    override suspend fun redirectPrint(jobId: String, printerId: String) = storeOp(check = { s ->
+        val j = s.printJobs.firstOrNull { it.id == jobId }
+        val p = s.printers.firstOrNull { it.id == printerId }
+        when {
+            need(Perm.Checkout) != null -> need(Perm.Checkout)
+            j == null -> "打印任务不存在"
+            j.state == PrintState.Unknown -> "结果未知的任务请先核对，避免重复出单"
+            j.state != PrintState.Failed && j.state != PrintState.Pending -> "只有失败或排队中的任务可以改投"
+            p == null || !p.enabled -> "目标打印机不存在或已停用"
+            s.targetOf(j)?.id == printerId -> "已经是这台打印机"
+            else -> null
+        }
+    }) { s ->
+        val j = s.printJobs.first { it.id == jobId }
+        val p = s.printers.first { it.id == printerId }
+        val from = s.targetOf(j)?.name ?: "模拟打印"
+        s.withJob(jobId) {
+            it.copy(state = PrintState.Pending, printerId = p.id, failoverFrom = j.printerId.ifBlank { "manual" }, nextAt = 0, error = "已手动改投 ${p.name}", updatedAt = clock(),
+                body = failoverBody(j, from, p.name, "手动改投"))
+        }.log(TaskLogKind.PrintAttempt, jobId, "Redirected", "manual", "$from → ${p.name}：${actorName(state.value)}")
+    }
 
     override suspend fun testPrint(printerId: String) = storeOp(check = { s -> need(Perm.Settings) ?: if (s.printers.none { it.id == printerId }) "打印机不存在" else null }) { s ->
         val p = s.printers.first { it.id == printerId }

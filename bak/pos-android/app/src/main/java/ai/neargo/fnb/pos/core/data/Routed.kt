@@ -101,6 +101,8 @@ class RoutedPrint(private val ws: LocalWorkspace, private val link: LanLink) : P
     override suspend fun removePrinter(id: String) = if (link.isSecondary) hostOnly() else ws.removePrinter(id)
     override suspend fun setRoute(station: String, printerId: String?) = if (link.isSecondary) hostOnly() else ws.setRoute(station, printerId)
     override suspend fun testPrint(printerId: String) = if (link.isSecondary) hostOnly() else ws.testPrint(printerId)
+    override suspend fun setBackup(station: String, printerId: String?) = if (link.isSecondary) hostOnly() else ws.setBackup(station, printerId)
+    override suspend fun redirectPrint(jobId: String, printerId: String) = if (link.isSecondary) hostOnly() else ws.redirectPrint(jobId, printerId)
     override suspend fun resolveUnknown(jobId: String, printed: Boolean, reason: String) = if (link.isSecondary) hostOnly() else ws.resolveUnknown(jobId, printed, reason)
 }
 

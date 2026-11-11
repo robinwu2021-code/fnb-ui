@@ -312,6 +312,8 @@ data class StoreData(
     val printers: List<PrinterConfig> = emptyList(),
     /** 档口路由：厨房 / 前台 → 打印机 ID。 */
     val printRoutes: Map<String, String> = emptyMap(),
+    /** 备用打印机：路由键（档口/前台）→ 打印机 id；主打印机确定未发出时改投。 */
+    val printBackups: Map<String, String> = emptyMap(),
     // —— 日常运营 ——
     val members: List<Member> = emptyList(),
     val memberTxns: List<MemberTxn> = emptyList(),
@@ -401,6 +403,10 @@ data class PrintJob(
     val updatedAt: Long = 0,
     /** 厨房类任务所属档口（空=默认档口），决定路由到哪台厨房打印机。 */
     val station: String = "",
+    /** 已改投：原打印机 id（自动改投备用或手动改投）；空=未改投。 */
+    val failoverFrom: String = "",
+    /** 首次确定未发出的时间（用于改投备用的时间阈值）。 */
+    val firstFailAt: Long = 0,
 )
 
 /** 交班记录：按本班收款汇总，钱箱实盘与应有现金比较。 */

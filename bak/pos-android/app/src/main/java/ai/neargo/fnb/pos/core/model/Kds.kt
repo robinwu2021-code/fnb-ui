@@ -38,9 +38,20 @@ object KdsRules {
      * 打印路由：厨房类任务先找本档口的打印机，未设置时跟随默认档口，再兼容旧的「厨房」路由；其他任务按前台等固定路由。
      * 返回打印机 id，空串表示模拟打印。
      */
-    fun printRoute(routes: Map<String, String>, stations: List<String>, j: PrintJob): String =
-        if (j.kind != PrintKind.Kitchen) routes[j.kind.printer].orEmpty()
-        else listOfNotNull(j.station.ifBlank { null }, stations.firstOrNull(), "厨房").firstNotNullOfOrNull { routes[it] }.orEmpty()
+    fun printRoute(routes: Map<String, String>, stations: List<String>, j: PrintJob): String = routeKey(routes, stations, j)?.let { routes[it] }.orEmpty()
+
+    /** 任务实际使用的路由键（有主打印机的那一级）；无则 null（模拟打印）。 */
+    fun routeKey(routes: Map<String, String>, stations: List<String>, j: PrintJob): String? =
+        if (j.kind != PrintKind.Kitchen) j.kind.printer.takeIf { routes[it] != null }
+        else listOfNotNull(j.station.ifBlank { null }, stations.firstOrNull(), "厨房").firstOrNull { routes[it] != null }
+
+    /** 该任务所在路由的备用打印机 id；空=未设置。 */
+    fun printBackup(routes: Map<String, String>, backups: Map<String, String>, stations: List<String>, j: PrintJob): String =
+        routeKey(routes, stations, j)?.let { backups[it] }.orEmpty()
+
+    /** 自动改投备用：确定未发出达到次数或持续时间。结果未知不改投。 */
+    const val FAILOVER_ATTEMPTS = 2
+    const val FAILOVER_MS = 30_000L
 
     /** 档口配置校验：1–8 个，名称 1–8 字且不重复；映射只能指向现有档口。 */
     fun validateStations(stations: List<String>, mapping: Map<String, String>): String? = when {

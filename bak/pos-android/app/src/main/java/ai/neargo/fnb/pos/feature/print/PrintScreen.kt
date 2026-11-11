@@ -9,6 +9,7 @@ import ai.neargo.fnb.pos.core.data.PrintRepository
 import ai.neargo.fnb.pos.core.data.StoreConfigRepository
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
+import ai.neargo.fnb.pos.core.designsystem.component.KeyValue
 import ai.neargo.fnb.pos.core.designsystem.component.Panel
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
 import ai.neargo.fnb.pos.core.designsystem.component.PosDialog
@@ -54,13 +55,19 @@ data class PrintUiState(
     /** 已发出的任务显示实际目标；未发出的显示将按路由发往的打印机；模拟打印完成的历史任务标「模拟」。 */
     fun printerName(j: PrintJob): String {
         val id = j.printerId.ifBlank { if (j.state == PrintState.Pending || j.state == PrintState.Failed) KdsRules.printRoute(routes, stations, j) else "" }
-        return printers.firstOrNull { it.id == id }?.name ?: "${j.station.ifBlank { j.kind.printer }}（模拟）"
+        val name = printers.firstOrNull { it.id == id }?.name ?: return "${j.station.ifBlank { j.kind.printer }}（模拟）"
+        return if (j.failoverFrom.isNotBlank()) "$name（改投）" else name
     }
 }
 
 class PrintViewModel(private val print: PrintRepository, private val device: DeviceRepository, config: StoreConfigRepository, private val messages: MessageBus) : ViewModel() {
     val state = combine(print.jobs, device.status, config.current) { j, d, s -> PrintUiState(j, d, s?.printers.orEmpty(), s?.printRoutes.orEmpty(), s?.kdsStations.orEmpty()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PrintUiState())
+    fun redirect(id: String, printerId: String, done: (String?) -> Unit) = viewModelScope.launchStorage(messages) {
+        val r = print.redirectPrint(id, printerId)
+        done(r.exceptionOrNull()?.message)
+        if (r.isSuccess) messages.post("已改投，单头标注改投来源")
+    }
     fun reprint(id: String) = viewModelScope.launchStorage(messages) { print.reprint(id).onSuccess { messages.post("已加入补打（标注「补打」，不重复收款）") }.onFailure { messages.post(it.message ?: "补打失败") } }
     fun retry() = viewModelScope.launchStorage(messages) {
         if (!device.status.value.printerOk) { messages.post("模拟厨房打印机仍缺纸，换纸后会自动重试"); return@launchStorage }
@@ -77,7 +84,7 @@ class PrintViewModel(private val print: PrintRepository, private val device: Dev
 fun PrintRoute() {
     val vm = posViewModel { c, _ -> PrintViewModel(c.print, c.device, c.config, c.messages) }
     val state by vm.state.collectAsStateWithLifecycle()
-    PrintScreen(state, vm::reprint, vm::retry, vm::resolve)
+    PrintScreen(state, vm::reprint, vm::retry, vm::resolve, vm::redirect)
 }
 
 @Composable
@@ -92,10 +99,12 @@ private fun stateTag(j: PrintJob) = when (j.state) {
 
 /** 打印队列：已发送≠已出纸；结果未知须人工核对，不自动重打；补打关联原任务。 */
 @Composable
-fun PrintScreen(state: PrintUiState, onReprint: (String) -> Unit, onRetry: () -> Unit, onResolve: (String, Boolean, String, (String?) -> Unit) -> Unit) {
+fun PrintScreen(state: PrintUiState, onReprint: (String) -> Unit, onRetry: () -> Unit, onResolve: (String, Boolean, String, (String?) -> Unit) -> Unit,
+                onRedirect: (String, String, (String?) -> Unit) -> Unit = { _, _, _ -> }) {
     val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.CHINA)
     var preview by remember { mutableStateOf<PrintJob?>(null) }
     var resolving by remember { mutableStateOf<PrintJob?>(null) }
+    var redirecting by remember { mutableStateOf<PrintJob?>(null) }
     val failed = state.jobs.count { it.state == PrintState.Failed }
     val unknown = state.jobs.count { it.state == PrintState.Unknown }
     val cols = listOf(Col("类型", 0.6f), Col("内容", 2f), Col("打印机", 1f), Col("时间", 1f), Col("状态", 1.2f), Col("", 1.6f, end = true))
@@ -114,6 +123,7 @@ fun PrintScreen(state: PrintUiState, onReprint: (String) -> Unit, onRetry: () ->
                         { stateTag(j) },
                         {
                             PosButton("预览", { preview = j }, variant = BtnVariant.Text, size = BtnSize.Small)
+                            if (j.state == PrintState.Failed && j.nextAt != Long.MAX_VALUE && state.printers.any { it.enabled }) PosButton("改投", { redirecting = j }, variant = BtnVariant.Text, size = BtnSize.Small)
                             if (j.state == PrintState.Unknown) PosButton("核对", { resolving = j }, variant = BtnVariant.Danger, size = BtnSize.Small)
                             else PosButton("补打", { onReprint(j.id) }, variant = BtnVariant.Text, size = BtnSize.Small, enabled = j.state == PrintState.Printed || j.state == PrintState.Sent)
                         },
@@ -123,6 +133,16 @@ fun PrintScreen(state: PrintUiState, onReprint: (String) -> Unit, onRetry: () ->
         }
     }
     preview?.let { j -> ReceiptDialog(j.title, j.body, { preview = null }) }
+    redirecting?.let { j ->
+        var error by remember { mutableStateOf<String?>(null) }
+        PosDialog("改投到其他打印机", onDismiss = { redirecting = null }, subtitle = j.title, footer = { PosButton("取消", { redirecting = null }, size = BtnSize.Large) }) {
+            Text("该单确定没有打出（${j.error}）。选择另一台打印机重新发送，单头会注明改投来源。", style = Pos.type.body, color = Pos.colors.sub, modifier = Modifier.padding(bottom = 8.dp))
+            state.printers.filter { it.enabled }.forEach { p ->
+                KeyValue(p.name, "${p.host}:${p.port}") { PosButton("改投", { onRedirect(j.id, p.id) { e -> error = e; if (e == null) redirecting = null } }, size = BtnSize.Small) }
+            }
+            if (error != null) Text(error!!, style = Pos.type.label, color = Pos.colors.danger)
+        }
+    }
     resolving?.let { j ->
         var reason by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }

@@ -122,6 +122,10 @@ interface PrintRepository {
     suspend fun savePrinter(p: ai.neargo.fnb.pos.core.model.PrinterConfig): Result<Unit>
     suspend fun removePrinter(id: String): Result<Unit>
     suspend fun setRoute(station: String, printerId: String?): Result<Unit>
+    /** 路由的备用打印机（null=不设）。 */
+    suspend fun setBackup(station: String, printerId: String?): Result<Unit>
+    /** 手动改投：失败或排队中的任务改由指定打印机打印。 */
+    suspend fun redirectPrint(jobId: String, printerId: String): Result<Unit>
     suspend fun testPrint(printerId: String): Result<Unit>
     /** 人工核对结果未知的任务：printed=已出纸；否则生成关联补打。 */
     suspend fun resolveUnknown(jobId: String, printed: Boolean, reason: String): Result<Unit>

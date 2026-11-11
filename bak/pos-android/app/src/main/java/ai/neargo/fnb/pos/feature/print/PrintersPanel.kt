@@ -12,6 +12,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.Tag
 import ai.neargo.fnb.pos.core.designsystem.component.Text
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.model.PrinterConfig
+import ai.neargo.fnb.pos.core.model.KdsRules
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,7 +43,7 @@ fun PrintersPanel() {
     val run: (suspend () -> Result<Unit>, String) -> Unit = { block, ok -> scope.launch { val r = block(); c.messages.post(r.fold({ ok }, { it.message ?: "操作失败" })) } }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         GroupTitle("网口打印机（ESC/POS · RAW 9100）")
-        Text("由主 POS 统一发送；未配置打印机的档口使用模拟打印。「已发送」表示已写入打印机且状态正常，不等于已确认出纸。", style = Pos.type.label, color = Pos.colors.sub)
+        Text("由主 POS 统一发送；未配置打印机的档口使用模拟打印。「已发送」表示已写入打印机且状态正常，不等于已确认出纸。设了备用打印机的路由，主打印机确定未发出（连续失败 ${KdsRules.FAILOVER_ATTEMPTS} 次或 ${KdsRules.FAILOVER_MS / 1000} 秒）时自动改投，单头标「备用机代打」；结果未知不改投。", style = Pos.type.label, color = Pos.colors.sub)
         if (s.printers.isEmpty()) Text("尚未添加打印机", style = Pos.type.body, color = Pos.colors.sub)
         s.printers.forEach { p ->
             KeyValue(p.name, "${p.host}:${p.port} · ${if (p.width == 32) "58mm" else "80mm"}${if (p.statusQuery) "" else " · 不查状态"}") {
@@ -65,6 +66,15 @@ fun PrintersPanel() {
             KeyValue("$station · $use", shown ?: if (follower) "同默认档口（$default）" else "模拟打印") {
                 PosButton(if (follower) "同默认" else "模拟", { run({ c.print.setRoute(station, null) }, if (follower) "$station 跟随默认档口" else "$station 使用模拟打印") }, size = BtnSize.Small, selected = current == null)
                 s.printers.forEach { p -> PosButton(p.name, { run({ c.print.setRoute(station, p.id) }, "$station → ${p.name}") }, size = BtnSize.Small, selected = current == p.id) }
+            }
+            // 备用打印机：主打印机确定未发出（连续失败 ${KdsRules.FAILOVER_ATTEMPTS} 次或 ${KdsRules.FAILOVER_MS / 1000} 秒）时改投；结果未知不改投
+            val primary = current ?: fallback
+            if (current != null && s.printers.size > 1) {
+                val backup = s.printBackups[station]
+                KeyValue("　$station · 备用", s.printers.firstOrNull { it.id == backup }?.name ?: "不设备用") {
+                    PosButton("不设", { run({ c.print.setBackup(station, null) }, "$station 不设备用打印机") }, size = BtnSize.Small, selected = backup == null)
+                    s.printers.filter { it.id != primary }.forEach { p -> PosButton(p.name, { run({ c.print.setBackup(station, p.id) }, "$station 备用 → ${p.name}") }, size = BtnSize.Small, selected = backup == p.id) }
+                }
             }
         }
     }
