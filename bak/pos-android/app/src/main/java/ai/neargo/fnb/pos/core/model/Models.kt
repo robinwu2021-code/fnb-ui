@@ -123,6 +123,8 @@ data class OrderLine(
     val note: String = "",
     val gifted: Boolean = false,
     val mealSelections: List<MealSelection> = emptyList(),
+    /** 下单（送厨）时间，出菜看板计算等待时长；0 表示未下单或旧数据。 */
+    val sentAt: Long = 0,
 )
 
 @Serializable
@@ -134,14 +136,66 @@ data class TableOrder(
     val mergedOrderIds: List<String> = emptyList(),
     /** 拆出本单的来源订单ID。 */
     val splitFromOrderIds: List<String> = emptyList(),
+    /** 绑定会员（空=未绑定；旧数据仅有 member=true 时为演示会员）。 */
+    val memberId: String = "",
+    val memberName: String = "",
+    /** 开台时的费率快照（万分比）：服务费、会员折扣；修改门店设置不追溯已开订单。 */
+    val serviceBp: Int = 500,
+    val memberBp: Int = 500,
+    /** 本单选用的优惠活动快照。 */
+    val promotions: List<Promotion> = emptyList(),
 ) {
     val pending get() = lines.filter { it.status == LineStatus.New }
     val queued get() = lines.filter { it.status == LineStatus.Queued }
     val sent get() = lines.filter { it.status != LineStatus.New }
 }
 
-/** 金额：小计、服务费 5%（演示）、优惠、应收；items 份数；newItems 待送厨份数；queuedItems 待同步份数。 */
-data class Totals(val sub: Long, val service: Long, val discount: Long, val due: Long, val items: Int, val newItems: Int, val queuedItems: Int = 0)
+/** 金额：小计、服务费、优惠合计、应收；分项：会员、主管折扣、活动。items 份数；newItems 待送厨；queuedItems 待同步。 */
+data class Totals(
+    val sub: Long, val service: Long, val discount: Long, val due: Long, val items: Int, val newItems: Int, val queuedItems: Int = 0,
+    val memberOff: Long = 0, val manualOff: Long = 0, val promoOff: Long = 0,
+)
+
+/** 优惠活动：满减（满 threshold 减 amount）或整单折扣（percent=90 即 9 折，可设门槛）。 */
+@Serializable enum class PromotionKind(val label: String) { Threshold("满减"), Percent("整单折扣") }
+
+@Serializable data class Promotion(
+    val id: String, val name: String, val kind: PromotionKind, val threshold: Long = 0, val amount: Long = 0, val percent: Int = 100, val enabled: Boolean = true,
+) {
+    val summary get() = when (kind) {
+        PromotionKind.Threshold -> "满${yuan(threshold).removePrefix("¥").removeSuffix(".00")}减${yuan(amount).removePrefix("¥").removeSuffix(".00")}"
+        PromotionKind.Percent -> "${if (percent % 10 == 0) "${percent / 10}" else "${percent / 10.0}"}折" + if (threshold > 0) "（满${yuan(threshold).removePrefix("¥").removeSuffix(".00")}）" else ""
+    }
+}
+
+/** 会员档案（本店本机；多机经主机共享）。 */
+@Serializable data class Member(
+    val id: String, val phone: String, val name: String, val balance: Long = 0, val points: Long = 0,
+    val totalSpent: Long = 0, val visits: Int = 0, val createdAt: Long = 0,
+)
+
+@Serializable enum class MemberTxnKind(val label: String) { Recharge("充值"), Consume("储值消费"), Points("积分") }
+
+/** 会员流水：余额变动必须有流水，balanceAfter 便于对账。 */
+@Serializable data class MemberTxn(
+    val id: String, val memberId: String, val kind: MemberTxnKind, val amount: Long, val balanceAfter: Long, val at: Long,
+    val ref: String = "", val actor: String = "", val method: String = "", val points: Long = 0,
+)
+
+/** 结账时的订单快照：报表依据（菜品、优惠、会员）。 */
+@Serializable data class SettledOrder(
+    val orderId: String, val tableId: String, val paymentId: String, val at: Long, val lines: List<OrderLine>,
+    val sub: Long, val service: Long, val discount: Long, val due: Long, val method: String,
+    val memberId: String = "", val promotions: List<String> = emptyList(), val guests: Int = 0,
+)
+
+/** 日结记录：营业日汇总（固定快照）。 */
+@Serializable data class DayClose(
+    val id: String, val start: Long, val end: Long, val staff: String,
+    val revenue: Long, val received: Long, val orders: Int, val guests: Int, val discount: Long,
+    val byMethod: Map<String, Long>, val voidAmount: Long = 0, val giftAmount: Long = 0,
+    val recharge: Long = 0, val newMembers: Int = 0,
+)
 
 /** 收款记录（本机落盘，联网后同步）。 */
 @Serializable
@@ -196,7 +250,17 @@ data class OutboxItem(
 )
 
 @Serializable
-data class StoreSettings(val shortName: String, val receiptFooter: String = "谢谢惠顾，欢迎再来", val hours: String = "10:00–22:00", val currency: String = Money.CURRENCY)
+data class StoreSettings(
+    val shortName: String, val receiptFooter: String = "谢谢惠顾，欢迎再来", val hours: String = "10:00–22:00", val currency: String = Money.CURRENCY,
+    /** 服务费率（万分比，0–2000）。 */
+    val serviceBp: Int = 500,
+    /** 会员折扣（万分比，500=95 折）。 */
+    val memberBp: Int = 500,
+    /** 启用的收款方式。 */
+    val payMethods: List<String> = listOf("现金", "扫码", "银行卡", "储值卡"),
+    /** 每消费 1 元积 N 分（0=不积分）。 */
+    val pointsPerYuan: Int = 1,
+)
 
 /** 一家门店的全部本地数据。 */
 @Serializable
@@ -236,6 +300,14 @@ data class StoreData(
     val printers: List<PrinterConfig> = emptyList(),
     /** 档口路由：厨房 / 前台 → 打印机 ID。 */
     val printRoutes: Map<String, String> = emptyMap(),
+    // —— 日常运营 ——
+    val members: List<Member> = emptyList(),
+    val memberTxns: List<MemberTxn> = emptyList(),
+    val promotions: List<Promotion> = defaultPromotions(),
+    val settledOrders: List<SettledOrder> = emptyList(),
+    /** 当前营业日开始时间（0=尚未开始，取最早收款时间）。 */
+    val dayStart: Long = 0,
+    val dayCloses: List<DayClose> = emptyList(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {
@@ -352,3 +424,10 @@ data class DeviceStatus(
 
 /** 门店卡片（选店页）。 */
 data class StoreSummary(val id: String, val name: String, val code: String, val address: String, val tables: Int, val dining: Int)
+
+
+/** 默认活动（与旧版写死的券/活动一致，便于迁移）。 */
+fun defaultPromotions() = listOf(
+    Promotion("promo-200-10", "满200减10", PromotionKind.Threshold, threshold = 20_000, amount = 1_000),
+    Promotion("promo-100-5", "满100减5", PromotionKind.Threshold, threshold = 10_000, amount = 500),
+)

@@ -12,9 +12,6 @@ sealed interface OrderResult {
  */
 object OrderRules {
     const val DEFAULT_SPEC = "标准做法"
-    /** 服务费、会员折扣：万分比。 */
-    private const val SERVICE_BP = 500
-    private const val MEMBER_BP = 500
     private const val COUPON_FEN = 1000L
     private const val ACTIVITY_FEN = 500L
 
@@ -79,8 +76,8 @@ object OrderRules {
     fun clearNew(order: TableOrder) = order.copy(lines = order.lines.filterNot { it.status == LineStatus.New })
 
     /** 送厨：草稿行打上批次号；在线直接已下单，离线为待同步。 */
-    fun send(order: TableOrder, batchId: String, online: Boolean) = order.copy(
-        lines = order.lines.map { if (it.status == LineStatus.New) it.copy(status = if (online) LineStatus.Sent else LineStatus.Queued, batchId = batchId) else it },
+    fun send(order: TableOrder, batchId: String, online: Boolean, at: Long = 0) = order.copy(
+        lines = order.lines.map { if (it.status == LineStatus.New) it.copy(status = if (online) LineStatus.Sent else LineStatus.Queued, batchId = batchId, sentAt = at) else it },
     )
 
     /** 批次补发成功：只把该批次的待同步行改为已下单；重复调用无副作用（幂等）。 */
@@ -95,18 +92,38 @@ object OrderRules {
         },
     )
 
+    /**
+     * 计价顺序：会员折扣（按订单快照费率）→ 主管整单折扣 → 活动折扣（整单折扣类）→ 满减（按小计判断门槛）；优惠合计不超过小计。
+     * 服务费按小计计算。所有比例为整数万分比、四舍五入。
+     */
     fun totals(order: TableOrder): Totals {
         val sub = Money.sum(order.lines.map { if (it.gifted) 0L else Money.line(it.unit, it.qty) })
-        val service = Money.rate(sub, SERVICE_BP)
-        val member = if (order.member) Money.rate(sub, MEMBER_BP) else 0L
+        val service = Money.rate(sub, order.serviceBp.coerceIn(0, 2000))
+        val member = if (order.member) Money.rate(sub, order.memberBp.coerceIn(0, 5000)) else 0L
         val manual = Money.rate(sub - member, (100 - order.discountPercent.coerceIn(1, 100)) * 100)
+        val afterManual = sub - member - manual
+        val pct = order.promotions.filter { it.kind == PromotionKind.Percent && sub >= it.threshold }
+            .sumOf { Money.rate(afterManual, (100 - it.percent.coerceIn(1, 100)) * 100) }
+        val cut = Money.sum(order.promotions.filter { it.kind == PromotionKind.Threshold && sub >= it.threshold }.map { it.amount })
+        // 旧版开关（迁移前订单）
         val coupon = if (order.coupon && sub >= 20_000) COUPON_FEN else 0L
         val activity = if (order.activity && sub >= 10_000) ACTIVITY_FEN else 0L
-        val discount = Money.sum(listOf(member, manual, coupon, activity)).coerceAtMost(sub)
+        val promo = Money.sum(listOf(pct, cut, coupon, activity))
+        val discount = Money.sum(listOf(member, manual, promo)).coerceAtMost(sub)
         return Totals(
             sub = sub, service = service, discount = discount, due = Math.subtractExact(Math.addExact(sub, service), discount),
             items = order.lines.sumOf { it.qty }, newItems = order.pending.sumOf { it.qty }, queuedItems = order.queued.sumOf { it.qty },
+            memberOff = member, manualOff = manual, promoOff = promo,
         )
+    }
+
+    /** 活动可用性：启用、门槛满足；整单折扣类同时只能一个。 */
+    fun promotionBlock(order: TableOrder, chosen: List<Promotion>): String? {
+        val sub = totals(order.copy(promotions = emptyList(), coupon = false, activity = false)).sub
+        chosen.firstOrNull { !it.enabled }?.let { return "活动「${it.name}」已停用" }
+        chosen.firstOrNull { sub < it.threshold }?.let { return "菜品小计未满 ${yuan(it.threshold)}，不能使用「${it.name}」" }
+        if (chosen.count { it.kind == PromotionKind.Percent } > 1) return "整单折扣类活动只能选一个"
+        return null
     }
 
     /** 结账核对条件：有菜品，且没有新加或待同步行（数据契约 §7）。 */

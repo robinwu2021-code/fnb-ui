@@ -108,3 +108,17 @@ class RoutedSync(private val ws: LocalWorkspace, private val link: LanLink) : Sy
     override suspend fun confirmDelivery(ticketId: String, reason: String) =
         if (link.isSecondary) Result.failure(IllegalStateException(HOST_ONLY)) else ws.confirmDelivery(ticketId, reason)
 }
+
+
+/** 日常运营路由：本单会员/活动经主机执行；建会员、充值、活动配置、日结仅主 POS。 */
+class RoutedOps(private val ws: LocalWorkspace, private val link: LanLink) : OperationsRepository {
+    private fun hostOnly() = Result.failure<Nothing>(IllegalStateException(HOST_ONLY))
+    override suspend fun createMember(phone: String, name: String) = if (link.isSecondary) hostOnly() else ws.createMember(phone, name)
+    override suspend fun recharge(memberId: String, amount: Long, method: String) = if (link.isSecondary) hostOnly() else ws.recharge(memberId, amount, method)
+    override suspend fun bindMember(tableId: String, memberId: String?) =
+        if (link.isSecondary) link.submit(I.BindMember(tableId, memberId), "$tableId 会员").unit() else ws.bindMember(tableId, memberId)
+    override suspend fun setPromotions(tableId: String, ids: List<String>) =
+        if (link.isSecondary) link.submit(I.SetPromotions(tableId, ids), "$tableId 优惠活动").unit() else ws.setPromotions(tableId, ids)
+    override suspend fun savePromotion(p: ai.neargo.fnb.pos.core.model.Promotion) = if (link.isSecondary) hostOnly() else ws.savePromotion(p)
+    override suspend fun closeDay(staff: String) = if (link.isSecondary) hostOnly() else ws.closeDay(staff)
+}

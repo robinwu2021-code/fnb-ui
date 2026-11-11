@@ -42,6 +42,7 @@ import ai.neargo.fnb.pos.core.model.TaskLogEntry
 import ai.neargo.fnb.pos.core.model.TASK_LOG_LIMIT
 import ai.neargo.fnb.pos.core.model.IdMapping
 import ai.neargo.fnb.pos.core.model.Money
+import ai.neargo.fnb.pos.core.model.*
 import ai.neargo.fnb.pos.core.model.PrinterConfig
 import ai.neargo.fnb.pos.core.identity.AuthContext
 import ai.neargo.fnb.pos.core.identity.AuthState
@@ -170,7 +171,7 @@ class LocalWorkspace(
     /** 身份与授权；为空时（单元测试）不做授权限制。 */
     private val identity: IdentityContext? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
@@ -420,6 +421,88 @@ class LocalWorkspace(
         }
     }
 
+    // —— 日常运营（会员 / 优惠 / 日结） ——
+    override suspend fun createMember(phone: String, name: String): Result<Member> = persistenceResult {
+        val id = newId("M")
+        transaction(EventSpec { _, a -> Triple("MemberCreated", OpsEvents.member(a.members.first { it.id == id }), listOf("member:$id")) }) { v ->
+            val s = v.store ?: return@transaction v to Result.failure(IllegalStateException("请先选择门店"))
+            val p = phone.trim(); val n = name.trim()
+            val err = when {
+                !Regex("^1\\d{10}$").matches(p) -> "请填写 11 位手机号"
+                n.length > 20 -> "姓名最多 20 字"
+                s.members.any { it.phone == p } -> "该手机号已是会员"
+                else -> null
+            }
+            if (err != null) return@transaction v to Result.failure(IllegalStateException(err))
+            val m = Member(id, p, n.ifBlank { "会员${p.takeLast(4)}" }, createdAt = clock())
+            v.copy(stores = v.stores + (s.id to s.copy(members = s.members + m))) to Result.success(m)
+        }
+    }
+
+    override suspend fun recharge(memberId: String, amount: Long, method: String): Result<Unit> {
+        val tx = newId("MT")
+        return storeOp(event = EventSpec { _, a -> Triple("MemberRecharged", OpsEvents.member(a.members.first { it.id == memberId }, a.memberTxns.first { it.id == tx }), listOf("member:$memberId")) }, check = { s ->
+            when {
+                s.members.none { it.id == memberId } -> "会员不存在"
+                amount <= 0 || amount > 5_000_000 -> "充值金额应为 0.01–50000 元"
+                method !in listOf("现金", "扫码", "银行卡") -> "请选择充值方式"
+                method !in s.settings.payMethods -> "门店未启用「$method」"
+                else -> null
+            }
+        }) { s ->
+            val m = s.members.first { it.id == memberId }
+            val m2 = m.copy(balance = Math.addExact(m.balance, amount))
+            s.copy(members = s.members.map { if (it.id == memberId) m2 else it },
+                memberTxns = s.memberTxns + MemberTxn(tx, memberId, MemberTxnKind.Recharge, amount, m2.balance, clock(), actor = state.value.user ?: DemoCatalog.STAFF, method = method))
+        }
+    }
+
+    /** 本单绑定/解绑会员（memberId=null 解绑）；会员折扣按订单快照费率。 */
+    override suspend fun bindMember(tableId: String, memberId: String?) = storeOp(event = page("OrderMemberChanged", tableId), check = { s ->
+        when {
+            s.table(tableId)?.status != TableStatus.Dining -> "$tableId 未在用餐"
+            memberId != null && s.members.none { it.id == memberId } -> "会员不存在"
+            else -> null
+        }
+    }) { s ->
+        val m = memberId?.let { id -> s.members.first { it.id == id } }
+        s.withOrder(tableId, s.order(tableId).copy(member = m != null, memberId = m?.id.orEmpty(), memberName = m?.name.orEmpty()))
+    }
+
+    /** 本单选用活动：校验启用与门槛，保存活动快照（修改配置不影响已选订单）。 */
+    override suspend fun setPromotions(tableId: String, ids: List<String>) = storeOp(event = page("OrderBenefitsChanged", tableId), check = { s ->
+        val chosen = ids.distinct().map { id -> s.promotions.firstOrNull { it.id == id } ?: return@storeOp "活动不存在" }
+        if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else OrderRules.promotionBlock(s.order(tableId), chosen)
+    }) { s ->
+        val chosen = ids.distinct().map { id -> s.promotions.first { it.id == id } }
+        s.withOrder(tableId, s.order(tableId).copy(promotions = chosen, coupon = false, activity = false))
+    }
+
+    override suspend fun savePromotion(p: Promotion) = storeOp(event = config("PromotionSaved", "promotion") { p.id }, check = { s ->
+        when {
+            p.name.isBlank() || p.name.length > 20 -> "活动名称 1–20 字"
+            s.promotions.any { it.id != p.id && it.name == p.name.trim() } -> "活动名称重复"
+            p.threshold < 0 || p.threshold > Money.MAX_BILL -> "门槛金额无效"
+            p.kind == PromotionKind.Threshold && (p.amount <= 0 || p.amount > p.threshold) -> "减额应大于 0 且不超过门槛"
+            p.kind == PromotionKind.Percent && p.percent !in 50..99 -> "折扣应为 5–9.9 折"
+            else -> null
+        }
+    }) { s -> val q = p.copy(name = p.name.trim()); s.copy(promotions = s.promotions.filterNot { it.id == q.id } + q) }
+
+    /** 日结：汇总当前营业日，生成日结单并开启新营业日。 */
+    override suspend fun closeDay(staff: String): Result<DayClose> = persistenceResult {
+        transaction(EventSpec { b, a -> Triple("DayClosed", OpsEvents.day(a.dayCloses.last()), listOf("day")) }) { v ->
+            val s = v.store ?: return@transaction v to Result.failure(IllegalStateException("请先选择门店"))
+            ReportRules.closeBlock(s)?.let { return@transaction v to Result.failure(IllegalStateException(it)) }
+            val now = clock(); val start = ReportRules.dayStart(s).takeIf { it > 0 } ?: now
+            val r = ReportRules.build(s, start, now + 1)
+            val d = DayClose(newId("D"), start, now, staff, r.revenue, r.revenue, r.orders, r.guests, r.discount, r.byMethod, r.voidAmount, r.giftAmount, r.recharge, r.newMembers)
+            val job = PrintJob(newId("DC"), PrintKind.Shift, "日结单 ${s.settings.shortName}", ReportRules.dayCloseReceipt(s.settings.shortName, d), now)
+            // 新营业日从日结时刻的下一毫秒开始：与已日结区间 [start, now] 不重叠，避免同一毫秒的收款被重复统计
+            v.copy(stores = v.stores + (s.id to s.copy(dayStart = now + 1, dayCloses = s.dayCloses + d, printJobs = s.printJobs + job))) to Result.success(d)
+        }
+    }
+
     // —— 授权中心 ——
     private fun authLogged(v: Vault, line: String) = v.copy(authLog = (v.authLog + "${clock()} ${v.user ?: "-"} $line").takeLast(200))
 
@@ -569,7 +652,16 @@ class LocalWorkspace(
     }) { s -> s.copy(menus = s.menus.map { if (it.id == menuId) it.copy(published = published) else it }) }
 
     override suspend fun saveSettings(settings: StoreSettings) = storeOp(event = EventSpec { b, a -> Triple("StoreSettingsUpdated", ManagementEventFactory.config("settings", a.id, b, a), listOf(Aggregates.CATALOG)) },
-        check = { ManageRules.required(settings.shortName, "门店简称") }) { s ->
+        check = {
+            ManageRules.required(settings.shortName, "门店简称") ?: when {
+                settings.serviceBp !in 0..2000 -> "服务费率应为 0–20%"
+                settings.memberBp !in 0..5000 -> "会员折扣应为 5–10 折"
+                settings.pointsPerYuan !in 0..100 -> "积分倍率应为 0–100"
+                settings.payMethods.isEmpty() -> "至少启用一种收款方式"
+                settings.payMethods.any { it !in listOf("现金", "扫码", "银行卡", "储值卡") } -> "收款方式无效"
+                else -> null
+            }
+        }) { s ->
         s.copy(settings = settings.copy(shortName = settings.shortName.trim()))
     }
 
@@ -623,7 +715,7 @@ class LocalWorkspace(
     /** arrivedId 为空时（直接开台）该桌所有待到店预订视为到店；否则只标记指定预订。 */
     private fun opened(s: StoreData, tableId: String, guests: Int, arrivedId: String? = null) =
         s.withTable(tableId) { it.copy(status = TableStatus.Dining, guests = guests, openedAt = clock(), reservation = "", paid = 0, sessionId = newId("TS")) }
-            .withOrder(tableId, TableOrder(orderId = newId("O"))).copy(currentTableId = tableId,
+            .withOrder(tableId, TableOrder(orderId = newId("O"), serviceBp = s.settings.serviceBp, memberBp = s.settings.memberBp)).copy(currentTableId = tableId,
                 reservations = s.reservations.map {
                     val hit = if (arrivedId != null) it.id == arrivedId else it.tableId == tableId && it.status == ReservationStatus.Booked
                     if (hit) it.copy(status = ReservationStatus.Arrived, updatedAt = clock()) else it
@@ -631,7 +723,10 @@ class LocalWorkspace(
 
     override suspend fun settle(tableId: String, amount: Long, method: String, online: Boolean, received: Long): Result<Unit> {
         val pid = newId("P")
-        return storeOp(event = page("PaymentRecorded", tableId), check = { s ->
+        // 储值支付同时修改会员余额：事件参与会员聚合
+        val memberAgg = currentStore()?.order(tableId)?.memberId?.takeIf { it.isNotBlank() && method == "储值卡" }
+        val spec = page("PaymentRecorded", tableId).let { base -> if (memberAgg == null) base else EventSpec { b, a -> base.resolve(b, a).let { (t, p, ag) -> Triple(t, p, ag + "member:$memberAgg") } } }
+        return storeOp(event = spec, check = { s ->
             val totals = OrderRules.totals(s.order(tableId))
             OrderRules.checkoutBlock(totals) ?: DeliveryRules.checkoutBlock(s, tableId) ?: when {
                 amount != totals.due -> "账单已变化，请重新核对"
@@ -639,8 +734,18 @@ class LocalWorkspace(
                 s.settings.currency !in Money.SUPPORTED -> "不支持的币种：${s.settings.currency}"
                 method == "现金" && received < amount -> "实收不足，不能确认收款"
                 method !in listOf("现金", "银行卡", "扫码", "储值卡") -> "请选择收款方式"
+                method !in s.settings.payMethods -> "门店未启用「$method」"
                 !online && method == "扫码" -> "离线时该收款方式不可用"
-                method == "储值卡" && (!s.order(tableId).member || s.walletBalance < amount) -> "本机会员未绑定或储值余额不足"
+                method == "储值卡" -> {
+                    val o = s.order(tableId)
+                    val m = s.members.firstOrNull { it.id == o.memberId }
+                    when {
+                        o.memberId.isNotBlank() && m == null -> "会员不存在"
+                        m != null && m.balance < amount -> "会员余额不足（余额 ${yuan(m.balance)}）"
+                        m == null && (!o.member || s.walletBalance < amount) -> "请先绑定会员"
+                        else -> null
+                    }
+                }
                 else -> null
             }
         }) { s ->
@@ -649,8 +754,22 @@ class LocalWorkspace(
                 state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
             val out = if (online) s.outbox else s.outbox + OutboxItem(pid, OutboxKind.Payment, tableId, "$tableId $method 收款 ${yuan(amount)}", clock())
             val receipt = PrintJob(newId("R"), PrintKind.Receipt, "$tableId 结账单", Receipts.bill("结账单", s, tableId, s.order(tableId), clock(), pay), clock())
+            val o = s.order(tableId); val t = OrderRules.totals(o)
+            val snap = SettledOrder(o.orderId, tableId, pid, clock(), o.lines, t.sub, t.service, t.discount, t.due, method, o.memberId, o.promotions.map { it.name }, s.table(tableId)?.guests ?: 0)
+            val member = s.members.firstOrNull { it.id == o.memberId }
+            val actor = state.value.user ?: DemoCatalog.STAFF
+            var members = s.members; var txns = s.memberTxns; var wallet = s.walletBalance
+            if (member != null) {
+                val stored = method == "储值卡"
+                val pts = (amount / 100) * s.settings.pointsPerYuan
+                val m2 = member.copy(balance = if (stored) member.balance - amount else member.balance, points = member.points + pts, totalSpent = member.totalSpent + amount, visits = member.visits + 1)
+                members = members.map { if (it.id == member.id) m2 else it }
+                if (stored) txns = txns + MemberTxn(newId("MT"), member.id, MemberTxnKind.Consume, -amount, m2.balance, clock(), pid, actor, method)
+                if (pts > 0) txns = txns + MemberTxn(newId("MT"), member.id, MemberTxnKind.Points, 0, m2.balance, clock(), pid, actor, points = pts)
+            } else if (method == "储值卡") wallet -= amount // 旧版演示余额
             s.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
-                .copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + receipt, walletBalance = if (method == "储值卡") s.walletBalance - amount else s.walletBalance)
+                .copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + receipt, walletBalance = wallet,
+                    members = members, memberTxns = txns, settledOrders = s.settledOrders + snap)
         }
     }
 
@@ -1040,7 +1159,7 @@ class LocalWorkspace(
         if (n == 0) return@transaction v to SendResult(0, false)
         val batch = newId("K-${s.id}")
         val out = if (online) s.outbox else s.outbox + OutboxItem(batch, OutboxKind.Kitchen, tableId, "$tableId 送厨 $n 份", clock())
-        val sent = OrderRules.send(s.order(tableId), batch, online)
+        val sent = OrderRules.send(s.order(tableId), batch, online, clock())
         // 厨房单走本机/局域网，不依赖云端：离线也立即出单；云端待同步另由 outbox 与事件表示
         val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1).kitchenJob(tableId, batch)
         v.copy(stores = v.stores + (s.id to next)) to SendResult(n, !online)

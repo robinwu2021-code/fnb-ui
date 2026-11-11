@@ -68,6 +68,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.RoomService
+import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
@@ -174,7 +176,7 @@ fun PosApp(shell: ShellViewModel) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
+                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
                 val authStatus by appContainer().auth.auth.collectAsStateWithLifecycle()
@@ -200,6 +202,8 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<ManageRoute> { ManageScreenRoute(onDisplay, onSwitchStore) }
         composable<SyncRoute> { SyncScreenRoute() }
         composable<ai.neargo.fnb.pos.navigation.AuthRoute> { ai.neargo.fnb.pos.feature.authcenter.AuthCenterRoute() }
+        composable<ai.neargo.fnb.pos.navigation.ServeRoute> { ai.neargo.fnb.pos.feature.ops.ServeRoute() }
+        composable<ai.neargo.fnb.pos.navigation.ReportsRoute> { ai.neargo.fnb.pos.feature.ops.ReportsRoute() }
     }
 }
 
@@ -228,7 +232,7 @@ private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage:
 /** 页头右侧操作：原页头（消息 / 打印 / 语言 / 显示）与原页脚（在线 / 钱箱 / 交班 / 帮助）合并，统一为图标。 */
 private class HeaderActions(
     val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit, val cloudPending: Int, val kitchenAction: Int,
-    val onShift: () -> Unit, val onPrint: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
+    val onShift: () -> Unit, val onPrint: () -> Unit, val onServe: () -> Unit, val onReports: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
 )
 
 /** AppHeader（宽屏）：门店 / 员工·终端、工作台导航；右侧图标工具栏。无页脚，内容区直达底部。 */
@@ -248,6 +252,8 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusIcon(actions)
+            ToolIcon(Icons.Outlined.RoomService, "出菜", onClick = actions.onServe)
+            ToolIcon(Icons.Outlined.Assessment, "报表与日结", onClick = actions.onReports)
             ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息：A06 预订 19:00 到店；厨房已出 A02 麻婆豆腐（演示）") }
             PrinterIcon(actions)
             ToolIcon(Icons.Outlined.PointOfSale, "钱箱") { actions.notice("钱箱操作需要权限，演示环境未连接钱箱") }
@@ -276,6 +282,8 @@ private fun CompactHeader(session: Session, actions: HeaderActions) {
                     DropdownMenuItem(text = { Text(label, style = Pos.type.body) }, leadingIcon = { Icon(icon, null) }, onClick = { more = false; act() })
                 }
                 item(Icons.Outlined.Print, if (actions.device.printerOk) "打印队列" else "打印队列（缺纸）", actions.onPrint)
+                item(Icons.Outlined.RoomService, "出菜", actions.onServe)
+                item(Icons.Outlined.Assessment, "报表与日结", actions.onReports)
                 item(Icons.Outlined.SwapHoriz, "交班", actions.onShift)
                 item(Icons.Outlined.Translate, "语言：中文 / EN", actions.onLang)
                 item(Icons.AutoMirrored.Outlined.HelpOutline, "帮助") { actions.notice("帮助中心 · POS 3.0 演示终端") }

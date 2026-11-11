@@ -92,6 +92,8 @@ fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Uni
                 Section.Payments -> PaymentsSection(state)
                 Section.Staff -> StaffSection()
                 Section.Gallery -> GallerySection()
+                Section.Members -> SimplePage("会员管理", "会员档案、储值充值与流水；绑定会员在点餐或结账页操作") { Column(Modifier.verticalScroll(rememberScrollState())) { ai.neargo.fnb.pos.feature.ops.MembersPanel() } }
+                Section.Promotions -> SimplePage("优惠活动", "满减与整单折扣；订单选用时保存快照，修改不影响已选的订单") { Column(Modifier.verticalScroll(rememberScrollState())) { ai.neargo.fnb.pos.feature.ops.PromotionsPanel() } }
                 Section.Lan -> SimplePage("主副 POS", "局域网配对、主机仲裁与设备管理；副机失联时只读") { ai.neargo.fnb.pos.feature.lan.LanPanel() }
                 Section.Auth -> SimplePage("授权中心", "设备身份与离线授权：到期、撤销、时钟异常时暂停新营业写入，账本保留") { ai.neargo.fnb.pos.feature.authcenter.AuthCenterPanel() }
                 Section.Data -> SimplePage("数据与恢复", "备份、恢复点与迁移记录；恢复会替换本机数据，恢复前自动保留副本") { ai.neargo.fnb.pos.feature.recovery.DataRecoveryPanel() }
@@ -275,8 +277,12 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
     var short by remember(store.id) { mutableStateOf(store.settings.shortName) }
     var footer by remember(store.id) { mutableStateOf(store.settings.receiptFooter) }
     var hours by remember(store.id) { mutableStateOf(store.settings.hours) }
+    var service by remember(store.id) { mutableStateOf("${store.settings.serviceBp / 100.0}".removeSuffix(".0")) }
+    var memberRate by remember(store.id) { mutableStateOf("${(10_000 - store.settings.memberBp) / 1000.0}".removeSuffix(".0")) }
+    var points by remember(store.id) { mutableStateOf(store.settings.pointsPerYuan.toString()) }
+    var methods by remember(store.id) { mutableStateOf(store.settings.payMethods.toSet()) }
     var error by remember { mutableStateOf<String?>(null) }
-    PageHeader("门店与营业", "门店简称同步页头；小票页脚用于小票预览")
+    PageHeader("门店与营业", "门店简称同步页头；费率修改只影响之后新开的订单")
     Column(Modifier.widthIn(max = 520.dp).verticalScroll(rememberScrollState())) {
         Block("门店信息") {
             Cell("门店码 ${store.code}", sub = true)
@@ -286,7 +292,24 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
         PosTextField(short, { short = it }, "门店简称", error = error)
         PosTextField(hours, { hours = it }, "营业时段（示例说明）")
         PosTextField(footer, { footer = it }, "小票页脚", singleLine = false)
-        PosButton("保存", { vm.saveSettings(store.settings.copy(shortName = short, receiptFooter = footer, hours = hours)) { error = it } }, Modifier.padding(top = 8.dp), variant = BtnVariant.Primary, size = BtnSize.Large)
+        Block("计价与会员") {
+            PosTextField(service, { service = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, "服务费率（%，0–20）")
+            PosTextField(memberRate, { memberRate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(4) }, "会员折扣（折，例如 9.5）")
+            PosTextField(points, { points = it.filter(Char::isDigit).take(3) }, "每消费 1 元积分（0 不积分）")
+        }
+        Block("收款方式") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("现金", "扫码", "银行卡", "储值卡").forEach { m ->
+                    PosButton(m, { methods = if (m in methods) methods - m else methods + m }, size = BtnSize.Small, selected = m in methods)
+                }
+            }
+        }
+        PosButton("保存", {
+            val bp = service.toDoubleOrNull()?.let { Math.round(it * 100).toInt() } ?: -1
+            val mb = memberRate.toDoubleOrNull()?.let { 10_000 - Math.round(it * 1000).toInt() } ?: -1
+            vm.saveSettings(store.settings.copy(shortName = short, receiptFooter = footer, hours = hours, serviceBp = bp, memberBp = mb,
+                pointsPerYuan = points.toIntOrNull() ?: -1, payMethods = listOf("现金", "扫码", "银行卡", "储值卡").filter { it in methods })) { error = it }
+        }, Modifier.padding(top = 8.dp), variant = BtnVariant.Primary, size = BtnSize.Large)
     }
 }
 

@@ -14,6 +14,8 @@ import kotlinx.serialization.Serializable
 @Serializable data object SyncRoute
 @Serializable data object PrintRoute
 @Serializable data object AuthRoute
+@Serializable data object ServeRoute
+@Serializable data object ReportsRoute
 
 /** 页头工作台导航当前项。 */
 enum class TopLevel(val label: String) { Tables("桌台"), Order("点餐"), Manage("系统管理") }

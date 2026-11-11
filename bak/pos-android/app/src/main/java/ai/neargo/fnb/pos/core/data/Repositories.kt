@@ -177,3 +177,14 @@ interface AuthRepository {
     suspend fun revokeCurrent(): Result<Unit>
     suspend fun confirmClock(email: String, password: String): Result<Unit>
 }
+
+
+/** 日常运营：会员、优惠、日结（N 日常运营）。 */
+interface OperationsRepository {
+    suspend fun createMember(phone: String, name: String): Result<ai.neargo.fnb.pos.core.model.Member>
+    suspend fun recharge(memberId: String, amount: Long, method: String): Result<Unit>
+    suspend fun bindMember(tableId: String, memberId: String?): Result<Unit>
+    suspend fun setPromotions(tableId: String, ids: List<String>): Result<Unit>
+    suspend fun savePromotion(p: ai.neargo.fnb.pos.core.model.Promotion): Result<Unit>
+    suspend fun closeDay(staff: String): Result<ai.neargo.fnb.pos.core.model.DayClose>
+}

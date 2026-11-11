@@ -52,6 +52,7 @@ internal object ManagementEventFactory {
             addAll(diff("specGroup", SpecGroup.serializer(), before.specGroups, after.specGroups) { it.id })
             addAll(diff("product", Product.serializer(), before.products, after.products) { it.id })
             addAll(diff("menu", Menu.serializer(), before.menus, after.menus) { it.id })
+            addAll(diff("promotion", Promotion.serializer(), before.promotions, after.promotions) { it.id })
             if (before.settings != after.settings) add(ConfigChange("settings", after.id,
                 json.encodeToJsonElement(StoreSettings.serializer(), before.settings), json.encodeToJsonElement(StoreSettings.serializer(), after.settings)))
         }
@@ -83,3 +84,14 @@ internal object ManagementEventFactory {
         ))
     }
 }
+
+
+/** 日常运营事件载荷（会员、充值、日结）：直接序列化实体与流水，不含账号凭据。 */
+internal object OpsEvents {
+    private val json = Json { encodeDefaults = true }
+    fun member(m: Member, txn: MemberTxn? = null): String =
+        json.encodeToString(MemberEventPayload.serializer(), MemberEventPayload(m, txn))
+    fun day(d: DayClose): String = json.encodeToString(DayClose.serializer(), d)
+}
+
+@Serializable internal data class MemberEventPayload(val member: Member, val txn: MemberTxn? = null)

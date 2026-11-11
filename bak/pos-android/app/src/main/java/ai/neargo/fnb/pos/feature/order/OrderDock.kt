@@ -103,8 +103,8 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val m = Modifier.weight(1f)
-                PosButton("会员", { onAction(OrderAction.ToggleMember) }, m, size = BtnSize.Small, selected = state.order.member, textStyle = t.label, enabled = state.canOrder)
-                PosButton("优惠券", { onAction(OrderAction.ToggleCoupon) }, m, size = BtnSize.Small, textStyle = t.label, selected = state.order.coupon)
+                PosButton(if (state.order.memberName.isNotBlank()) state.order.memberName else "会员", { dialog = "member" }, m, size = BtnSize.Small, selected = state.order.member, textStyle = t.label, enabled = state.canOrder)
+                PosButton(if (state.order.promotions.isNotEmpty()) "优惠 ${state.order.promotions.size}" else "优惠", { dialog = "promo" }, m, size = BtnSize.Small, textStyle = t.label, selected = state.order.promotions.isNotEmpty() || state.order.coupon, enabled = state.canOrder)
                 PosButton("备注", { dialog = "note" }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder, selected = state.order.note.isNotBlank())
                 PosButton(if (state.order.pending.isEmpty() && state.held.isNotEmpty()) "取单 ${state.held.size}" else "挂单",
                     { if (state.order.pending.isEmpty() && state.held.isNotEmpty()) dialog = "retrieve" else onAction(OrderAction.Hold) }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder)
@@ -166,7 +166,10 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
 @Composable
 private fun DockDialogs(state: OrderUiState, dialog: String?, close: () -> Unit, onAction: (OrderAction) -> Unit) {
     val tb = state.table ?: return
+    val store = ai.neargo.fnb.pos.app.appContainer().config.current.value
     when (dialog) {
+        "member" -> if (store != null) ai.neargo.fnb.pos.feature.common.MemberPickDialog(store, tb.id, state.order, close)
+        "promo" -> if (store != null) ai.neargo.fnb.pos.feature.common.PromotionPickDialog(store, tb.id, state.order, close)
         "batch" -> {
             var selected by remember { mutableStateOf(setOf<Long>()) }
             val lines = state.order.lines.filter { it.status == LineStatus.Sent || it.status == LineStatus.Rushing }
