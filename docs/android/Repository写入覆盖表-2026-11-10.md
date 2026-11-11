@@ -1,6 +1,6 @@
 # Repository 写入覆盖表
 
-核对日期：2026-11-10。覆盖当前Repositories.kt及仓库外入口。已有事件仅指本地页面命令流，不代表真实同步或设备回执。待补项本轮不实施。
+核对日期：2026-11-10；N1-02 更新于 2026-11-11。覆盖当前Repositories.kt及仓库外入口。已有事件仅指本地页面命令流，不代表真实同步或设备回执。待补项本轮不实施。
 
 ## SessionRepository
 
@@ -31,14 +31,14 @@
 
 | 入口 | 当前分类 | 事件或后续归属 |
 | --- | --- | --- |
-| `createReservation` | 待营业事件 | N1-02订单桌台 |
-| `cancelReservation` | 待营业事件 | N1-02订单桌台 |
-| `checkInReservation` | 待营业事件 | N1-02订单桌台 |
+| `createReservation` | 已有事件 | ReservationCreated（含预订记录） |
+| `cancelReservation` | 已有事件 | ReservationCancelled（含预订记录） |
+| `checkInReservation` | 已有事件 | ReservationCheckedIn（开台与预订同事务） |
 | `openTable` | 已有事件 | TableOpened |
 | `settle` | 已有事件 | PaymentRecorded |
-| `startCleaning` | 待营业事件 | N1-02订单桌台 |
-| `finishCleaning` | 待营业事件 | N1-02订单桌台 |
-| `setPosition` | 待营业事件 | N1-02订单桌台 |
+| `startCleaning` | 已有事件 | TableCleaningStarted |
+| `finishCleaning` | 已有事件 | TableCleaningFinished |
+| `setPosition` | 已有事件 | TablePositionChanged |
 | `changeTable` | 已有事件 | TableChanged |
 | `mergeTable` | 已有事件 | TableMerged |
 | `splitLines` | 已有事件 | OrderSplit |
@@ -49,16 +49,16 @@
 | --- | --- | --- |
 | `addDish` | 已有事件 | DishAdded |
 | `authorizeAdjustment` | 已有事件 | DishVoided / DishGifted / OrderDiscounted |
-| `setBenefits` | 待营业事件 | N1-02订单桌台 |
-| `setLineNote` | 待营业事件 | N1-02订单桌台 |
-| `setOrderNote` | 待营业事件 | N1-02订单桌台 |
+| `setBenefits` | 已有事件 | OrderBenefitsChanged |
+| `setLineNote` | 已有事件 | DishNoteChanged（含变化行） |
+| `setOrderNote` | 已有事件 | OrderNoteChanged |
 | `hold` | 已有事件 | OrderHeld |
 | `retrieve` | 已有事件 | OrderRetrieved |
 | `changeQty` | 已有事件 | DishQuantityChanged |
-| `clearNew` | 待营业事件 | N1-02订单桌台 |
+| `clearNew` | 已有事件 | OrderDraftCleared |
 | `sendToKitchen` | 已有事件 | KitchenSubmitted |
-| `advance` | 待营业事件 | N1-02订单桌台 |
-| `setMember` | 待营业事件 | N1-02订单桌台 |
+| `advance` | 已有事件 | DishRushed / DishServed（含变化行） |
+| `setMember` | 已有事件 | OrderMemberChanged |
 
 ## SyncRepository
 
@@ -102,13 +102,13 @@
 
 ## 部分覆盖及业务差距
 
-- `checkInReservation`间接生成TableOpened，但缺独立预订到店事件及关联，所以仍列待补。
+- `checkInReservation`已改为单事务产生独立的ReservationCheckedIn，只标记该条预订到店；直接开台仍用TableOpened，并把该桌待到店预订标为到店。
 - `setPosition`是门店桌台布局，后续应同步配置，不等同于个人字体/布局偏好。
 - `adjustStock`缺库存调整前后数量、差量、原因和人员流水；`saveProduct`需记录SKU及餐牌关联。
 - `closeShift`已保存快照与打印任务，但缺ShiftClosed事件和账本范围契约。
 - `preBill/reprint`创建任务不代表出纸；需原任务/尝试关联和执行日志。
 - `process/syncNow`为模拟执行，会修改任务、订单/支付状态；不能把其成功标志升级为真实回执，也不确认command_events。
-- `advance`是本地催菜/上菜，不是KDS接单；`setMember/setBenefits`仍为本机演示，不代表资产已核验。
+- `advance`是本地催菜/上菜事件，不是KDS接单；`setMember/setBenefits`已有事件，但仍为本机演示，不代表资产已核验。
 - 当前账号/密码哈希、设备密钥及个人显示偏好不得混入营业事件。
 
 ## Repository外的写入口

@@ -163,4 +163,33 @@ class PageCommandTest {
             }
         } finally { scope.cancel(); context.deleteDatabase(name) }
     }
+
+    @Test fun reservationCheckInAndTableEventsRollbackTogether() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "booking-${UUID.randomUUID()}.db"
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            SqliteSnapshotStore(context, name).use { db ->
+                val w = LocalWorkspace(db, scope)
+                w.enterDemo(); w.selectStore("s-main")
+                val t = w.current.value!!.tables.first { it.status == ai.neargo.fnb.pos.core.model.TableStatus.Idle }.id
+                assertTrue(w.createReservation(t, "客人", "13800138000", 1, System.currentTimeMillis() + 3_600_000L, "").isSuccess)
+                val r = w.current.value!!.reservations.last()
+                val before = db.load()
+                val memory = w.current.value
+                SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+                    it.execSQL("CREATE TRIGGER fail_booking BEFORE INSERT ON command_events BEGIN SELECT RAISE(ABORT, 'failure'); END")
+                }
+                assertTrue(w.checkInReservation(r.id).isFailure)
+                assertEquals(before, db.load()); assertEquals(memory, w.current.value)
+                SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { it.execSQL("DROP TRIGGER fail_booking") }
+                assertTrue(w.checkInReservation(r.id).isSuccess)
+                w.setOrderNote(t, "靠窗")
+                w.clearNew(t)
+                assertEquals(listOf("ReservationCreated", "ReservationCheckedIn", "OrderNoteChanged"), db.journal.pending("s-main").map { it.type })
+                val event = VaultCodec.json.parseToJsonElement(db.journal.pending("s-main")[1].payload).jsonObject
+                assertEquals(r.id, event.getValue("reservation").jsonObject.getValue("id").jsonPrimitive.content)
+            }
+        } finally { scope.cancel(); context.deleteDatabase(name) }
+    }
 }
