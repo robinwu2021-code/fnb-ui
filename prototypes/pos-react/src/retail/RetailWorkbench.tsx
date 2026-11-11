@@ -7,8 +7,7 @@ import { layoutOf } from '@/layout/modules';
 import { BIZ, goModule, useBiz, useCurTab } from '@/biz';
 import { SysBarShell, SysEntry } from '@/components/pos/sysbar';
 import { StatusIcon } from '@/components/ui/badge';
-import { Empty, Note, Toaster } from '@/components/ui/feedback';
-import { Panel } from '@/components/ui/panel';
+import { Note, Toaster } from '@/components/ui/feedback';
 import { Ico } from '@/lib/icon';
 import { Overlays } from '@/overlays';
 import { RetailOrdersWB } from './RetailOrdersWB';
@@ -19,14 +18,11 @@ import { SettingsWB } from '@/modules/settings/SettingsWB';
 import { MembersWB } from '@/modules/members/MembersWB';
 import { ShiftWB } from '@/modules/shift/ShiftWB';
 import { RetailPosWB } from './RetailPos';
+import { StockWB } from './StockWB';
 import { useRT } from './dict';
 
-function StockTodo() {
-  const t = useT();
-  return <><Panel area="content" bodyClass="flex flex-col"><Empty fill icon={<Ico name="clipboard-list" size={44} className="text-sub" />} title={t('tab.stock')} desc={t('biz.stockTodo')} /></Panel><Panel area="detail"><span /></Panel></>;
-}
 /** 零售页签 → 模块。pos、orders、stock 是零售自己的；其余复用餐饮模块（第 4–6 期再按零售字段改造） */
-const RENDER: Record<string, ComponentType> = { pos: RetailPosWB, orders: RetailOrdersWB, goods: MenuWB, reports: ReportsWB, settings: SettingsWB, members: MembersWB, shift: ShiftWB, stock: StockTodo };
+const RENDER: Record<string, ComponentType> = { pos: RetailPosWB, orders: RetailOrdersWB, goods: MenuWB, reports: ReportsWB, settings: SettingsWB, members: MembersWB, shift: ShiftWB, stock: StockWB };
 /** 不出「复用餐饮模块」提示的页签：零售自己的，和机制共用、内容已按业态切换的设置 */
 const OWN = ['pos', 'orders', 'stock', 'settings'];
 

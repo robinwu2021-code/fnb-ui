@@ -114,6 +114,8 @@ eq(shift.variance(1780, 1770), { diff: -10, st: 'short' }, '盘亏 ¥10'); eq(sh
 
 eq(stock.receive({ a: 1 }, [{ id: 'a', q: 5 }, { id: 'b', q: 2 }]), { a: 6, b: 2 }, '入库累加');
 eq(stock.countDiff({ a: 10, b: 5 }, { a: 8, b: 5, c: 1 }), { rows: [{ id: 'a', book: 10, counted: 8, diff: -2 }, { id: 'c', book: 0, counted: 1, diff: 1 }], gain: 1, loss: 2 }, '盘点差异');
+eq(stock.applyCount({ a: 10, b: 5 }, { a: 8 }), { a: 8, b: 5 }, '盘点过账只改盘到的'); eq(stock.writeOff({ a: 10 }, [{ id: 'a', q: 3 }]), { a: 7 }, '报损扣减');
+eq(stock.applyDelta({ a: 1.5, b: 2 }, { a: -0.236, c: 1 }), { a: 1.264, b: 2, c: 1 }, '按变化量改库存（称重保留 3 位）'); eq(stock.costTotal([{ id: 'a', q: 3 }, { id: 'b', q: 2 }], (id) => (id === 'a' ? 1.2 : 2.35)), 8.3, '入库金额');
 eq([stock.nearExpiry('2026-11-13', '2026-11-11'), stock.nearExpiry('2026-11-20', '2026-11-11')], [true, false], '临期 3 天内');
 
 const got: string[] = []; const off = events.on('order.paid', (e) => got.push(e.biz + (e.table || '')));

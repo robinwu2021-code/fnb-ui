@@ -63,6 +63,23 @@ const D: Record<string, [string, string]> = {
   'rt.prev': ['上一步', 'Back'], 'rt.next': ['下一步', 'Next'], 'rt.confirm': ['确认退款 {m}', 'Refund {m}'],
   'rt.refunding': ['正在退款…', 'Refunding…'], 'rt.refundingHint': ['已向 {m} 发起退款，等待结果', 'Refund sent to {m}; waiting for result'], 'rt.done': ['退款成功 {m}', 'Refunded {m}'],
   'rt.doneHint': ['{n} 件 · 退回 {m}', '{n} items · to {m}'], 'rt.print': ['打印退货小票', 'Print return receipt'], 'rt.finish': ['完成', 'Done'], 'rt.stockNote': ['已回库存 {n} 件', '{n} items restocked'], 'rt.lossNote': ['已记报损 {n} 件', '{n} items written off'],
+  /* 库存作业（方案 §5.2） */
+  'sk.receive': ['入库', 'Receiving'], 'sk.count': ['盘点', 'Stock count'], 'sk.loss': ['报损', 'Write-off'], 'sk.transfer': ['调拨', 'Transfer'], 'sk.alerts': ['预警', 'Alerts'],
+  'sk.low': ['低库存 {n}', 'Low stock {n}'], 'sk.near': ['临期 {n}', 'Near expiry {n}'],
+  'sk.new.receive': ['新建入库单', 'New receipt'], 'sk.new.count': ['新建盘点', 'New count'], 'sk.new.loss': ['新建报损', 'New write-off'],
+  'sk.docs': ['{n} 张单据', '{n} documents'], 'sk.items': ['{n} 种 · {q}', '{n} SKUs · {q}'], 'sk.lines': ['{n} 种商品', '{n} SKUs'],
+  'sk.supplier': ['供应商', 'Supplier'], 'sk.scope': ['盘点范围', 'Scope'], 'sk.by': ['{w} · {t}', '{w} · {t}'], 'sk.ref': ['来自退货 {no}', 'From return {no}'],
+  'sk.scan': ['扫商品条码加入单据', 'Scan items into this document'], 'sk.empty': ['扫码或点下面的商品加入', 'Scan or tap an item below'],
+  'sk.suggest.receive': ['低于安全库存，建议补货', 'Below safety stock'], 'sk.suggest.loss': ['临期商品', 'Near expiry'], 'sk.suggest.count': ['还没盘的商品', 'Not counted yet'],
+  'sk.book': ['账面 {n}', 'Book {n}'], 'sk.cost': ['进价 {p}', 'Cost {p}'], 'sk.counted': ['实盘', 'Counted'], 'sk.diff': ['差 {n}', 'Diff {n}'],
+  'sk.why.expired': ['过期', 'Expired'], 'sk.why.damaged': ['破损', 'Damaged'], 'sk.why.return': ['退货不回库', 'Returned, not restocked'],
+  'sk.total.receive': ['入库合计', 'Total'], 'sk.total.loss': ['报损合计', 'Total'], 'sk.total.count': ['盘点结果', 'Result'], 'sk.totalNote': ['{n} 种 · 进价合计 {m}', '{n} SKUs · cost {m}'],
+  'sk.gainLoss': ['盘盈 {g} · 盘亏 {l}', 'Gain {g} · loss {l}'], 'sk.noDiff': ['账实相符', 'No difference'],
+  'sk.post.receive': ['确认入库', 'Post receipt'], 'sk.post.loss': ['确认报损', 'Post write-off'], 'sk.submit': ['提交审批', 'Submit for approval'], 'sk.approve': ['主管审批通过并过账', 'Approve & post'],
+  'sk.void': ['作废', 'Void'], 'sk.posted': ['{no} 已过账，库存已更新', '{no} posted; stock updated'], 'sk.submitted': ['{no} 已提交，等主管审批', '{no} submitted for approval'],
+  'sk.pendingNote': ['盘点结果要主管审批后才改账面库存', 'Counts change book stock only after approval'], 'sk.readonly': ['已过账的单据只读', 'Posted documents are read-only'],
+  'sk.transferTodo': ['调拨只在多门店时出现；本版本尚未对接', 'Transfers appear for multi-store setups; not built yet'],
+  'sk.f.all': ['全部', 'All'], 'sk.f.open': ['未完成', 'Open'], 'sk.f.done': ['已完成', 'Done'],
   'proto': ['原型只画了收银工作台', 'Only the checkout workbench is drawn in this prototype'],
 };
 function tr(lang: string, key: string, params?: Record<string, string | number>) {
@@ -79,6 +96,9 @@ const EXTRA: Record<string, Record<string, StDef>> = {
   item: { weighed: { zh: '称重', en: 'Weighed', group: 'trace', icon: 'scale' }, promo: { zh: '促销', en: 'Promo', group: 'trace', icon: 'badge-percent' }, returned: { zh: '退货', en: 'Returned', group: 'failed', icon: 'package-x' } },
   order: { partial_return: { zh: '部分退货', en: 'Partly returned', group: 'trace', icon: 'undo-dot' }, returned: { zh: '已退货', en: 'Returned', group: 'closed', icon: 'undo-2' } },
   return: { pending: { zh: '待退款', en: 'To refund', group: 'action', icon: 'wallet' }, refunding: { zh: '退款中', en: 'Refunding', group: 'waiting', icon: 'rotate-ccw' }, refunded: { zh: '已退款', en: 'Refunded', group: 'closed', icon: 'undo-2' }, failed: { zh: '退款失败', en: 'Refund failed', group: 'failed', icon: 'circle-alert' } },
+  receipt: { draft: { zh: '草稿', en: 'Draft', group: 'held', icon: 'pencil-line' }, done: { zh: '已入库', en: 'Received', group: 'done', icon: 'package-check' }, void: { zh: '已作废', en: 'Void', group: 'closed', icon: 'ban' } },
+  count: { counting: { zh: '盘点中', en: 'Counting', group: 'progress', icon: 'clipboard-list' }, pending: { zh: '待审批', en: 'Pending', group: 'action', icon: 'stamp' }, done: { zh: '已完成', en: 'Done', group: 'done', icon: 'circle-check' }, variance: { zh: '有差异', en: 'Variance', group: 'failed', icon: 'scale' } },
+  loss: { draft: { zh: '草稿', en: 'Draft', group: 'held', icon: 'pencil-line' }, done: { zh: '已报损', en: 'Written off', group: 'closed', icon: 'trash-2' } },
   stock: { out: { zh: '缺货', en: 'Out of stock', group: 'failed', icon: 'circle-slash' }, expiry: { zh: '临期', en: 'Near expiry', group: 'action', icon: 'calendar-clock' } },
 };
 Object.entries(EXTRA).forEach(([ent, m]) => { STATES.states[ent] = { ...(STATES.states[ent] || {}), ...m }; });

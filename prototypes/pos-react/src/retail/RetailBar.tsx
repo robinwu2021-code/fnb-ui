@@ -3,6 +3,7 @@ import { useStore } from '@/store';
 import { Seg } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { goReturn, type RetScreen } from './sales';
+import { useStock } from './stock';
 import { useBiz } from '@/biz/store';
 import { goScreen, scanSim, useR, type Screen } from './RetailPos';
 
@@ -21,10 +22,18 @@ const RETS: { v: RetScreen; zh: string; en: string }[] = [
   { v: 'r4', zh: '④ 退款', en: '④ Refund' }, { v: 'nr', zh: '⑤ 无单退货 · 授权', en: '⑤ No receipt · approval' }, { v: 'rdone', zh: '⑥ 退款成功', en: '⑥ Refunded' },
   { v: 'x2', zh: '⑦ 换货 · 选退回', en: '⑦ Exchange · items back' },
 ];
+/** 库存作业画面预设：直接选中某张示例单据 */
+const STOCKS: { v: string; kind: 'receive' | 'count' | 'loss' | 'transfer'; zh: string; en: string }[] = [
+  { v: 'RK1111-03', kind: 'receive', zh: '① 入库草稿', en: '① Receipt draft' }, { v: 'RK1111-02', kind: 'receive', zh: '② 已入库', en: '② Received' },
+  { v: 'PD1111-01', kind: 'count', zh: '③ 盘点中', en: '③ Counting' }, { v: 'PD1110-02', kind: 'count', zh: '④ 盘点待审批', en: '④ Count pending' },
+  { v: 'BS1111-01', kind: 'loss', zh: '⑤ 报损', en: '⑤ Write-off' }, { v: 'DB', kind: 'transfer', zh: '⑥ 调拨（未实现）', en: '⑥ Transfer (todo)' },
+];
 export function RetailBar() {
   const en = useStore((s) => s.lang) === 'en'; const screen = useR((s) => s.screen);
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-sub w-72px flex-none">{en ? 'Stock' : '库存画面'}</span>
+        <Seg value={''} onChange={(v) => { const x = STOCKS.find((s) => s.v === v)!; useBiz.getState().set({ rwb: 'stock' }); useStock.getState().set({ kind: x.kind, sel: v, filter: 'all' }); }} items={STOCKS.map((s) => ({ v: s.v, label: en ? s.en : s.zh }))} /></div>
       <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-sub w-72px flex-none">{en ? 'Return' : '退货画面'}</span>
         <Seg value={'' as RetScreen} onChange={(v) => { useBiz.getState().set({ rwb: 'orders' }); goReturn(v); }} items={RETS.map((s) => ({ v: s.v, label: en ? s.en : s.zh }))} /></div>
       <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-sub w-72px flex-none">{en ? 'Screen' : '画面'}</span>

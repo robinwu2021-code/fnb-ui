@@ -56,7 +56,7 @@ export const BIZ: Record<BizKey, BizDef> = {
     tabs: [
       { v: 'pos', label: 'tab.pos', layout: 'checkout' }, { v: 'orders', label: 'tab.orders', layout: 'orders' }, { v: 'goods', label: 'tab.goods', layout: 'menu' },
       { v: 'reports', label: 'tab.reports', layout: 'reports' }, { v: 'settings', label: 'tab.settings', layout: 'settings' },
-      { v: 'members', label: 'tab.members', layout: 'members', home: true }, { v: 'shift', label: 'tab.shift', layout: 'shift', home: true }, { v: 'stock', label: 'tab.stock', layout: 'shift', home: true },
+      { v: 'members', label: 'tab.members', layout: 'members', home: true }, { v: 'shift', label: 'tab.shift', layout: 'shift', home: true }, { v: 'stock', label: 'tab.stock', layout: 'orders', home: true },
     ],
     menu: RETAIL_MENU, quick: ['member', 'hold', 'pick', 'disc', 'reprice'], pricing: 'retail',
     fees: [['购物袋', 'Bags'], ['押金', 'Deposit']],

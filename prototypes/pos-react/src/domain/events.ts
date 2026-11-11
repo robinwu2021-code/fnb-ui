@@ -3,7 +3,8 @@
 export type DomainEvent =
   | { type: 'order.paid'; biz: 'fnb' | 'retail'; orderNo: string; due: number; table?: string; methods: string[] }
   | { type: 'order.held'; biz: 'fnb' | 'retail'; orderNo: string }
-  | { type: 'stock.changed'; ids: string[] }
+  /** delta：每个商品的变化量（销售为负、退货回库为正）；reason=loss 表示退货不回库，要生成报损单 */
+  | { type: 'stock.changed'; ids: string[]; delta?: Record<string, number>; reason?: 'sale' | 'return' | 'loss'; ref?: string }
   /** 换货：退回部分已记到原单，抵扣额带到收银（零售收银订阅后在购物车里出抵扣行） */
   | { type: 'exchange.credit'; orderNo: string; amt: number; pcs: number; method: string };
 type Of<T extends DomainEvent['type']> = Extract<DomainEvent, { type: T }>;

@@ -62,6 +62,12 @@ export function retLines(st: RS): { lines: SaleLine[]; disc: number; sale: Sale 
 export const retAmount = (st: RS) => { const r = retLines(st); return refundAmount(r.lines, r.disc, st.ret.pick); };
 export const retNet = (st: RS) => { const r = retLines(st); return allocate(r.lines, r.disc); };
 
+/** 退货对库存：回库 → stock.changed（正数）；不回库 → reason=loss，库存服务生成一张已过账的报损单 */
+function emitReturnStock(lines: SaleLine[], pick: Record<string, number>, restock: boolean, ref: string | null) {
+  const picked = lines.filter((l) => pick[l.key]), delta: Record<string, number> = {};
+  picked.forEach((l) => (delta[l.id] = (delta[l.id] || 0) + (l.weighed ? l.w || 1 : pick[l.key])));
+  emit({ type: 'stock.changed', ids: Object.keys(delta), delta, reason: restock ? 'return' : 'loss', ref: ref || undefined });
+}
 /* 流程动作 */
 export function openReturn(no: string | null = null, step: RetStep = 1, mode: 'return' | 'exchange' = 'return') {
   const st = useSales.getState(), sale = saleOf(st.sales, no);
@@ -72,7 +78,7 @@ export function confirmExchange() {
   const st = useSales.getState(), r = st.ret, amt = retAmount(st), lines = retLines(st).lines, pcs = Object.values(r.pick).reduce((a, n) => a + n, 0);
   if (!r.no) return;
   st.set({ sales: st.sales.map((x) => (x.no === r.no ? { ...x, lines: applyReturn(x.lines, r.pick), returns: [...x.returns, { time: '10:30', amt, pcs, why: r.why || 'other', method: 'exchange' }] } : x)), ret: { ...r, open: false } });
-  if (r.restock) emit({ type: 'stock.changed', ids: lines.filter((l) => r.pick[l.key]).map((l) => l.id) });
+  emitReturnStock(lines, r.pick, r.restock, r.no);
   emit({ type: 'exchange.credit', orderNo: r.no, amt, pcs, method: r.method });
   useBiz.getState().set({ rwb: 'pos' });
 }
@@ -84,7 +90,7 @@ export function confirmRefund() {
   setTimeout(() => {
     const s2 = useSales.getState();
     if (r.no) s2.set({ sales: s2.sales.map((x) => (x.no === r.no ? { ...x, lines: applyReturn(x.lines, r.pick), returns: [...x.returns, { time: '10:30', amt, pcs, why: r.why || 'other', method: r.method }] } : x)) });
-    if (r.restock) emit({ type: 'stock.changed', ids: lines.filter((l) => r.pick[l.key]).map((l) => l.id) });
+    emitReturnStock(lines, r.pick, r.restock, r.no);
     useSales.getState().setRet({ phase: 'done' });
   }, 1200);
 }

@@ -17,3 +17,14 @@ export function nearExpiry(expiry: string, today: string, days = 3) {
   const d = (Date.parse(expiry) - Date.parse(today)) / 86400000; return d <= days;
 }
 export const lowStock = (left: number, safety: number) => left <= safety;
+
+/** 盘点过账：实盘覆盖账面（只改盘到的商品） */
+export const applyCount = (book: StockMap, counted: StockMap): StockMap => ({ ...book, ...counted });
+/** 报损：按清单扣减 */
+export const writeOff = (book: StockMap, lines: { id: string; q: number }[]): StockMap => lines.reduce((b, l) => deduct(b, l.id, l.q), book);
+/** 按变化量批量改库存（销售为负、退货回库为正） */
+export const applyDelta = (book: StockMap, delta: StockMap): StockMap => { const out = { ...book }; Object.keys(delta).forEach((id) => (out[id] = Math.round(((out[id] || 0) + delta[id]) * 1000) / 1000)); return out; };
+/** 入库金额：件数 × 进价 */
+export const costTotal = (lines: { id: string; q: number }[], cost: (id: string) => number) => Math.round(lines.reduce((a, l) => a + l.q * cost(l.id), 0) * 100) / 100;
+/** 单据件数合计 */
+export const qtyTotal = (lines: { q: number }[]) => Math.round(lines.reduce((a, l) => a + l.q, 0) * 1000) / 1000;

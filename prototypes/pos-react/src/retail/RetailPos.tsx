@@ -95,6 +95,8 @@ export function scanCode(raw: string) {
 /** 页首「模拟扫码」：每种情况一个真实格式的码，走 scanCode */
 const SIM_CODES = { std: '6901939621271', weighCode: '200100200431006180', sku: '2300101', unknown: UNKNOWN_CODE, loose: 'PLU 1010', payCode: '134567890123456789' } as const;
 export function scanSim(kind: keyof typeof SIM_CODES) { scanCode(SIM_CODES[kind]); }
+/** 卖出扣库存：发 stock.changed（负数，称重按 kg，临时商品不管库存），库存服务订阅后扣账面 */
+function emitSaleStock(lines: RLine[]) { const delta: Record<string, number> = {}; lines.filter((l) => !l.custom).forEach((l) => (delta[l.id] = (delta[l.id] || 0) - (l.w ?? l.q))); emit({ type: 'stock.changed', ids: Object.keys(delta), delta, reason: 'sale', ref: '#R0158' }); }
 function useTot() { const lines = useR((s) => s.lines), member = useR((s) => s.member); return rTotals(lines, member); }
 /** 应收：有换货抵扣时按 domain/aftersale.exchangeSettle 算补收 / 退差价 */
 function usePay() { const tot = useTot(), credit = useR((s) => s.credit); const st = credit ? exchangeSettle(tot.due, credit.amt) : null; return { tot, credit, st, due: st ? st.pay : tot.due }; }
@@ -387,7 +389,7 @@ function DoneDialog() {
         {r.member && <Cell k={t('done.points')} v="+150" num />}
       </Cells>
       {!st?.refund && <Note>{t('done.auto')}</Note>}
-      <DialogActs><Button variant="muted" onClick={() => toast(t('done.reprint'))}><Ico name="printer" />{t('done.reprint')}</Button><Button onClick={() => { emit({ type: 'order.paid', biz: 'retail', orderNo: '#R0158', due, methods: [r.pay || 'cash'] }); goScreen('empty'); }}>{t('done.next')}</Button></DialogActs>
+      <DialogActs><Button variant="muted" onClick={() => toast(t('done.reprint'))}><Ico name="printer" />{t('done.reprint')}</Button><Button onClick={() => { emit({ type: 'order.paid', biz: 'retail', orderNo: '#R0158', due, methods: [r.pay || 'cash'] }); emitSaleStock(r.lines); goScreen('empty'); }}>{t('done.next')}</Button></DialogActs>
     </Dialog>
   );
 }
