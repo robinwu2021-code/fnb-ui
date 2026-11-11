@@ -1,0 +1,76 @@
+/* 形状、密度、字号变量 + 全局基线。取值与 prototypes/bapp/proto.css 的 POS 段一致（规范 §1.6、§2.1–2.3）。 */
+html{--fs-xs:12px;--fs-sm:13px;--fs:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:32px}
+/* 圆角两套：框架 rc（面板、卡片、弹窗）/ rt（卡内块）；按钮 rb / 控件 rk */
+html{--rc:14px;--rt:10px;--rk:8px;--rb:8px}
+html[data-frame="f2"]{--rc:2px;--rt:2px}
+html[data-frame="f6"]{--rc:6px;--rt:4px}
+html[data-frame="f10"]{--rc:10px;--rt:8px}
+html[data-frame="f14"]{--rc:14px;--rt:10px}
+html[data-frame="f20"]{--rc:20px;--rt:14px}
+html[data-btn="b2"]{--rb:2px;--rk:2px}
+html[data-btn="b4"]{--rb:4px;--rk:4px}
+html[data-btn="b8"]{--rb:8px;--rk:8px}
+html[data-btn="b12"]{--rb:12px;--rk:12px}
+html[data-btn="pill"]{--rb:999px;--rk:12px}
+/* 密度：紧凑（默认）/ 标准 */
+html{--h-sm:36px;--h:44px;--h-lg:52px;--px:16px;--pad:12px;--gap:8px;--row:44px;--tile:84px}
+html[data-density="standard"]{--h-sm:40px;--h:48px;--h-lg:56px;--px:20px;--pad:16px;--gap:12px;--row:52px;--tile:100px}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body,#root{margin:0;height:100%}
+body{background:var(--c-canvas);color:var(--c-ink);font-family:Inter,"Noto Sans SC","PingFang SC",system-ui,sans-serif;font-size:var(--fs);line-height:1.4;-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;margin:0;cursor:pointer;text-align:inherit;letter-spacing:inherit}
+button:disabled{cursor:default}
+input,textarea{font:inherit;color:inherit;border:0;background:none;outline:none;padding:0;margin:0}
+input::placeholder,textarea::placeholder{color:var(--c-hint)}
+img{display:block}
+b,strong{font-weight:600}
+hr{border:0}
+.num,.tabular-nums{font-variant-numeric:tabular-nums}
+/* 焦点环：允许的三种线之一。2px 主色（墨黑 = 墨）外扩 2px */
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--c-focus);outline-offset:2px}
+/* 热区：看上去不到 44 的可点元素用伪元素补到 44 × 44，外观不变 */
+.hit{position:relative}
+.hit::before{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}
+/* 黑白灰色系下分类小方块不显示 */
+[data-tone="quiet"] .cat-mark{display:none}
+/* 骨架 */
+@keyframes skel{to{background-position:-200% 0}}
+.skel{display:block;height:12px;border-radius:min(var(--rb),6px);background:linear-gradient(90deg,var(--c-faint) 25%,var(--c-canvas) 50%,var(--c-faint) 75%);background-size:200% 100%;animation:skel 1.4s linear infinite}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
+/* 浮层进出：Radix 的 data-state */
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes fade-out{from{opacity:1}to{opacity:0}}
+@keyframes slide-in-right{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+[data-state="open"].anim-fade{animation:fade-in .15s ease-out}
+[data-state="closed"].anim-fade{animation:fade-out .12s ease-in}
+[data-state="open"].anim-sheet{animation:slide-in-right .18s ease-out}
+/* 关闭态开关、勾选框等由组件自己用角色令牌写 */
+/* 一排操作里的 block 按钮占满剩余宽度（对应原型 .dn-acts .sh-btn--block{flex:1}） */
+.acts>.btn-block{flex:1}
+
+/* ── 布局编辑态 ── 编辑态下工作台里只有 [data-editable] 接收指针（槽、可拖项、拖柄），业务按钮全部不响应 */
+.wb-edit *{pointer-events:none}
+.wb-edit [data-editable]{pointer-events:auto}
+[data-lp]{-webkit-touch-callout:none}
+.edit-item{touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none}
+.edit-item:active{cursor:grabbing}
+@keyframes lp-ring{from{stroke-dashoffset:var(--len)}to{stroke-dashoffset:0}}
+@keyframes edit-rise{from{transform:translateY(100%)}to{transform:none}}
+@keyframes edit-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.edit-rise{animation:edit-rise .22s cubic-bezier(.2,.8,.2,1)}
+.edit-pop{animation:edit-pop .14s ease-out}
+/* 编辑态半透明：令牌是 var()，Uno 的 /60 透明度修饰对它不生效，这里用 color-mix */
+.ed-line{outline-color:color-mix(in srgb,var(--c-sub) 55%,transparent)}
+.ed-glass{background:color-mix(in srgb,var(--c-surface) 80%,transparent)}
+.ed-lift{background:color-mix(in srgb,var(--c-ink) 7%,transparent)}
+.ed-bar{background:color-mix(in srgb,var(--c-ink) 15%,transparent)}
+.ed-mbtn{background:color-mix(in srgb,var(--c-on-inverse) 12%,transparent)}
+.ed-mbtn:hover{background:color-mix(in srgb,var(--c-on-inverse) 22%,transparent)}
+/* 扫码取景框的扫描线 */
+.qr-line{background:var(--c-on-inverse);opacity:.85;animation:qr-scan 1.6s ease-in-out infinite alternate}
+@keyframes qr-scan{from{top:10px}to{top:calc(100% - 12px)}}
+/* 桌台平面：编辑态栅格（每格 --u）· 地面分区浅色块 */
+.fl-grid{background-image:linear-gradient(to right,color-mix(in srgb,var(--c-ink) 7%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in srgb,var(--c-ink) 7%,transparent) 1px,transparent 1px);background-size:var(--u) var(--u)}
+.fl-zone{background:color-mix(in srgb,var(--c-inverse) 5%,transparent)}

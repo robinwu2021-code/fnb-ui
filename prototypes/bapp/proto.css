@@ -1708,7 +1708,7 @@ html[data-density="standard"]{--h-sm:40px;--h:48px;--h-lg:56px;--px:20px;--pad:1
 .pc .dn-dish small{font-size:var(--fs-xs);color:var(--sh-sub)}
 .pc .dn-dish .p{margin-top:auto;font-size:var(--fs-md);font-weight:700}
 .pc .dn-dish .dn-qty{position:absolute;top:8px;right:8px}
-.pc .dn-dish.is-on{background:var(--sh-pick)}.pc .dn-dish.is-on .nm{font-weight:700}   /* 已点：整块深一档底（墨黑 gray-200）+ 份数角标，不加框 */
+.pc .dn-dish.is-on{background:var(--sh-pick)}.pc .dn-dish.is-on .nm{font-weight:700}   /* 已点：深一档底（墨黑 gray-100）+ 墨色份数角标，不加框；gray-200 只给当前项 */
 .pc .dn-dish.is-off{opacity:.55}.pc .dn-dish.is-off b,.pc .dn-dish.is-off .p{color:var(--sh-disabled)}
 .pc .dn-dish--blk{background:var(--kp)}.pc .dn-dish--blk b,.pc .dn-dish--blk small{color:var(--kpf)}
 /* 四项信息：菜名（两行内）· 第二语言名（一行）· 价格 + 库存（压底一行，放不下时库存换行）。多规格价格写「起」 */
@@ -1828,7 +1828,15 @@ html[data-density="standard"]{--h-sm:40px;--h:48px;--h-lg:56px;--px:20px;--pad:1
 .pc .dn-pay--row svg{margin-left:auto;width:18px;height:18px;flex:none}
 :root[data-colors="v2"] .pc .dn-pay--row:not(.is-on):not(.is-off):hover{background:var(--sh-wash)}
 /* 结账进度：应收 → 优惠 → 应付 → 已收 → 待收；待收为 0 时变成功色 */
-.pc .dn-paysum.dn-paysum--5{grid-template-columns:repeat(2,minmax(0,1fr)) minmax(0,1.6fr) repeat(2,minmax(0,1fr))}
+.pc .dn-paysum .due.is-done b{color:var(--sh-success-text)}
+/* 结账步骤条：① 账单（左栏）→ ② 收款方式 → ③ 收款 → ④ 完成。已过的步打勾、次要字；当前步 gray-200 块 + 墨字加粗；未到的步次要字 */
+.pc .dn-steps{display:flex;gap:4px;margin:0 0 6px;padding:0;list-style:none}
+.pc .dn-steps li{display:inline-flex;align-items:center;gap:6px;height:var(--h-sm);padding:0 10px;border-radius:var(--rb);color:var(--sh-sub);font-size:var(--fs-sm);white-space:nowrap}
+.pc .dn-steps li i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:99px;background:var(--sh-wash-strong);font-style:normal;font-size:var(--fs-xs);font-weight:600;color:var(--sh-ink)}
+.pc .dn-steps li i svg{width:12px;height:12px}
+.pc .dn-steps li.is-cur{background:var(--sh-sel-bg);color:var(--sh-sel-fg);font-weight:600}
+.pc .dn-steps li.is-cur i{background:var(--sh-ink);color:var(--sh-card)}
+.pc .dn-steps li+li::before{content:"";width:8px;height:1px;background:var(--sh-wash-strong);margin:0 -2px 0 -8px}
 .pc .dn-paysum .is-done b{color:var(--sh-success-text)}
 .pc .sh-panel .dn-paylist--h{background:transparent;padding:0;gap:6px}
 .pc .sh-panel .dn-paylist--h .dn-pay--row{background:transparent;min-height:52px;padding:6px 10px}

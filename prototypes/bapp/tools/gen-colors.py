@@ -307,7 +307,7 @@ BASE = [('canvas', 'gray-50', '画布'), ('surface', 'gray-0', '面板、卡片�
         ('ink', 'gray-900', '正文、标题、金额、选中的位置'), ('sub', 'gray-600', '次要文字'),
         ('hint', 'gray-600', '作说明的占位字（搜索框等没有外部标签的输入框，P0-4）'), ('placeholder', 'gray-400', '纯示例的占位字、禁用文字，不承载必要信息'),
         ('control-off', 'gray-500', '开关关闭态轨道、勾选框未选态描边（≥3:1，P0-3）'), ('disabled-bg', 'gray-100', '禁用控件底'),
-        ('slot-bg', 'gray-100', '无图菜品大字位的底（中性，字用分类色，P1-1）'), ('inverse', 'gray-900', '反色面：Toast、操作菜单'),
+        ('slot-bg', 'gray-50', '无图菜品大字位的底：和未点卡同一档，不像已选（用色清单第 2 条）；字用分类色，黑白灰下为墨'), ('inverse', 'gray-900', '反色面：Toast、操作菜单'),
         ('on-inverse', 'gray-0', '反色面上的字')]
 for n, v, d in BASE:
     a('  --c-%s:var(--%s); /* %s */' % (n, v, d))
@@ -315,7 +315,7 @@ a('  --c-scrim:rgba(12,14,18,.45); /* 遮罩 */')
 a('  --c-on-solid:var(--gray-0); /* 实心色块上的字和图标：危险实心按钮、角标、支付方式图标 */')
 a('  --c-saving:var(--c-success-text); /* 优惠金额（−¥）与已用优惠的图标；黑白灰色系下为墨 */')
 a('  --c-check-off:var(--gray-150); /* 勾选框未选：实心块 */')
-a('  --c-pick:var(--gray-200); /* 已点的菜（墨黑）：比浅块深两档 */')
+a('  --c-pick:var(--gray-100); /* 已点的菜（墨黑）：比未点卡深一档 + 墨色份数角标；gray-200 留给当前项（用色清单第 1 条） */')
 a('')
 a('  /* ── 状态色角色：浅底 200（比主题浅底深一档）· 文字在浅底上 ≥4.5:1 · 圆点在浅底和白底上都 ≥3:1 · 实心放白字 ≥4.5:1 ── */')
 for key, f in status.items():
@@ -391,6 +391,10 @@ parts += ['--c-st-%s-block:var(--gray-100); --c-st-%s-block-strong:var(--gray-15
 parts.append('--c-st-closed-block:var(--gray-50); --c-st-closed-block-strong:var(--gray-100);')
 parts += ['--cat-%s-solid:var(--gray-300); --cat-%s-bg:var(--gray-100); --cat-%s-fg:var(--gray-900);' % (k, k, k) for k, *_ in CATEGORIES]
 a('[data-tone="quiet"]{' + ' '.join(parts) + '}')
+a('[data-tone="quiet"] .pc .dn-mark{display:none}   /* 黑白灰下分类小方块都是同一个灰，不带信息，不显示（用色清单第 6 条） */')
+a('[data-tone="quiet"] .pc .dn-oline:not(.dn-oline--ck){grid-template-columns:minmax(0,1fr) auto}   /* 小方块不显示时，订单行也不留它那一列（否则菜名落进 10px 列被截成一个字） */')
+a('[data-tone="quiet"] .pc .dn-oline:not(.dn-oline--ck) .meta{grid-column:1}')
+a('[data-tone="quiet"] .pc .dn-oline:not(.dn-oline--ck) .side{grid-column:2}')
 a('')
 a('/* ── P1-4：微信绿、青碧的品牌原色偏亮，默认实心用深一档（白字）。品牌方要求贴近原色时，加 data-primary="bright"：500 档 + 墨字。全产品只选一种。 ── */')
 for key, f in themes.items():

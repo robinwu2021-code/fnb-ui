@@ -67,14 +67,14 @@
   --c-placeholder:var(--gray-400); /* 纯示例的占位字、禁用文字，不承载必要信息 */
   --c-control-off:var(--gray-500); /* 开关关闭态轨道、勾选框未选态描边（≥3:1，P0-3） */
   --c-disabled-bg:var(--gray-100); /* 禁用控件底 */
-  --c-slot-bg:var(--gray-100); /* 无图菜品大字位的底（中性，字用分类色，P1-1） */
+  --c-slot-bg:var(--gray-50); /* 无图菜品大字位的底：和未点卡同一档，不像已选（用色清单第 2 条）；字用分类色，黑白灰下为墨 */
   --c-inverse:var(--gray-900); /* 反色面：Toast、操作菜单 */
   --c-on-inverse:var(--gray-0); /* 反色面上的字 */
   --c-scrim:rgba(12,14,18,.45); /* 遮罩 */
   --c-on-solid:var(--gray-0); /* 实心色块上的字和图标：危险实心按钮、角标、支付方式图标 */
   --c-saving:var(--c-success-text); /* 优惠金额（−¥）与已用优惠的图标；黑白灰色系下为墨 */
   --c-check-off:var(--gray-150); /* 勾选框未选：实心块 */
-  --c-pick:var(--gray-200); /* 已点的菜（墨黑）：比浅块深两档 */
+  --c-pick:var(--gray-100); /* 已点的菜（墨黑）：比未点卡深一档 + 墨色份数角标；gray-200 留给当前项（用色清单第 1 条） */
 
   /* ── 状态色角色：浅底 200（比主题浅底深一档）· 文字在浅底上 ≥4.5:1 · 圆点在浅底和白底上都 ≥3:1 · 实心放白字 ≥4.5:1 ── */
   --c-success-dot:var(--success-600); --c-success-text:var(--success-800); --c-success-tint:var(--success-200); --c-success-border:var(--success-300); --c-success-strong:var(--success-700);
@@ -140,6 +140,10 @@
  *   预约、暂存要提前看到，保留 chip 形式但用中性底（gray-150 + 墨字）。每组只用一档颜色：圆点和文字同档。
  *   分类色退成中性小方块（gray-300），无图大字位用墨字；支付方式图标是品牌色，不在此列。 */
 [data-tone="quiet"]{--c-st-action-dot:var(--warning-700); --c-st-action-text:var(--warning-700); --c-st-action-tint:var(--warning-200); --c-st-failed-dot:var(--danger-700); --c-st-failed-text:var(--danger-700); --c-st-failed-tint:var(--danger-200); --c-st-progress-dot:var(--gray-900); --c-st-progress-text:var(--gray-900); --c-st-progress-tint:var(--gray-100); --c-st-waiting-dot:var(--gray-700); --c-st-waiting-text:var(--gray-700); --c-st-waiting-tint:var(--gray-100); --c-st-done-dot:var(--gray-600); --c-st-done-text:var(--gray-600); --c-st-done-tint:var(--gray-100); --c-st-trace-dot:var(--gray-600); --c-st-trace-text:var(--gray-600); --c-st-trace-tint:var(--gray-100); --c-st-booked-dot:var(--gray-900); --c-st-booked-text:var(--gray-900); --c-st-booked-tint:var(--gray-150); --c-st-held-dot:var(--gray-900); --c-st-held-text:var(--gray-900); --c-st-held-tint:var(--gray-150); --c-st-closed-dot:var(--gray-500); --c-st-closed-text:var(--gray-600); --c-st-closed-tint:var(--gray-100); --c-progress-dot:var(--gray-900); --c-progress-text:var(--gray-900); --c-saving:var(--gray-900); --c-st-progress-block:var(--gray-100); --c-st-progress-block-strong:var(--gray-150); --c-st-waiting-block:var(--gray-100); --c-st-waiting-block-strong:var(--gray-150); --c-st-done-block:var(--gray-100); --c-st-done-block-strong:var(--gray-150); --c-st-trace-block:var(--gray-100); --c-st-trace-block-strong:var(--gray-150); --c-st-booked-block:var(--gray-100); --c-st-booked-block-strong:var(--gray-150); --c-st-held-block:var(--gray-100); --c-st-held-block-strong:var(--gray-150); --c-st-closed-block:var(--gray-50); --c-st-closed-block-strong:var(--gray-100); --cat-red-solid:var(--gray-300); --cat-red-bg:var(--gray-100); --cat-red-fg:var(--gray-900); --cat-orange-solid:var(--gray-300); --cat-orange-bg:var(--gray-100); --cat-orange-fg:var(--gray-900); --cat-yellow-solid:var(--gray-300); --cat-yellow-bg:var(--gray-100); --cat-yellow-fg:var(--gray-900); --cat-green-solid:var(--gray-300); --cat-green-bg:var(--gray-100); --cat-green-fg:var(--gray-900); --cat-teal-solid:var(--gray-300); --cat-teal-bg:var(--gray-100); --cat-teal-fg:var(--gray-900); --cat-blue-solid:var(--gray-300); --cat-blue-bg:var(--gray-100); --cat-blue-fg:var(--gray-900); --cat-indigo-solid:var(--gray-300); --cat-indigo-bg:var(--gray-100); --cat-indigo-fg:var(--gray-900); --cat-purple-solid:var(--gray-300); --cat-purple-bg:var(--gray-100); --cat-purple-fg:var(--gray-900); --cat-rose-solid:var(--gray-300); --cat-rose-bg:var(--gray-100); --cat-rose-fg:var(--gray-900); --cat-brown-solid:var(--gray-300); --cat-brown-bg:var(--gray-100); --cat-brown-fg:var(--gray-900); --cat-gray-solid:var(--gray-300); --cat-gray-bg:var(--gray-100); --cat-gray-fg:var(--gray-900);}
+[data-tone="quiet"] .pc .dn-mark{display:none}   /* 黑白灰下分类小方块都是同一个灰，不带信息，不显示（用色清单第 6 条） */
+[data-tone="quiet"] .pc .dn-oline:not(.dn-oline--ck){grid-template-columns:minmax(0,1fr) auto}   /* 小方块不显示时，订单行也不留它那一列（否则菜名落进 10px 列被截成一个字） */
+[data-tone="quiet"] .pc .dn-oline:not(.dn-oline--ck) .meta{grid-column:1}
+[data-tone="quiet"] .pc .dn-oline:not(.dn-oline--ck) .side{grid-column:2}
 
 /* ── P1-4：微信绿、青碧的品牌原色偏亮，默认实心用深一档（白字）。品牌方要求贴近原色时，加 data-primary="bright"：500 档 + 墨字。全产品只选一种。 ── */
 [data-skin="fresh"][data-primary="bright"]{--c-primary:var(--p-500); --c-primary-hover:var(--p-600); --c-primary-pressed:var(--p-700); --c-on-primary:var(--gray-900)}  /* 墨字 / 实心 5.75:1 */
