@@ -1030,40 +1030,143 @@ class LocalWorkspace(
         val actor = actorName(state.value)
         return storeOp(event = EventSpec { _, a -> val x = a.retail.sales.first(); Triple("RetailSaleCompleted", """{"no":"${x.no}","amount":${x.paid},"method":"$method"}""", listOf("retail") + x.lines.filter { it.productId.isNotBlank() }.map { "stock:${it.productId}" }) }, check = { s ->
             val t = RetailCheckout.totals(s.products, lines, member)
+            val credit = s.retail.credit
+            val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
             when {
-                lines.isEmpty() -> "购物车是空的"
+                lines.isEmpty() && credit == null -> "购物车是空的"
                 lines.any { !it.custom && s.product(it.productId) == null } -> "购物车里有已下架的商品"
                 !Money.withinBill(t.due) || !Money.withinBill(received) -> "金额超出上限"
+                // 换货抵扣后不用再收钱：收款方式不看
+                credit != null && st.pay == 0L -> retailOnly(s) ?: need(Perm.Checkout)
                 method !in listOf("现金", "银行卡", "扫码", "储值卡") -> "请选择收款方式"
                 method !in s.settings.payMethods -> "门店未启用「$method」"
-                method == "现金" && received < t.due -> "实收不足，不能确认收款"
+                method == "现金" && received < st.pay -> "实收不足，不能确认收款"
                 !online && method == "扫码" -> "离线时扫码收款不可用"
-                method == "储值卡" && (!member || s.walletBalance < t.due) -> if (!member) "请先识别会员" else "储值余额不足"
+                method == "储值卡" && (!member || s.walletBalance < st.pay) -> if (!member) "请先识别会员" else "储值余额不足"
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
             val t = RetailCheckout.totals(s0.products, lines, member)
+            val credit = s0.retail.credit
+            val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
             val no = "#R%04d".format(s0.retail.saleSeq)
-            val pid = newId("P")
             val cash = method == "现金"
-            val x = RetailSale(no, clock(), member = if (member) "会员" else null, lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round,
-                pays = listOf(SalePay(method, t.due)))
-            val pay = PaymentRecord(pid, "零售", t.due, method, clock(), synced = online, received = if (cash) received else t.due, change = if (cash) received - t.due else 0L,
-                orderId = no, currency = s0.settings.currency, state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
+            val pays = listOfNotNull(credit?.let { SalePay(EXCHANGE, minOf(it.amount, t.due)) }.takeIf { (it?.amount ?: 0) > 0 }, if (st.pay > 0) SalePay(method, st.pay) else null)
+            val x = RetailSale(no, clock(), member = if (member) "会员" else null, lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round, pays = pays)
             var s = s0
             // 扣库存：按件扣件数，称重扣克；临时商品不管库存
             lines.filter { !it.custom }.forEach { l ->
                 val p = s.product(l.productId)!!; val key = RetailCheckout.skuKeyOf(p, l.sku)
                 s = s.setBook(l.productId, key, s.bookOf(l.productId, key) - (l.grams ?: l.qty).toLong(), "销售 $no", actor)
             }
-            val body = listOf(s0.settings.shortName, "单号 $no") + x.lines.map { l -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×${l.qty}"}  ${yuan(l.amount)}" } +
-                listOfNotNull(if (t.save > 0) "优惠 ${yuan(t.save)}" else null, "应收 ${yuan(t.due)}", "$method ${yuan(pay.received)}", if (pay.change > 0) "找零 ${yuan(pay.change)}" else null, s0.settings.receiptFooter)
-            val receipt = PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no", body, clock())
-            val out = if (online) s.outbox else s.outbox + OutboxItem(pid, OutboxKind.Payment, "零售", "$no $method 收款 ${yuan(t.due)}", clock())
+            // 收款记录：补收按所选方式；换货退差价按原单收款方式记负数
+            val pay = when {
+                st.pay > 0 -> PaymentRecord(newId("P"), "零售", st.pay, method, clock(), synced = online, received = if (cash) received else st.pay, change = if (cash) received - st.pay else 0L,
+                    orderId = no, currency = s0.settings.currency, state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
+                st.refund > 0 -> PaymentRecord(newId("P"), "零售", -st.refund, credit!!.method, clock(), synced = online, orderId = no, currency = s0.settings.currency, state = PaymentState.Refunded, source = "local")
+                else -> null
+            }
+            if (pay != null) {
+                if (!online) s = s.copy(outbox = s.outbox + OutboxItem(pay.id, OutboxKind.Payment, "零售", "$no ${pay.method} ${if (pay.amount < 0) "退差价" else "收款"} ${yuan(kotlin.math.abs(pay.amount))}", clock()))
+                val wallet = when { pay.method != "储值卡" -> s.walletBalance; else -> s.walletBalance - pay.amount }
+                s = s.copy(payments = s.payments + pay, walletBalance = wallet)
+            }
+            val body = saleReceipt(s0, x, credit, pay)
             sale = x
-            s.copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + s.withCopies(receipt), walletBalance = if (method == "储值卡") s.walletBalance - t.due else s.walletBalance)
-                .withRetail { it.copy(sales = listOf(x) + it.sales, saleSeq = it.saleSeq + 1) }
+            s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no", body, clock())))
+                .withRetail { it.copy(sales = listOf(x) + it.sales, saleSeq = it.saleSeq + 1, credit = null) }
         }.map { sale!! }
+    }
+
+    /** 零售小票正文：补打时 pay 为 null，只列单上的收款 */
+    private fun saleReceipt(s: StoreData, x: RetailSale, credit: ExchangeCredit? = null, pay: PaymentRecord? = null): List<String> =
+        listOf(s.settings.shortName, "单号 ${x.no}") + x.lines.map { l -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×${l.qty}"}  ${yuan(l.amount)}" } +
+            listOfNotNull(if (x.discount > 0) "抹零 ${yuan(x.discount)}" else null, "应收 ${yuan(x.lines.sumOf { it.amount } - x.discount)}",
+                credit?.let { "换货抵扣（${it.no}）${yuan(it.amount)}" }) +
+            x.pays.filter { it.method != EXCHANGE }.map { "${it.method} ${yuan(it.amount)}" } +
+            listOfNotNull(pay?.takeIf { it.change > 0 }?.let { "实收 ${yuan(it.received)} 找零 ${yuan(it.change)}" }, pay?.takeIf { it.amount < 0 }?.let { "退差价 ${it.method} ${yuan(-it.amount)}" }, s.settings.receiptFooter)
+
+    /** 主管授权（退菜、折扣、无单退货共用）：员工姓名或 ID + PIN（需「授权」权限）、主管账号 + 密码，或体验账号；返回授权人 */
+    private fun supervisorAuth(v: Vault, who: String, secret: String): Result<String> = runCatching {
+        val account = v.accounts.firstOrNull { it.supervisor && it.email.equals(who.trim(), true) }
+        val demo = v.user == "体验账号" && who.trim() == "manager@demo.local" && secret == "demo12345"
+        val emp = v.store?.employees?.firstOrNull { it.enabled && (it.id == who.trim() || it.name == who.trim()) }
+        val empOk = emp != null && Perm.Adjust in Roles.perms(emp.role) && ManageRules.hash(secret, emp.salt) == emp.pinHash
+        require(empOk || demo || (account != null && ManageRules.hash(secret, account.salt) == account.hash)) {
+            if (emp != null && Perm.Adjust !in Roles.perms(emp.role)) "${emp.name}（${emp.role.label}）无授权权限" else "主管账号或密码（PIN）不正确"
+        }
+        emp?.takeIf { empOk }?.name ?: who.trim()
+    }
+
+    override suspend fun returnRetail(req: ReturnRequest, online: Boolean): Result<SaleReturn> {
+        var out: SaleReturn? = null
+        val actor = actorName(state.value)
+        val approver = if (req.saleNo == null) supervisorAuth(state.value, req.approver, req.secret).getOrElse { return Result.failure(it) } else ""
+        return storeOp(event = retailEvent("RetailReturned", """{"sale":"${req.saleNo.orEmpty()}","exchange":${req.exchange},"method":"${req.method}"}"""), check = { s ->
+            val sale = req.saleNo?.let { no -> s.retail.sales.firstOrNull { it.no == no } }
+            val pieces = sale?.let { ReturnRules.pickedPieces(it.soldLines, req.pick) } ?: req.pick.values.sum()
+            when {
+                req.saleNo != null && sale == null -> "原单不存在"
+                sale != null && ReturnRules.channelBlocked(sale.channel.name.lowercase()) -> "即时零售平台单请在平台发起退款"
+                pieces <= 0 -> "请选择要退的商品"
+                req.saleNo == null && req.pick.keys.any { s.product(it) == null } -> "商品不存在"
+                req.exchange && req.saleNo == null -> "换货需要原单"
+                req.exchange && s.retail.credit != null -> "上一笔换货还没在收银结算"
+                req.exchange -> retailOnly(s) ?: need(Perm.Checkout)
+                req.saleNo == null && req.method !in ReturnRules.NO_RECEIPT_METHODS -> "无单退货只能退现金或储值"
+                sale != null && sale.pays.none { it.method == req.method } -> "只能按原收款方式退"
+                !online && req.method == "扫码" -> "离线时扫码退款不可用"
+                else -> retailOnly(s) ?: need(Perm.Checkout)
+            }
+        }) { s0 ->
+            var s = s0
+            val sale = req.saleNo?.let { no -> s0.retail.sales.first { it.no == no } }
+            val ref = sale?.no ?: "NR%04d".format(s0.retail.looseReturns.size + 1)
+            // 退回的行：有单取原单行（称重整行），无单按现价
+            val back: List<Pair<RetailSaleLine, Int>> = if (sale != null) sale.lines.mapNotNull { l ->
+                val n = minOf(req.pick[l.key] ?: 0, ReturnRules.refundable(sale.soldLines.first { it.key == l.key }))
+                if (n > 0) l to n else null
+            } else req.pick.filterValues { it > 0 }.entries.mapIndexed { i, (pid, n) ->
+                val p = s0.product(pid)!!; RetailSaleLine("L${i + 1}", pid, p.name, null, n, null, p.price, p.price * n) to n
+            }
+            val amount = if (sale != null) ReturnRules.refundAmount(sale.soldLines, sale.discount, req.pick) else back.sumOf { it.first.amount }
+            val pieces = back.sumOf { (l, n) -> if (l.grams != null) 1 else n }
+            val method = if (req.exchange) EXCHANGE else req.method
+            val r = SaleReturn(clock(), amount, pieces, req.reason, method, req.exchange)
+            // 库存：回库加回去（称重按原重量）；不回库记一张已过账的报损单（东西没回货架，账面不动）
+            if (req.restock) back.filter { it.first.productId.isNotBlank() }.forEach { (l, n) ->
+                val p = s.product(l.productId) ?: return@forEach; val key = RetailCheckout.skuKeyOf(p, l.sku)
+                s = s.setBook(l.productId, key, s.bookOf(l.productId, key) + (l.grams ?: n).toLong(), "退货 $ref", actor)
+            } else {
+                val docLines = back.filter { it.first.productId.isNotBlank() }.map { (l, n) -> StockDocLine(l.productId, s.product(l.productId)?.let { RetailCheckout.skuKeyOf(it, l.sku) }, (l.grams ?: n).toLong(), LossReason.Return) }
+                if (docLines.isNotEmpty()) s = s.withRetail { it.copy(docSeq = it.docSeq + 1, stockDocs = listOf(StockDoc("%s%04d".format(StockDocKind.Loss.prefix, it.docSeq), StockDocKind.Loss, StockDocState.Posted, clock(), actor, docLines, ref = ref)) + it.stockDocs) }
+            }
+            if (!req.exchange) {
+                val pay = PaymentRecord(newId("P"), "零售", -amount, req.method, clock(), synced = online, orderId = ref, currency = s0.settings.currency, state = PaymentState.Refunded, source = "local")
+                s = s.copy(payments = s.payments + pay, walletBalance = if (req.method == "储值卡") s.walletBalance + amount else s.walletBalance,
+                    outbox = if (online) s.outbox else s.outbox + OutboxItem(pay.id, OutboxKind.Payment, "零售", "$ref ${req.method} 退款 ${yuan(amount)}", clock()))
+                val body = listOf(s0.settings.shortName, "退货小票", "原单 $ref") + back.map { (l, n) -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×$n"}" } +
+                    listOfNotNull("退款 ${req.method} ${yuan(amount)}", "原因：${req.reason.label}", approver.ifBlank { null }?.let { "授权：$it" })
+                s = s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "退货小票 $ref", body, clock())))
+            }
+            out = r
+            s.withRetail { d ->
+                if (sale != null) d.copy(sales = d.sales.map { x ->
+                    if (x.no != sale.no) x else {
+                        val applied = ReturnRules.applyReturn(x.soldLines, req.pick).associateBy { it.key }
+                        x.copy(lines = x.lines.map { it.copy(returned = applied.getValue(it.key).returned) }, returns = x.returns + r)
+                    }
+                }, credit = if (req.exchange) ExchangeCredit(sale.no, amount, pieces, sale.pays.firstOrNull { it.method != EXCHANGE }?.method ?: "现金") else d.credit)
+                else d.copy(looseReturns = listOf(LooseReturn(ref, clock(), back.map { it.first }, amount, req.reason, req.method, approver, req.restock)) + d.looseReturns)
+            }
+        }.map { out!! }
+    }
+
+    override suspend fun reprintSale(no: String): Result<Unit> = storeOp(event = retailEvent("RetailReceiptReprinted", """{"no":"$no"}"""), check = { s ->
+        retailOnly(s) ?: if (s.retail.sales.none { it.no == no }) "原单不存在" else need(Perm.Checkout)
+    }) { s ->
+        val x = s.retail.sales.first { it.no == no }
+        s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no（补打）", saleReceipt(s, x), clock(), reprint = true)))
     }
 
     override suspend fun voidStockDoc(no: String): Result<Unit> =
@@ -1610,14 +1713,8 @@ class LocalWorkspace(
             AdjustmentKind.Discount -> "OrderDiscounted"
         }
         commit(page(type, tableId)) { v ->
-            val account = v.accounts.firstOrNull { it.supervisor && it.email.equals(email.trim(), true) }
-            val demo = v.user == "体验账号" && email.trim() == "manager@demo.local" && password == "demo12345"
             // 员工模式：主管/店长以姓名（或员工ID）+ PIN 授权，需具备「退菜、赠送、折扣授权」权限
-            val emp = v.store?.employees?.firstOrNull { it.enabled && (it.id == email.trim() || it.name == email.trim()) }
-            val empOk = emp != null && Perm.Adjust in Roles.perms(emp.role) && ManageRules.hash(password, emp.salt) == emp.pinHash
-            require(empOk || demo || (account != null && ManageRules.hash(password, account.salt) == account.hash)) {
-                if (emp != null && Perm.Adjust !in Roles.perms(emp.role)) "${emp.name}（${emp.role.label}）无授权权限" else "主管账号或密码（PIN）不正确"
-            }
+            val approver = supervisorAuth(v, email, password).getOrThrow()
             val s = v.store ?: error("请先选择门店")
             require(s.table(tableId)?.status == TableStatus.Dining) { "请先开台" }
             val old = s.order(tableId)
@@ -1629,7 +1726,7 @@ class LocalWorkspace(
                 AdjustmentKind.Void -> if (line?.gifted == true) 0 else (line?.unit ?: 0) * request.quantity
                 AdjustmentKind.Discount -> OrderRules.totals(old).due - OrderRules.totals(updated).due
             }
-            val audit = AdjustmentAudit(newId("A"), tableId, request.kind, actorName(v), emp?.takeIf { empOk }?.name ?: email.trim(), request.reason.trim(), amount,
+            val audit = AdjustmentAudit(newId("A"), tableId, request.kind, actorName(v), approver, request.reason.trim(), amount,
                 if (request.kind == AdjustmentKind.Gift) line?.qty ?: 0 else if (request.kind == AdjustmentKind.Void) request.quantity else 0,
                 clock(), line?.name.orEmpty(), if (request.kind == AdjustmentKind.Discount) "${request.percent}%" else "")
             var next = s.withOrder(tableId, updated).copy(adjustments = s.adjustments + audit)

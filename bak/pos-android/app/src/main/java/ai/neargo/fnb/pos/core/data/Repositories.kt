@@ -257,5 +257,9 @@ interface RetailRepository {
     suspend fun advanceStockDoc(no: String): Result<ai.neargo.fnb.pos.core.model.StockDocState>
     suspend fun voidStockDoc(no: String): Result<Unit>
     /** 零售收款入账：写零售单、收款记录（交班汇总包含）、小票、离线时进同步队列，并扣库存 */
+    /** 退货 / 换货：原单记退货、退款记负数收款（换货不退钱，记抵扣）、回库存或记报损；无单退货要主管授权 */
+    suspend fun returnRetail(req: ai.neargo.fnb.pos.core.model.ReturnRequest, online: Boolean): Result<ai.neargo.fnb.pos.core.model.SaleReturn>
+    /** 补打零售小票 */
+    suspend fun reprintSale(no: String): Result<Unit>
     suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale>
 }

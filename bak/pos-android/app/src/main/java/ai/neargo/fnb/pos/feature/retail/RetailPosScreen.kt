@@ -172,11 +172,20 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                     PosButton(if (state.held.isEmpty()) "取单" else "取单 · ${state.held.size}", { onAction(RetailPosAction.ShowHeld) }, size = BtnSize.Small, enabled = state.held.isNotEmpty())
                 }
             }
+            state.credit?.let { cr ->
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth().clip(Pos.metrics.card).background(c.tint).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("换货抵扣 · ${cr.no}", style = t.strong.num(), color = c.ink)
+                        Text("退回 ${cr.pieces} 件 · 差价多退少补，退差价按原方式（${cr.method}）", style = t.label, color = c.sub)
+                    }
+                    Text("−${yuan(cr.amount)}", style = t.strong.num(), color = c.primary)
+                }
+            }
             if (empty) {
                 Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.QrCodeScanner, null, tint = c.sub, modifier = Modifier.size(44.dp))
-                    Text("扫商品条码开始收银", style = t.strong, color = c.ink, modifier = Modifier.padding(top = 8.dp))
-                    Text("也可以点右侧商品，或先扫会员码", style = t.label, color = c.sub)
+                    Text(if (state.credit != null) "扫要换的新商品" else "扫商品条码开始收银", style = t.strong, color = c.ink, modifier = Modifier.padding(top = 8.dp))
+                    Text(if (state.credit != null) "抵扣 ${yuan(state.credit.amount)}；不换别的就直接退差价" else "也可以点右侧商品，或先扫会员码", style = t.label, color = c.sub)
                     if (!cart.member) PosButton("识别会员", { onAction(RetailPosAction.ToggleMember) }, variant = BtnVariant.Text, size = BtnSize.Small)
                 }
             } else {
@@ -196,19 +205,24 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
             // 底部：应收 + 收款入口
             Column(Modifier.fillMaxWidth().background(c.control).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
+                    val st = state.settle
                     Column(Modifier.weight(1f)) {
-                        Text(if (empty) "" else "应收", style = t.label, color = c.sub)
-                        Text("共 ${tot.pcs} 件${if (tot.save > 0) " · 已省 ${yuan(tot.save)}" else ""}", style = t.label.num(), color = c.sub)
+                        Text(when { st == null -> if (empty) "" else "应收"; st.refund > 0 -> "退差价"; st.even -> "刚好抵扣"; else -> "补收" }, style = t.label, color = c.sub)
+                        Text(if (st != null) "新商品 ${yuan(tot.due)} − 抵扣 ${yuan(state.credit!!.amount)}" else "共 ${tot.pcs} 件${if (tot.save > 0) " · 已省 ${yuan(tot.save)}" else ""}", style = t.label.num(), color = c.sub)
                     }
-                    Text(yuan(tot.due), style = t.amount.num(), color = c.ink)
+                    Text(yuan(if (st != null && st.refund > 0) st.refund else state.payDue), style = t.amount.num(), color = c.ink)
                 }
                 if (pay) PosButton("继续加购", { onAction(RetailPosAction.BackToScan) }, Modifier.fillMaxWidth())
-                else {
+                else if (state.settleOnly) {
+                    val st = state.settle!!
+                    PosButton(if (st.refund > 0) "退差价 ${yuan(st.refund)}（${state.credit!!.method}）" else "确认换货", { onAction(RetailPosAction.Confirm) }, Modifier.fillMaxWidth(),
+                        variant = BtnVariant.Primary, size = BtnSize.Large, loading = cart.processing)
+                } else {
                     if (!empty) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if ("现金" in state.payMethods) PosButton("现金刚好 ${yuan(tot.due)}", { onAction(RetailPosAction.QuickCash) }, Modifier.weight(1f), size = BtnSize.Small, loading = cart.processing)
+                        if ("现金" in state.payMethods) PosButton("现金刚好 ${yuan(state.payDue)}", { onAction(RetailPosAction.QuickCash) }, Modifier.weight(1f), size = BtnSize.Small, loading = cart.processing)
                         if ("扫码" in state.payMethods) PosButton("扫码收款", { onAction(RetailPosAction.GoPay("扫码")) }, Modifier.weight(1f), size = BtnSize.Small, enabled = state.online)
                     }
-                    PosButton(if (empty) "收款" else "收款 ${yuan(tot.due)}", { onAction(RetailPosAction.GoPay(null)) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !empty)
+                    PosButton(if (empty) "收款" else "${if (state.credit != null) "补收" else "收款"} ${yuan(state.payDue)}", { onAction(RetailPosAction.GoPay(null)) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !empty)
                 }
             }
         }
@@ -378,13 +392,13 @@ private fun ItemTile(state: RetailPosUiState, p: Product, onAction: (RetailPosAc
 @Composable
 private fun PayPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, modifier: Modifier) {
     val c = Pos.colors; val t = Pos.type
-    val cart = state.cart; val due = state.totals.due
+    val cart = state.cart; val due = state.payDue
     Panel(modifier) {
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("收款", style = t.title, color = c.ink, modifier = Modifier.weight(1f))
-                    Text("应收 ", style = t.body, color = c.sub)
+                    Text(if (state.credit != null) "补收 " else "应收 ", style = t.body, color = c.sub)
                     Text(yuan(due), style = t.hero.num(), color = c.primary)
                 }
                 Section("收款方式") {
@@ -536,17 +550,18 @@ private fun CustomDialog(code: String?, onAction: (RetailPosAction) -> Unit) {
 @Composable
 private fun DoneDialog(state: RetailPosUiState, d: RetailOverlay.Done, onAction: (RetailPosAction) -> Unit) {
     val c = Pos.colors; val t = Pos.type
-    val method = d.sale.pays.firstOrNull()?.method.orEmpty()
-    PosDialog("收款完成", { onAction(RetailPosAction.Next) }, subtitle = "${d.sale.no} · ${d.sale.pieces} 件", footer = {
+    PosDialog(if (d.credit != null) "换货完成" else "收款完成", { onAction(RetailPosAction.Next) }, subtitle = "${d.sale.no} · ${d.sale.pieces} 件", footer = {
         PosButton("下一位", { onAction(RetailPosAction.Next) }, variant = BtnVariant.Primary, size = BtnSize.Large)
     }) {
         Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (method == "现金") "找零" else "已收", style = t.label, color = c.sub)
-            Text(yuan(if (method == "现金") d.change else d.sale.paid), style = t.hero.copy(fontSize = 44.sp).num(), color = c.ink)
+            val cashPay = d.sale.pays.any { it.method == "现金" }
+            Text(when { d.refund > 0 -> "已退差价（${d.credit!!.method}）"; cashPay -> "找零"; else -> "已收" }, style = t.label, color = c.sub)
+            Text(yuan(when { d.refund > 0 -> d.refund; cashPay -> d.change; else -> d.received }), style = t.hero.copy(fontSize = 44.sp).num(), color = c.ink)
         }
-        KeyValue("应收", yuan(d.sale.paid))
-        if (method == "现金") KeyValue("实收", yuan(d.received))
-        KeyValue("收款方式", method)
+        KeyValue(if (d.credit != null) "新商品" else "应收", yuan(d.sale.paid))
+        d.credit?.let { KeyValue("换货抵扣 ${it.no}", "−${yuan(it.amount)}", valueColor = c.primary) }
+        if (d.sale.pays.any { it.method == "现金" }) KeyValue("实收", yuan(d.received))
+        d.sale.pays.filter { it.method != ai.neargo.fnb.pos.core.model.EXCHANGE }.forEach { KeyValue("收款 · ${it.method}", yuan(it.amount)) }
         if (d.save > 0) KeyValue("本单优惠", "−${yuan(d.save)}", valueColor = c.primary)
         Text(if (state.online) "小票已加入打印队列，库存已扣减" else "离线：已本机记账并进入同步队列；小票已加入打印队列", style = t.label, color = c.sub, modifier = Modifier.padding(vertical = 8.dp))
     }

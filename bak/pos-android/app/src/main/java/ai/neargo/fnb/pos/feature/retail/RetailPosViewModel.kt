@@ -36,7 +36,7 @@ sealed interface RetailOverlay {
     data object Held : RetailOverlay
     data object Clear : RetailOverlay
     data object Custom : RetailOverlay
-    data class Done(val sale: RetailSale, val received: Long, val change: Long, val save: Long) : RetailOverlay
+    data class Done(val sale: RetailSale, val received: Long, val change: Long, val save: Long, val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null, val refund: Long = 0) : RetailOverlay
 }
 
 /** 收银页的本地状态（购物车在本机内存，收款时才写进门店数据） */
@@ -68,19 +68,28 @@ data class RetailPosUiState(
     val wallet: Long = 0,
     val online: Boolean = true,
     val totals: RetailPricing.Totals = RetailPricing.Totals(0, 0, 0, 0, 0, 0, 0, 0),
+    /** 换货抵扣（订单页换货后带过来，结算时用掉） */
+    val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null,
 ) {
+    /** 有抵扣时的多退少补 */
+    val settle get() = credit?.let { RetailPricing.exchangeSettle(totals.due, it.amount) }
+    /** 这次要收的钱：有抵扣时是补收部分 */
+    val payDue get() = settle?.pay ?: totals.due
+    /** 有抵扣且不用补收：直接结算（退差价或刚好抵扣） */
+    val settleOnly get() = credit != null && payDue == 0L
     val shown: List<Product> get() = if (cart.cat == HOT) products.filter { it.hot } else products.filter { it.categoryId == cart.cat }
     fun product(id: String) = products.firstOrNull { it.id == id }
     fun groupsOf(p: Product) = specGroups.filter { it.id in p.specGroupIds }.sortedBy { p.specGroupIds.indexOf(it.id) }
     val last get() = cart.lines.firstOrNull { it.key == cart.last }
     /** 当前所选方式不能确认的原因；null = 可以确认 */
     val block: String? get() = when {
-        cart.lines.isEmpty() -> "购物车是空的"
+        cart.lines.isEmpty() && credit == null -> "购物车是空的"
+        settleOnly -> null
         cart.method == null -> "请选择收款方式"
-        cart.method == "现金" && (CashRules.amount(cart.cash) ?: 0) < totals.due -> "实收不足"
+        cart.method == "现金" && (CashRules.amount(cart.cash) ?: 0) < payDue -> "实收不足"
         cart.method == "扫码" && !online -> "离线时扫码不可用"
         cart.method == "储值卡" && !cart.member -> "请先识别会员"
-        cart.method == "储值卡" && wallet < totals.due -> "储值余额不足"
+        cart.method == "储值卡" && wallet < payDue -> "储值余额不足"
         else -> null
     }
     fun lineUnit(l: CartLine) = if (l.custom) l.customPrice ?: 0 else product(l.productId)?.let { RetailCheckout.unitOf(it, l.sku) } ?: 0
@@ -148,7 +157,7 @@ class RetailPosViewModel(
             categories = store.categories.filter { cat -> products.any { it.categoryId == cat.id } },
             specGroups = store.specGroups, held = store.retail.held, nextNo = "#R%04d".format(store.retail.saleSeq),
             payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.walletBalance, online = d.online,
-            totals = RetailCheckout.totals(products, c.lines, c.member),
+            totals = RetailCheckout.totals(products, c.lines, c.member), credit = store.retail.credit,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RetailPosUiState())
 
@@ -239,12 +248,12 @@ class RetailPosViewModel(
                 RetailCheckout.addBlock(p, a.label)?.let { messages.post(it) } ?: add(CartLine(0, p.id, 1, sku = a.label))
             }
             RetailPosAction.Dismiss -> set { it.copy(overlay = null) }
-            is RetailPosAction.GoPay -> if (cart.value.lines.isNotEmpty()) set { it.copy(mode = PosMode.Pay, method = a.method, cash = "", open = null, peek = false) }
+            is RetailPosAction.GoPay -> if (cart.value.lines.isNotEmpty() && !s().settleOnly) set { it.copy(mode = PosMode.Pay, method = a.method, cash = "", open = null, peek = false) }
             RetailPosAction.BackToScan -> set { it.copy(mode = PosMode.Scan, method = null, cash = "") }
             is RetailPosAction.SelectMethod -> set { it.copy(method = a.method, cash = "") }
             is RetailPosAction.CashInput -> set { it.copy(cash = a.text) }
-            RetailPosAction.Confirm -> checkout(cart.value.method ?: return, CashRules.amount(cart.value.cash) ?: s().totals.due)
-            RetailPosAction.QuickCash -> checkout("现金", s().totals.due)
+            RetailPosAction.Confirm -> if (s().settleOnly) checkout("", 0) else checkout(cart.value.method ?: return, CashRules.amount(cart.value.cash) ?: s().payDue)
+            RetailPosAction.QuickCash -> checkout("现金", s().payDue)
             RetailPosAction.Next -> set { CartState(cat = it.cat) }
         }
     }
@@ -258,11 +267,11 @@ class RetailPosViewModel(
         val c = cart.value
         if (c.processing) return
         set { it.copy(processing = true) }
-        val save = s().totals.save
+        val save = s().totals.save; val credit = s().credit; val pay = s().payDue; val refund = s().settle?.refund ?: 0
         viewModelScope.launchStorage(messages) {
             try {
-                retail.checkoutRetail(c.lines, c.member, method, if (method == "现金") received else s().totals.due, s().online)
-                    .onSuccess { sale -> set { it.copy(mode = PosMode.Pay, method = method, cash = fenToInput(received), overlay = RetailOverlay.Done(sale, if (method == "现金") received else sale.paid, if (method == "现金") received - sale.paid else 0, save)) } }
+                retail.checkoutRetail(c.lines, c.member, method, if (method == "现金") received else pay, s().online)
+                    .onSuccess { sale -> set { CartState(cat = it.cat, overlay = RetailOverlay.Done(sale, if (method == "现金") received else pay, if (method == "现金") received - pay else 0, save, credit, refund)) } }
                     .onFailure { messages.post(it.message ?: "收款失败") }
             } finally { set { it.copy(processing = false) } }
         }

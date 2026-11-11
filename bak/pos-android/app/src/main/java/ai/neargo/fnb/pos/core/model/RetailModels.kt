@@ -88,4 +88,24 @@ data class RetailData(
     val labelQueue: List<LabelJob> = emptyList(),
     val saleSeq: Int = 1,
     val docSeq: Int = 1,
+    /** 无单退货记录（找不到原单，主管授权，按现价退） */
+    val looseReturns: List<LooseReturn> = emptyList(),
+    /** 换货抵扣：订单页换货确认后记在这里，收银页下一单结算时用掉（存盘，重启不丢） */
+    val credit: ExchangeCredit? = null,
+)
+
+/** 零售单收款里「换货抵扣」这一笔的方式名（不是真的收款方式，不进收款记录） */
+const val EXCHANGE = "换货抵扣"
+
+/** 换货抵扣：原单号、抵扣金额、退回件数、原收款方式（退差价时退回这个方式） */
+@Serializable data class ExchangeCredit(val no: String, val amount: Long, val pieces: Int, val method: String)
+
+/** 无单退货 */
+@Serializable
+data class LooseReturn(val no: String, val at: Long, val lines: List<RetailSaleLine>, val amount: Long, val reason: ReturnRules.Reason, val method: String, val approver: String, val restock: Boolean)
+
+/** 退货申请：saleNo 为空 = 无单退货（pick 的键是商品 ID，按现价）；否则 pick 的键是原单行 key */
+data class ReturnRequest(
+    val saleNo: String?, val pick: Map<String, Int>, val reason: ReturnRules.Reason, val restock: Boolean, val method: String,
+    val exchange: Boolean = false, val approver: String = "", val secret: String = "",
 )
