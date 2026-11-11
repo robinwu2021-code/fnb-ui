@@ -81,7 +81,7 @@ export function FloorCanvas({ area, data, edit, dimOf }: { area: string; data: F
   const tables = Object.entries(data.place).filter(([, p]) => p.area === area);
   return (
     <div ref={wrap} className="w-full">
-      <div className={cn('relative rounded-[var(--rt)] bg-surface shadow-[inset_0_0_0_3px_var(--c-strong)] select-none', edit && 'fl-grid')} style={{ width: plan.cols * u, height: plan.rows * u, ['--u' as string]: u + 'px' }}
+      <div className={cn('relative rounded-rt bg-surface shadow-[inset_0_0_0_3px_var(--c-strong)] select-none', edit && 'fl-grid')} style={{ width: plan.cols * u, height: plan.rows * u, ['--u' as string]: u + 'px' }}
         onPointerDown={() => edit && s.set({ fsel: null })}>
         {ground.map((f) => { const b = boxOf('f', f.id, f); return (
           <div key={f.id} onPointerDown={(e) => down(e, 'f', f.id, 'move')} style={pos(b)}
@@ -112,7 +112,7 @@ function FloorTile({ id, p, b, u, tb, edit, dim, cls, current, onDown, onPick, o
     <div style={{ left: b.x * u, top: b.y * u, width: b.w * u, height: b.h * u }} className={cn('absolute transition-opacity', dim && 'opacity-25', cls)}
       onPointerDown={edit ? onDown : undefined} onDoubleClick={edit ? undefined : onOpen}>
       <StatusTile group={g} alert={!edit && alert} quiet={edit || quiet} dim={tb?.st === 'disabled'} current={current} onClick={edit ? undefined : onPick} ariaLabel={id}
-        className={cn('absolute inset-0.5 items-center justify-center gap-0.5 text-center px-1', p.shape === 'round' ? '!rounded-full' : '!rounded-[var(--rk)]', edit && 'cursor-grab !bg-surface shadow-[0_1px_3px_rgba(0,0,0,.18)]')}>
+        className={cn('absolute inset-0.5 items-center justify-center gap-0.5 text-center px-1', p.shape === 'round' ? '!rounded-full' : '!rounded-rk', edit && 'cursor-grab !bg-surface shadow-[0_1px_3px_rgba(0,0,0,.18)]')}>
         <b className={cn('num leading-none tracking-[-.01em]', big ? 'text-md' : 'text-sm')}>{id}</b>
         {!edit && tb && big && <span className="inline-flex items-center gap-1 text-[11px] leading-none text-sub"><StatusIcon ent="table" k={tb.st} size={12} />{busyTable(tb.st) ? tb.ppl + '/' + tb.seats : tb.seats}</span>}
         {!edit && amt && big && <span className="a text-[11px] font-600 num leading-none">{amt}</span>}

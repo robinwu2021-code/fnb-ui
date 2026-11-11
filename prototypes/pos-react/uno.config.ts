@@ -50,5 +50,8 @@ export default defineConfig({
     'help': 'text-xs text-sub',
     'h-title': 'text-lg font-600 tracking-[-.01em]',
   },
+  // 圆角令牌：rounded-rt / rounded-rb 会被预设当成「右上 / 右下角」方向写法（只给一个角 0.25rem），主题里的 --rt / --rb 根本不生效。
+  // 这里用自定义规则把四个令牌名直接映射到变量；自定义规则优先于预设，变体（hover: / !）照常可用。
+  rules: [[/^rounded-(rc|rt|rb|rk)$/, ([, k]) => ({ 'border-radius': `var(--${k})` })]],
   safelist: [],
 });

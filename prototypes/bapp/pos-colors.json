@@ -1648,6 +1648,22 @@
      "group": "failed",
      "icon": "circle-alert",
      "ref": "A-06"
+    },
+    {
+     "key": "found",
+     "zh": "新发现",
+     "en": "Found",
+     "group": "booked",
+     "icon": "radar",
+     "ref": "设置·设备列表"
+    },
+    {
+     "key": "pairing",
+     "zh": "连接中",
+     "en": "Connecting",
+     "group": "waiting",
+     "icon": "loader-circle",
+     "ref": "设置·添加设备"
     }
    ]
   },
@@ -1781,6 +1797,21 @@
      "group": "closed",
      "icon": "cloud-off",
      "ref": "C-12"
+    }
+   ]
+  },
+  {
+   "key": "feature",
+   "zh": "功能状态",
+   "en": "Feature",
+   "states": [
+    {
+     "key": "todo",
+     "zh": "未实现",
+     "en": "Not built yet",
+     "group": "closed",
+     "icon": "construction",
+     "ref": "设备 · 外送平台"
     }
    ]
   },

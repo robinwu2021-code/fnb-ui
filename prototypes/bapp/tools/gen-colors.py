@@ -140,7 +140,8 @@ STATES = [
     ('device', '设备与网络', 'Devices & network', [
         ('online', '在线', 'Online', 'done', 'wifi', 'A-05'), ('offline', '离线', 'Offline', 'action', 'wifi-off', 'A-05 A-06'),
         ('no_paper', '缺纸', 'Out of paper', 'action', 'triangle-alert', 'A-03'), ('unplugged', '未连接', 'Not connected', 'closed', 'unplug', 'A-02'),
-        ('to_sync', '待同步', 'Waiting to sync', 'waiting', 'cloud-upload', 'A-06'), ('sync_failed', '同步失败', 'Sync failed', 'failed', 'circle-alert', 'A-06')]),
+        ('to_sync', '待同步', 'Waiting to sync', 'waiting', 'cloud-upload', 'A-06'), ('sync_failed', '同步失败', 'Sync failed', 'failed', 'circle-alert', 'A-06'),
+        ('found', '新发现', 'Found', 'booked', 'radar', '设置·设备列表'), ('pairing', '连接中', 'Connecting', 'waiting', 'loader-circle', '设置·添加设备')]),
     ('booking', '预订', 'Reservation', [
         ('upcoming', '待到店', 'Upcoming', 'booked', 'calendar-clock', 'B-05'), ('arrived', '已到店', 'Arrived', 'done', 'calendar-check', 'B-05'),
         ('no_show', '未到店', 'No-show', 'closed', 'calendar-x', 'B-05'), ('cancelled', '已取消', 'Cancelled', 'closed', 'ban', '—')]),
@@ -152,6 +153,8 @@ STATES = [
         ('synced', '已同步', 'Synced', 'done', 'cloud', 'C-12'), ('pending', '待同步', 'Not synced', 'waiting', 'cloud-upload', 'C-12'),
         ('syncing', '同步中', 'Syncing', 'waiting', 'refresh-cw', 'C-12'), ('failed', '同步失败', 'Sync failed', 'failed', 'cloud-alert', 'C-12'),
         ('unlisted', '未上架', 'Not listed', 'closed', 'cloud-off', 'C-12')]),
+    ('feature', '功能状态', 'Feature', [
+        ('todo', '未实现', 'Not built yet', 'closed', 'construction', '设备 · 外送平台')]),
     ('shift', '班次', 'Shift', [
         ('closed', '未开班', 'Not open', 'closed', 'lock', 'A-01'), ('open', '营业中', 'Open', 'progress', 'store', 'A-01'),
         ('handover', '交班中', 'Handing over', 'waiting', 'hourglass', 'J-05'), ('handed', '已交班', 'Handed over', 'done', 'circle-check', 'J-05'),

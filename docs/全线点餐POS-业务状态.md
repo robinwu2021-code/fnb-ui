@@ -141,6 +141,8 @@
 | 未连接 | Not connected | 已关闭 | `unplug` | A-02 |
 | 待同步 | Waiting to sync | 等待中 | `cloud-upload` | A-06 |
 | 同步失败 | Sync failed | 异常 | `circle-alert` | A-06 |
+| 新发现 | Found | 预约 | `radar` | 设置·设备列表 |
+| 连接中 | Connecting | 等待中 | `loader-circle` | 设置·添加设备 |
 
 ### 预订 · Reservation
 
@@ -170,6 +172,12 @@
 | 同步中 | Syncing | 等待中 | `refresh-cw` | C-12 |
 | 同步失败 | Sync failed | 异常 | `cloud-alert` | C-12 |
 | 未上架 | Not listed | 已关闭 | `cloud-off` | C-12 |
+
+### 功能状态 · Feature
+
+| 状态 | English | 分组 | 图标（Lucide） | 依据 |
+|---|---|---|---|---|
+| 未实现 | Not built yet | 已关闭 | `construction` | 设备 · 外送平台 |
 
 ### 班次 · Shift
 
@@ -245,7 +253,7 @@
 | 占用 | Held | 暂存 | `lock` | I-07 |
 | 退款预留 | Refund reserved | 等待中 | `rotate-ccw` | I-07 |
 
-合计 19 个实体、112 个状态。
+合计 20 个实体、115 个状态。
 
 ## 四、令牌
 

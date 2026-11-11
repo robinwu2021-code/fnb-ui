@@ -9,7 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const bapp = resolve(here, '../../bapp');
 let css = readFileSync(resolve(bapp, 'pos-colors.css'), 'utf8');
 // 第四层「接入旧令牌」是原型 .pc 作用域专用，React 工程直接用 --c-* 角色，不需要
-css = css.split('/* ── 第四层')[0].replace(/^\[data-tone="quiet"\] \.pc .*$/m, '');
+css = css.split('/* ── 第四层')[0].replace(/^\[data-tone="quiet"\] \.pc .*$\n?/gm, ''); // 只给原型 .pc 用的行全部去掉（原来没带 g，只去第一行）
 css = '/* 由 scripts/sync-tokens.mjs 从 prototypes/bapp/pos-colors.css 同步，不要手改。 */\n' + css;
 writeFileSync(resolve(here, '../src/styles/pos-colors.css'), css);
 const js = readFileSync(resolve(bapp, 'pos-states.js'), 'utf8');

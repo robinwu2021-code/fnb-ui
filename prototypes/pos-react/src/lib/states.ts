@@ -1,4 +1,4 @@
-// 业务状态字典：19 实体 112 状态，由 tools/gen-colors.py 生成（scripts/sync-tokens.mjs 同步成 json）。
+// 业务状态字典：20 实体 115 状态，由 tools/gen-colors.py 生成（scripts/sync-tokens.mjs 同步成 json）。
 import raw from '@/data/pos-states.json';
 import type { CSSProperties } from 'react';
 
@@ -6,12 +6,6 @@ export type StGroup = 'action' | 'progress' | 'waiting' | 'done' | 'booked' | 'h
 export interface StDef { zh: string; en: string; group: StGroup; icon: string }
 interface Dict { groups: Record<StGroup, { zh: string; en: string; form: 'chip' | 'dot' }>; states: Record<string, Record<string, StDef>> }
 export const STATES = raw as unknown as Dict;
-/* 本地扩展（设备发现方案新增）：先在这里合并，之后并入 bapp/tools/gen-colors.py 再 sync:tokens，届时删掉这段 */
-const EXTRA: Record<string, Record<string, StDef>> = {
-  device: { found: { zh: '新发现', en: 'Found', group: 'booked', icon: 'radar' }, pairing: { zh: '连接中', en: 'Connecting', group: 'waiting', icon: 'loader-circle' } },
-  feature: { todo: { zh: '未实现', en: 'Not built yet', group: 'closed', icon: 'construction' } },
-};
-Object.entries(EXTRA).forEach(([ent, m]) => { STATES.states[ent] = { ...(STATES.states[ent] || {}), ...m }; });
 
 export function stateOf(ent: string, key: string): StDef | undefined { return STATES.states[ent]?.[key]; }
 export function stGroup(ent: string, key: string): StGroup { return stateOf(ent, key)?.group ?? 'closed'; }
