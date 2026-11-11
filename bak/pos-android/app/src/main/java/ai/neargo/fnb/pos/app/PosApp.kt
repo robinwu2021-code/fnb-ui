@@ -121,11 +121,17 @@ import kotlinx.coroutines.flow.stateIn
 data class ShellUiState(
     val session: Session? = null, val device: DeviceStatus = DeviceStatus(), val prefs: DisplayPrefs? = null,
     val pending: Int = 0, val stores: List<StoreSummary> = emptyList(),
+    /** 云端待上传事件数、厨房待处理（失败/未知）数。 */
+    val cloudPending: Int = 0, val kitchenAction: Int = 0,
 )
 
 /** 应用壳 ViewModel：会话、设备状态、显示偏好（主题）。 */
-class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, private val prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus) : ViewModel() {
-    val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, session.stores) { s, d, p, n, st -> ShellUiState(s, d, p, n, st) }
+class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, private val prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus,
+    status: ai.neargo.fnb.pos.core.data.SyncStatusRepository) : ViewModel() {
+    private val endpoints = combine(status.stats, sync.deliveries) { st, dl -> st.unackedEvents to dl.count { it.needsAction } }
+    val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, combine(session.stores, endpoints) { a, b -> a to b }) { s, d, p, n, (st, e) ->
+        ShellUiState(s, d, p, n, st, e.first, e.second)
+    }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ShellUiState())
     fun selectStore(id: String) = viewModelScope.launchStorage(messages) { session.selectStore(id) }
     fun logout() = viewModelScope.launchStorage(messages) { session.logout() }
@@ -168,7 +174,7 @@ fun PosApp(shell: ShellViewModel) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
+                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
                 Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
@@ -217,7 +223,7 @@ private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage:
 
 /** 页头右侧操作：原页头（消息 / 打印 / 语言 / 显示）与原页脚（在线 / 钱箱 / 交班 / 帮助）合并，统一为图标。 */
 private class HeaderActions(
-    val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit,
+    val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit, val cloudPending: Int, val kitchenAction: Int,
     val onShift: () -> Unit, val onPrint: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
 )
 
@@ -278,15 +284,16 @@ private fun CompactHeader(session: Session, actions: HeaderActions) {
 @Composable
 private fun StatusIcon(a: HeaderActions) {
     val online = a.device.online
-    val label = when {
-        !online -> "离线 · ${a.pending} 项待同步，联网后自动补发"
-        a.pending > 0 -> "在线 · 正在同步 ${a.pending} 项"
-        else -> "在线 · 数据已同步"
+    // N3：网络在线不等于已同步；厨房与云端分别说明，不出现「数据已同步」
+    val parts = buildList {
+        add(if (online) "网络在线" else "离线 · 厨房单本机照常出单")
+        if (a.kitchenAction > 0) add("厨房 ${a.kitchenAction} 张待处理")
+        add(if (ai.neargo.fnb.pos.core.data.CloudLink.CONNECTED) "云端待上传 ${a.cloudPending} 条" else "云端未接入 · ${a.cloudPending} 条事件在本机")
     }
-    // 点按进入同步队列；待同步数量作为角标
+    val attention = a.kitchenAction + a.pending
     ToolIcon(
-        if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, label,
-        badge = a.pending.takeIf { it > 0 }, tint = if (online) Pos.colors.primary else Pos.colors.warning, onClick = a.onSync,
+        if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, parts.joinToString(" · "),
+        badge = attention.takeIf { it > 0 }, tint = if (online && a.kitchenAction == 0) Pos.colors.primary else Pos.colors.warning, onClick = a.onSync,
     )
 }
 

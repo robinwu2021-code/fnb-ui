@@ -71,7 +71,7 @@ class OrderRulesTest {
         val o = ok(OrderRules.add(TableOrder(), rice, null, 1, 1))
         assertEquals("先送厨再结账", OrderRules.checkoutBlock(OrderRules.totals(o)))
         val q = OrderRules.send(o, "K1", online = false)
-        assertTrue(OrderRules.checkoutBlock(OrderRules.totals(q))!!.contains("待同步"))
+        assertTrue(OrderRules.checkoutBlock(OrderRules.totals(q))!!.contains("待云端同步"))
         assertNull(OrderRules.checkoutBlock(OrderRules.totals(OrderRules.markBatchSent(q, "K1"))))
     }
 

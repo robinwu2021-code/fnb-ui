@@ -64,7 +64,7 @@
 
 | 入口 | 当前分类 | 事件或后续归属 |
 | --- | --- | --- |
-| `syncNow` | 设备任务日志 | SyncAttempt（simulation）；不进营业事件，N3/N6/N8接真实回执 |
+| `syncNow` | 设备任务日志 | SyncAttempt（simulation），完成项标 ackSource=simulation；N3起不再出厨房单；N8接真实回执 |
 
 ## PrintRepository
 
@@ -72,7 +72,7 @@
 | --- | --- | --- |
 | `preBill` | 设备任务日志 | PrintRequested（local）；不进营业事件，N3/N6/N8接真实回执 |
 | `reprint` | 设备任务日志 | PrintReprinted（local，记原任务）；不进营业事件，N3/N6/N8接真实回执 |
-| `process` | 设备任务日志 | PrintAttempt（simulation）；不进营业事件，N3/N6/N8接真实回执 |
+| `process` | 设备任务日志 | PrintAttempt（simulation），同步更新厨房送达记录；N6接真实回执 |
 | `billPreview` | 只读 | 仅文本预览，不入队 |
 
 ## ShiftRepository
@@ -93,6 +93,12 @@
 | --- | --- | --- |
 | `setForceOffline` | 仅本机 | 偏好、观察/演示开关或瞬时提示，不进营业日志 |
 | `setPrinterOk` | 仅本机 | 偏好、观察/演示开关或瞬时提示，不进营业日志 |
+
+## SyncRepository（N3 新增）
+
+| 入口 | 当前分类 | 事件或后续归属 |
+| --- | --- | --- |
+| `confirmDelivery` | 设备任务日志 | 人工确认送达：记录人员、原因（source=manual），不重新出单 |
 
 ## MessageBus
 

@@ -42,6 +42,10 @@ import ai.neargo.fnb.pos.core.model.TaskLogEntry
 import ai.neargo.fnb.pos.core.model.TASK_LOG_LIMIT
 import ai.neargo.fnb.pos.core.model.IdMapping
 import ai.neargo.fnb.pos.core.model.Money
+import ai.neargo.fnb.pos.core.model.KitchenDelivery
+import ai.neargo.fnb.pos.core.model.DeliveryState
+import ai.neargo.fnb.pos.core.model.DeliveryRules
+import ai.neargo.fnb.pos.core.model.PaymentState
 import ai.neargo.fnb.pos.core.model.StoreSettings
 import ai.neargo.fnb.pos.core.model.StoreSummary
 import ai.neargo.fnb.pos.core.model.TableOrder
@@ -143,7 +147,7 @@ class LocalWorkspace(
             }) else loaded
             val restored = migrated.copy(
                 deviceId = migrated.deviceId.ifBlank { state.value.deviceId },
-                stores = migrated.stores.mapValues { assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3") },
+                stores = migrated.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
             )
             withContext(NonCancellable) {
                 store.save(json.encodeToString(Vault.serializer(), restored))
@@ -169,6 +173,19 @@ class LocalWorkspace(
         if (maps.isEmpty()) return s
         val orders = s.orders + maps.associate { m -> m.tableId to (s.orders[m.tableId] ?: TableOrder()).copy(orderId = m.orderId) }
         return s.copy(tables = tables, orders = orders, idMappings = s.idMappings + maps)
+    }
+
+    /**
+     * N3 状态拆分升级：旧「已同步」标 legacy（非云端回执）；旧厨房任务补送达记录（legacy，历史待核实）；
+     * 旧版离线批次曾等联网才出厨房单，未出单的现在补出，避免升级后永不出单。
+     */
+    private fun upgradeStates(s0: StoreData): StoreData {
+        var s = ensureDeliveries(s0.copy(outbox = s0.outbox.map { if (it.state == OutboxState.Done && it.ackSource.isBlank()) it.copy(ackSource = "legacy") else it }), "legacy")
+        val printed = s.printJobs.map { it.id }.toSet()
+        s.orders.forEach { (table, o) ->
+            o.lines.filter { it.status == LineStatus.Queued }.mapNotNull { it.batchId }.distinct().filter { "P-$it" !in printed }.forEach { b -> s = s.kitchenJob(table, b) }
+        }
+        return ensureDeliveries(s, "simulation")
     }
 
     /** 重置当前门店为演示初始数据（账号与登录状态保留）。 */
@@ -197,7 +214,8 @@ class LocalWorkspace(
     private suspend fun <T> transaction(event: EventSpec? = null, f: (Vault) -> Pair<Vault, T>): T = writeLock.withLock {
         blockedState.value?.let { throw WorkspaceWriteException(IllegalStateException(it)) }
         val (candidate, result) = f(state.value)
-        var next = candidate
+        // 每张厨房票据都有送达记录（送厨、退菜、补打）；纯计算，无新增时不改变对象
+        var next = candidate.storeId?.let { id -> candidate.stores[id]?.let { s0 -> ensureDeliveries(s0, "simulation").takeIf { it !== s0 }?.let { candidate.copy(stores = candidate.stores + (id to it)) } } } ?: candidate
         if (next != state.value) withContext(NonCancellable) {
             if (event != null) {
                 val storeId = requireNotNull(next.storeId)
@@ -452,7 +470,7 @@ class LocalWorkspace(
         val pid = newId("P")
         return storeOp(event = page("PaymentRecorded", tableId), check = { s ->
             val totals = OrderRules.totals(s.order(tableId))
-            OrderRules.checkoutBlock(totals) ?: when {
+            OrderRules.checkoutBlock(totals) ?: DeliveryRules.checkoutBlock(s, tableId) ?: when {
                 amount != totals.due -> "账单已变化，请重新核对"
                 !Money.withinBill(amount) || !Money.withinBill(received) -> "金额超出上限"
                 s.settings.currency !in Money.SUPPORTED -> "不支持的币种：${s.settings.currency}"
@@ -464,7 +482,8 @@ class LocalWorkspace(
             }
         }) { s ->
             val pay = PaymentRecord(pid, tableId, amount, method, clock(), synced = online, received = if (method == "现金") received else amount, change = if (method == "现金") received - amount else 0L,
-                orderId = s.order(tableId).orderId.ifBlank { null }, currency = s.settings.currency)
+                orderId = s.order(tableId).orderId.ifBlank { null }, currency = s.settings.currency,
+                state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
             val out = if (online) s.outbox else s.outbox + OutboxItem(pid, OutboxKind.Payment, tableId, "$tableId $method 收款 ${yuan(amount)}", clock())
             val receipt = PrintJob(newId("R"), PrintKind.Receipt, "$tableId 结账单", Receipts.bill("结账单", s, tableId, s.order(tableId), clock(), pay), clock())
             s.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
@@ -543,6 +562,40 @@ class LocalWorkspace(
             Receipts.kitchen(settings.shortName, tableId, lines, order(tableId).note, clock()), clock()))
     }
 
+    /** 为缺少送达记录的厨房任务补记录；状态取自任务当前结果。 */
+    private fun ensureDeliveries(s: StoreData, source: String): StoreData {
+        val known = s.kitchenDeliveries.map { it.jobId }.toSet()
+        val missing = s.printJobs.filter { it.kind == PrintKind.Kitchen && it.id !in known }
+        if (missing.isEmpty()) return s
+        return s.copy(kitchenDeliveries = s.kitchenDeliveries + missing.map { j ->
+            val table = j.title.substringBefore(' ')
+            KitchenDelivery(
+                ticketId = j.id.removePrefix("P-"), jobId = j.id, tableId = table, orderId = s.orders[table]?.orderId.orEmpty(), label = j.title,
+                state = when (j.state) { PrintState.Printed -> DeliveryState.Delivered; PrintState.Failed -> DeliveryState.Failed; else -> DeliveryState.Pending },
+                source = source, attempts = j.attempts, lastError = j.error, createdAt = j.createdAt, updatedAt = clock(),
+            )
+        })
+    }
+
+    override val deliveries: StateFlow<List<KitchenDelivery>> = derive { it.store?.kitchenDeliveries.orEmpty().sortedByDescending { d -> d.createdAt } }
+
+    /** 人工确认送达：只用于失败/未知/待出单，必须填写原因，记录人员。 */
+    override suspend fun confirmDelivery(ticketId: String, reason: String) = storeOp(check = { s ->
+        val d = s.kitchenDeliveries.firstOrNull { it.ticketId == ticketId }
+        when {
+            d == null -> "送达记录不存在"
+            d.state == DeliveryState.Delivered || d.state == DeliveryState.ManualConfirmed -> "已送达，无需确认"
+            reason.isBlank() -> "请填写确认原因"
+            reason.length > 60 -> "原因最多 60 字"
+            else -> null
+        }
+    }) { s ->
+        val actor = state.value.user ?: DemoCatalog.STAFF
+        s.copy(kitchenDeliveries = s.kitchenDeliveries.map {
+            if (it.ticketId == ticketId) it.copy(state = DeliveryState.ManualConfirmed, source = "manual", confirmedBy = actor, reason = reason.trim(), updatedAt = clock()) else it
+        }).log(TaskLogKind.PrintAttempt, ticketId, "ManualConfirmed", "manual", "${actor}：${reason.trim()}")
+    }
+
     override suspend fun preBill(tableId: String) = storeOp(check = { s ->
         if (s.order(tableId).lines.isEmpty()) "$tableId 没有菜品" else null
     }) { s ->
@@ -573,7 +626,15 @@ class LocalWorkspace(
                     else -> j.copy(state = PrintState.Printed, attempts = j.attempts + 1, error = "")
                 }.also { n -> if (n != j && n.state != j.state) logged = logged.log(TaskLogKind.PrintAttempt, j.id, n.state.name, "simulation", n.error) }
             }
-            logged.copy(printJobs = jobs)
+            val byJob = jobs.associateBy { it.id }
+            logged.copy(printJobs = jobs, kitchenDeliveries = logged.kitchenDeliveries.map { d ->
+                val j = byJob[d.jobId]
+                if (j == null || d.state == DeliveryState.ManualConfirmed) d
+                else {
+                    val st = when (j.state) { PrintState.Printed -> DeliveryState.Delivered; PrintState.Failed -> DeliveryState.Failed; else -> d.state }
+                    if (st == d.state && j.attempts == d.attempts) d else d.copy(state = st, attempts = j.attempts, lastError = j.error, updatedAt = clock(), source = "simulation")
+                }
+            })
         }.getOrThrow()
         return failed
     }
@@ -707,8 +768,8 @@ class LocalWorkspace(
         val batch = newId("K-${s.id}")
         val out = if (online) s.outbox else s.outbox + OutboxItem(batch, OutboxKind.Kitchen, tableId, "$tableId 送厨 $n 份", clock())
         val sent = OrderRules.send(s.order(tableId), batch, online)
-        val withOrder = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1)
-        val next = if (online) withOrder.kitchenJob(tableId, batch) else withOrder
+        // 厨房单走本机/局域网，不依赖云端：离线也立即出单；云端待同步另由 outbox 与事件表示
+        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1).kitchenJob(tableId, batch)
         v.copy(stores = v.stores + (s.id to next)) to SendResult(n, !online)
     }
 
@@ -740,11 +801,11 @@ class LocalWorkspace(
                         // 换桌 / 拆单后批次可能已在其他桌，按批次号在全店查找
                         OutboxKind.Kitchen -> {
                             val table = st.orders.entries.firstOrNull { (_, o) -> o.lines.any { it.batchId == item.id } }?.key ?: item.tableId
-                            st.withOrder(table, OrderRules.markBatchSent(st.order(table), item.id)).kitchenJob(table, item.id)
+                            st.withOrder(table, OrderRules.markBatchSent(st.order(table), item.id))
                         }
                         OutboxKind.Payment -> st.copy(payments = st.payments.map { if (it.id == item.id) it.copy(synced = true) else it })
                     }
-                    st = st.copy(outbox = st.outbox.map { if (it.id == item.id) it.copy(state = OutboxState.Done, attempts = it.attempts + 1, doneAt = clock()) else it })
+                    st = st.copy(outbox = st.outbox.map { if (it.id == item.id) it.copy(state = OutboxState.Done, attempts = it.attempts + 1, doneAt = clock(), ackSource = "simulation") else it })
                         .log(TaskLogKind.SyncAttempt, item.id, "Done", "simulation", item.kind.name)
                     done++
                 }

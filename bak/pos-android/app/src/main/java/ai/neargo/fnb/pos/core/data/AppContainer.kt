@@ -47,6 +47,7 @@ class AppContainer(context: Context) {
         runBlocking { runCatching { it.restore() }.onFailure { e -> android.util.Log.e("AppContainer", "本地数据恢复失败", e) } }
     }
     val recovery: RecoveryRepository = LocalRecovery(context.applicationContext, database, workspace)
+    val syncStatus: SyncStatusRepository = LocalSyncStatus(database, workspace, appScope)
     val session: SessionRepository = workspace
     val config: StoreConfigRepository = workspace
     val floor: FloorRepository = workspace

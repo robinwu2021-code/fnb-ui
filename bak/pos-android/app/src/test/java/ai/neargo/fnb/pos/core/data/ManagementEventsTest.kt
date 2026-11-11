@@ -132,9 +132,16 @@ class ManagementEventsTest {
         w.process(kitchenOk = false)
         assertTrue(d.commands.isEmpty())
         val log = w.current.value!!.taskLog
-        assertEquals(listOf(TaskLogKind.PrintRequested, TaskLogKind.PrintAttempt, TaskLogKind.PrintReprinted, TaskLogKind.SyncAttempt), log.take(4).map { it.kind })
+        val kinds = log.map { it.kind }
+        assertTrue(kinds.indexOf(TaskLogKind.PrintRequested) < kinds.indexOf(TaskLogKind.PrintReprinted))
+        assertTrue(kinds.indexOf(TaskLogKind.PrintReprinted) < kinds.indexOf(TaskLogKind.SyncAttempt))
         assertTrue(log.filter { it.kind == TaskLogKind.PrintAttempt || it.kind == TaskLogKind.SyncAttempt }.all { it.source == "simulation" })
-        assertTrue(log.any { it.kind == TaskLogKind.PrintAttempt && it.result == "Failed" })
+        // 缺纸：新的厨房单失败并记入日志
+        w.addDish(t, w.current.value!!.products.first { it.id == "9" }, null, 1)
+        w.sendToKitchen(t, true)
+        w.process(kitchenOk = false)
+        assertTrue(w.current.value!!.taskLog.any { it.kind == TaskLogKind.PrintAttempt && it.result == "Failed" })
+        assertTrue(d.commands.all { it.type == "DishAdded" || it.type == "KitchenSubmitted" })
         assertTrue(log.first { it.kind == TaskLogKind.PrintReprinted }.detail.contains(job.id))
     }
 

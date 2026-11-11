@@ -148,7 +148,32 @@ data class Totals(val sub: Long, val service: Long, val discount: Long, val due:
 data class PaymentRecord(val id: String, val tableId: String, val amount: Long, val method: String, val at: Long, val synced: Boolean = false, val received: Long = amount, val change: Long = 0,
     /** 所属订单；null 表示旧版本记录，关联未知（不按桌号推断）。 */
     val orderId: String? = null,
-    val currency: String = Money.CURRENCY)
+    val currency: String = Money.CURRENCY,
+    val state: PaymentState = PaymentState.LocalRecorded,
+    /** local=本机记账，simulation=演示渠道，空=旧版本记录。 */
+    val source: String = "")
+
+/** 支付状态轴（N3）：未知只能查单，不能引导重复支付。 */
+@Serializable enum class PaymentState(val label: String) {
+    LocalRecorded("本机已记账"), Processing("处理中"), Unknown("结果未知"), Succeeded("成功"), Failed("失败"), Refunding("退款中"), Refunded("已退款")
+}
+
+/** 厨房送达状态轴（N3）：送达 ≠ 厨师接单；未知不能自动改为失败重派。 */
+@Serializable enum class DeliveryState(val label: String) {
+    Pending("待出单"), Delivered("已送达"), Failed("失败"), Unknown("结果未知"), ManualConfirmed("人工确认送达")
+}
+
+/** 厨房送达记录：每张厨房票据（送厨批次、退菜单、补打）一条。 */
+@Serializable data class KitchenDelivery(
+    val ticketId: String, val jobId: String, val tableId: String, val orderId: String, val label: String,
+    val target: String = "厨房打印机", val state: DeliveryState = DeliveryState.Pending,
+    /** simulation=模拟打印结果，legacy=升级前记录（历史待核实），manual=人工确认。 */
+    val source: String = "simulation",
+    val attempts: Int = 0, val lastError: String = "", val createdAt: Long = 0, val updatedAt: Long = 0,
+    val confirmedBy: String = "", val reason: String = "",
+) {
+    val needsAction get() = state == DeliveryState.Failed || state == DeliveryState.Unknown
+}
 
 @Serializable enum class OutboxKind(val label: String) { Kitchen("送厨"), Payment("收款") }
 @Serializable enum class OutboxState(val label: String) { Pending("待同步"), Done("已同步") }
@@ -164,6 +189,8 @@ data class OutboxItem(
     val state: OutboxState = OutboxState.Pending,
     val attempts: Int = 0,
     val doneAt: Long = 0,
+    /** 完成来源：simulation=模拟补发，legacy=旧版本标记；都不是云端持久回执。 */
+    val ackSource: String = "",
 )
 
 @Serializable
@@ -202,6 +229,7 @@ data class StoreData(
     val taskLog: List<TaskLogEntry> = emptyList(),
     /** 升级时为活动订单补发的ID映射（旧数据无订单ID）。 */
     val idMappings: List<IdMapping> = emptyList(),
+    val kitchenDeliveries: List<KitchenDelivery> = emptyList(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {

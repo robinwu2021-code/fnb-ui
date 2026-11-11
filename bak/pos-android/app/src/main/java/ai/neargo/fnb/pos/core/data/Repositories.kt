@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.core.data
 
+import ai.neargo.fnb.pos.core.model.KitchenDelivery
+
 import ai.neargo.fnb.pos.core.model.DeviceStatus
 import ai.neargo.fnb.pos.core.model.DiningTable
 import ai.neargo.fnb.pos.core.model.DisplayPrefs
@@ -98,6 +100,10 @@ interface OrderRepository {
 
 /** 同步队列：离线产生的送厨批次与收款，联网后按创建顺序补发，幂等。 */
 interface SyncRepository {
+    /** 厨房送达记录（N3）。 */
+    val deliveries: StateFlow<List<KitchenDelivery>>
+    /** 人工确认送达（失败/未知/待出单），记录人员与原因。 */
+    suspend fun confirmDelivery(ticketId: String, reason: String): Result<Unit>
     /** 当前门店的队列（含已同步记录）。 */
     val outbox: StateFlow<List<OutboxItem>>
     /** 所有门店待同步数量。 */

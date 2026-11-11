@@ -159,6 +159,22 @@ internal class SqliteSnapshotStore(private val context: Context, private val nam
         )
     }
 
+    /** 同步中心统计：回执按状态计数，事件按确认状态计数。 */
+    fun commandStats(storeId: String): CommandStats {
+        val db = helper.readableDatabase
+        fun long(sql: String, vararg args: String) = db.rawQuery(sql, args).use { it.moveToFirst(); it.getLong(0) }
+        fun receipts(status: String) = long("SELECT COUNT(*) FROM command_inbox WHERE store_id=? AND receipt LIKE ?", storeId, "%\"status\":\"$status\"%").toInt()
+        return CommandStats(
+            committed = receipts("Committed"), conflicts = receipts("Conflict"), rejected = receipts("Rejected"),
+            lastAcceptedAt = long("SELECT COALESCE(MAX(accepted_at),0) FROM command_events WHERE store_id=?", storeId),
+            unackedEvents = long("SELECT COUNT(*) FROM command_events WHERE store_id=? AND acked=0", storeId).toInt(),
+            legacyUnacked = long("SELECT COUNT(*) FROM command_events WHERE store_id=? AND acked=0 AND envelope IS NULL", storeId).toInt(),
+            oldestUnackedAt = long("SELECT COALESCE(MIN(accepted_at),0) FROM command_events WHERE store_id=? AND acked=0 AND accepted_at>0", storeId),
+            openCommands = long("SELECT COUNT(*) FROM command_outbox WHERE store_id=? AND state IN ('Saved','Waiting','Sending')", storeId).toInt(),
+            available = true,
+        )
+    }
+
     /** 一致性备份：VACUUM INTO 在单一读事务中生成完整副本（业务、Inbox/Outbox、事件、版本同一恢复点）。 */
     suspend fun backupTo(target: File) = withContext(Dispatchers.IO) {
         require(!target.exists()) { "备份文件已存在" }

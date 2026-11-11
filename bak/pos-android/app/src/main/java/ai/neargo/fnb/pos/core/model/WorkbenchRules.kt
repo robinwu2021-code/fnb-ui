@@ -123,3 +123,14 @@ object ShiftRules {
             Money.sum(voids.map { it.amount }), voids.size, Money.sum(gifts.map { it.amount }), gifts.size)
     }
 }
+
+
+/** 结账与厨房送达（N3-02）：任一厨房票据失败或结果未知时须先处理。待出单不阻止。 */
+object DeliveryRules {
+    fun pendingAction(s: StoreData, tableId: String): List<KitchenDelivery> {
+        val orderId = s.orders[tableId]?.orderId.orEmpty()
+        return s.kitchenDeliveries.filter { it.needsAction && (if (orderId.isNotBlank()) it.orderId == orderId else it.tableId == tableId) }
+    }
+    fun checkoutBlock(s: StoreData, tableId: String): String? =
+        pendingAction(s, tableId).takeIf { it.isNotEmpty() }?.let { "有 ${it.size} 张厨房单未确认送达，请在同步中心处理后再结账" }
+}

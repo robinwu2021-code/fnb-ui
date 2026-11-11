@@ -98,13 +98,17 @@ class WorkbenchOpsTest {
         assertTrue(w.jobs.value.any { it.reprint && it.body.first().contains("补打") })
     }
 
-    @Test fun offlineKitchenTicketPrintsAfterSyncEvenAfterTableChange() = runWs { w ->
+    /** N3：厨房单走本机，离线立即出单；云端补发只改同步状态，不重复出单。 */
+    @Test fun offlineKitchenTicketPrintsImmediatelyAndSyncDoesNotReprint() = runWs { w ->
         w.sendToKitchen("A03", online = false)
-        assertTrue(w.jobs.value.none { it.kind == PrintKind.Kitchen })
+        val kitchen = w.jobs.value.filter { it.kind == PrintKind.Kitchen }
+        assertEquals(1, kitchen.size); assertTrue(kitchen.single().title.startsWith("A03"))
+        assertEquals(1, w.current.value!!.kitchenDeliveries.size)
         w.changeTable("A03", "C01")
         w.syncNow()
         assertTrue(w.orders.value.getValue("C01").lines.none { it.status == LineStatus.Queued })
-        assertTrue(w.jobs.value.any { it.kind == PrintKind.Kitchen && it.title.startsWith("C01") })
+        assertEquals(1, w.jobs.value.count { it.kind == PrintKind.Kitchen })
+        assertEquals("simulation", w.current.value!!.outbox.single().ackSource)
     }
 
     @Test fun closeShiftSummarisesPaymentsAndStartsNewShift() = runWs { w ->

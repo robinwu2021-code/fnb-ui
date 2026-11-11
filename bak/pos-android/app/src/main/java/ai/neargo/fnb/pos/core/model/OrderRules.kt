@@ -113,7 +113,8 @@ object OrderRules {
     fun checkoutBlock(t: Totals): String? = when {
         t.items == 0 -> "本单没有菜品"
         t.newItems > 0 -> "先送厨再结账"
-        t.queuedItems > 0 -> "有 ${t.queuedItems} 份待同步，联网后再结账"
+        // N3-02：云待同步时是否允许本地现金记账属经营策略，确认前维持阻止（见 CheckoutPolicy）
+        t.queuedItems > 0 && CheckoutPolicy.BLOCK_WHEN_CLOUD_PENDING -> "有 ${t.queuedItems} 份待云端同步，联网后再结账"
         else -> null
     }
 }
@@ -127,3 +128,13 @@ fun yuan(fen: Long): String {
 
 /** 分转「元」输入文本：4800 → "48"，4850 → "48.5"。 */
 fun fenToInput(fen: Long): String = if (fen % 100 == 0L) "${fen / 100}" else yuan(fen).removePrefix("¥").trimEnd('0')
+
+
+/**
+ * 结账策略（N3-02）。建议规则：主POS已提交且必需厨房目标已送达时，云待同步也可本地现金记账；线上支付须取得渠道可信结果。
+ * 该规则待门店确认，确认前保持 new/queued 阻止结账；厨房失败或未知始终须先处理（DeliveryRules）。
+ */
+object CheckoutPolicy {
+    const val BLOCK_WHEN_CLOUD_PENDING = true
+    const val STATUS = "待门店确认：云待同步时暂不允许结账"
+}
