@@ -23,11 +23,27 @@ import kotlinx.serialization.Serializable
     val updatedAt: Long = 0, val by: String = "", val note: String = "",
     /** 厨房屏持久接收回执（主机侧记录）：接收时间与已接收的版本。 */
     val deliveredAt: Long = 0, val deliveredRev: Int = 0,
+    /** 分派模式下的负责屏（设备 ID 与名称）；空=未接单或同步显示模式。 */
+    val owner: String = "", val ownerName: String = "",
 ) {
     val activeQty get() = lines.sumOf { it.active }
 }
 
+/** 同档口多块厨房屏的分派方式。 */
+@Serializable enum class KdsDispatch(val label: String, val desc: String) {
+    Sync("同步显示", "每块屏都显示全部卡，任一屏操作各屏同步"),
+    Claim("先接单者负责", "第一块接单的屏负责这张卡，其他屏不能操作"),
+}
+
 object KdsRules {
+    fun dispatchOf(s: StoreData, station: String) = s.stationDispatch[station] ?: KdsDispatch.Sync
+
+    /** 分派模式的操作校验：未接单的卡谁先操作归谁；已有负责屏时只允许负责屏操作。 */
+    fun ownerCheck(mode: KdsDispatch, t: KdsTicket, device: String): String? = when {
+        mode != KdsDispatch.Claim || t.owner.isBlank() || t.owner == device -> null
+        else -> "已由${t.ownerName.ifBlank { "其他屏" }}接单，本屏不能操作"
+    }
+
     /** 菜品所属档口：按分类映射；未映射或档口已删除时归默认（第一个）档口。 */
     fun stationFor(s: StoreData, dishId: String): String {
         val cat = s.products.firstOrNull { it.id == dishId }?.categoryId

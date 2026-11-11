@@ -332,6 +332,8 @@ data class StoreData(
     /** 厨房档口（第一个为默认档口）与菜品分类 → 档口映射。 */
     val kdsStations: List<String> = listOf("厨房"),
     val stationOf: Map<String, String> = emptyMap(),
+    /** 同档口多屏分派方式；未配置为「同步显示」。 */
+    val stationDispatch: Map<String, KdsDispatch> = emptyMap(),
     /** 档口出单方式；未配置的档口为「仅纸单」。 */
     val stationDelivery: Map<String, DeliveryMode> = emptyMap(),
 ) {

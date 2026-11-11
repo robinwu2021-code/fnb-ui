@@ -12,6 +12,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.Tag
 import ai.neargo.fnb.pos.core.designsystem.component.Text
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.model.DeliveryMode
+import ai.neargo.fnb.pos.core.model.KdsDispatch
 import ai.neargo.fnb.pos.core.model.DeliveryRules
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ fun StationsPanel() {
     var stations by remember(s.kdsStations) { mutableStateOf(s.kdsStations) }
     var mapping by remember(s.stationOf) { mutableStateOf(s.stationOf) }
     var modes by remember(s.stationDelivery) { mutableStateOf(s.stationDelivery) }
+    var dispatch by remember(s.stationDispatch) { mutableStateOf(s.stationDispatch) }
     var adding by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -69,10 +71,18 @@ fun StationsPanel() {
                 DeliveryMode.entries.forEach { m -> PosButton(m.label, { modes = modes + (st to m) }, size = BtnSize.Small, selected = cur == m) }
             }
         }
+        GroupTitle("同档口多块厨房屏")
+        stations.forEach { st ->
+            val cur = dispatch[st] ?: KdsDispatch.Sync
+            KeyValue(st, cur.desc) {
+                KdsDispatch.entries.forEach { m -> PosButton(m.label, { dispatch = dispatch + (st to m) }, size = BtnSize.Small, selected = cur == m) }
+            }
+        }
         if (error != null) Text(error!!, style = Pos.type.label, color = Pos.colors.danger)
         PosButton("保存档口配置", {
             scope.launch {
                 val r = c.kds.saveKdsStations(stations, mapping).mapCatching { c.kds.saveDeliveryModes(modes.filterKeys { it in stations }).getOrThrow() }
+                    .mapCatching { c.kds.saveDispatchModes(dispatch.filterKeys { it in stations }).getOrThrow() }
                 error = r.exceptionOrNull()?.message
                 if (r.isSuccess) c.messages.post("已保存档口配置，之后的送厨按档口拆单")
             }

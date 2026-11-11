@@ -66,6 +66,10 @@ fun ServeRoute() {
     val all = s.tables.filter { it.status == TableStatus.Dining }.flatMap { t -> s.orders[t.id]?.lines.orEmpty().filter { it.status == LineStatus.Sent || it.status == LineStatus.Rushing }.map { Item(t.id, it) } }
         .sortedByDescending { it.wait(now) }
     val shown = when (filter) { "超时" -> all.filter { it.wait(now) >= OVERDUE_MIN }; "催菜中" -> all.filter { it.line.status == LineStatus.Rushing }; else -> all }
+    val host by c.lanHost.status.collectAsStateWithLifecycle()
+    fun reclaim(k: ai.neargo.fnb.pos.core.model.KdsTicket) = scope.launchStorage(c.messages) {
+        c.kds.kdsReassign(k.id, null).onSuccess { c.messages.post("已收回 ${k.tableId} ${k.station} 的任务卡，其他屏可以接单") }.onFailure { c.messages.post(it.message ?: "收回失败") }
+    }
     fun advance(i: Item, to: LineStatus) = scope.launchStorage(c.messages) { c.orders.advance(i.table, i.line.uid, to); c.messages.post(if (to == LineStatus.Served) "${i.table} ${i.line.name} 已上菜" else "已催菜") }
     Panel(Modifier.fillMaxSize().padding(Pos.metrics.gap)) {
         Column(Modifier.padding(Pos.metrics.pad)) {
@@ -85,8 +89,18 @@ fun ServeRoute() {
                         }
                         if (i.line.status == LineStatus.Rushing) Tag("催菜中", bg = Pos.colors.dangerBg, fg = Pos.colors.danger)
                         i.line.batchId?.let { b -> ai.neargo.fnb.pos.core.model.KdsRules.ticketOf(s.kdsTickets, b, i.line.uid) }?.let { k ->
-                            Tag(if (k.deliveredAt == 0L) "${k.station}屏未接收" else "${k.station} · ${k.state.label}", bg = if (k.state == ai.neargo.fnb.pos.core.model.KdsState.Done) Pos.colors.tint else Pos.colors.tile,
-                                fg = if (k.deliveredAt == 0L) Pos.colors.warning else Pos.colors.primary)
+                            val active = k.state != ai.neargo.fnb.pos.core.model.KdsState.Done && k.state != ai.neargo.fnb.pos.core.model.KdsState.Cancelled
+                            // 分派模式：负责屏离线（主机未连接该设备）时提示收回
+                            val isHost = !c.lanLink.isSecondary
+                            val ownerOff = isHost && active && k.owner.isNotBlank() && k.owner != c.deviceId && k.owner !in host.connected
+                            Tag(when {
+                                k.deliveredAt == 0L -> "${k.station}屏未接收"
+                                ownerOff -> "${k.station} · ${k.ownerName}离线"
+                                k.owner.isNotBlank() -> "${k.station} · ${k.state.label} · ${k.ownerName}"
+                                else -> "${k.station} · ${k.state.label}"
+                            }, bg = if (ownerOff) Pos.colors.dangerBg else if (k.state == ai.neargo.fnb.pos.core.model.KdsState.Done) Pos.colors.tint else Pos.colors.tile,
+                                fg = if (ownerOff) Pos.colors.danger else if (k.deliveredAt == 0L) Pos.colors.warning else Pos.colors.primary)
+                            if (isHost && active && k.owner.isNotBlank()) PosButton("收回", { reclaim(k) }, size = BtnSize.Small, variant = BtnVariant.Text)
                         }
                         Text(if (w < 0) "—" else "$w 分钟", style = Pos.type.strong, color = if (late) Pos.colors.danger else Pos.colors.sub, modifier = Modifier.width(80.dp))
                         if (i.line.status == LineStatus.Sent) PosButton("催菜", { advance(i, LineStatus.Rushing) }, size = BtnSize.Small)

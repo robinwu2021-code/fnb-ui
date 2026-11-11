@@ -7,6 +7,8 @@ import ai.neargo.fnb.pos.core.designsystem.component.PosButton
 import ai.neargo.fnb.pos.core.designsystem.component.Tag
 import ai.neargo.fnb.pos.core.designsystem.component.Text
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
+import ai.neargo.fnb.pos.core.model.KdsDispatch
+import ai.neargo.fnb.pos.core.model.KdsRules
 import ai.neargo.fnb.pos.core.model.KdsState
 import ai.neargo.fnb.pos.core.model.KdsTicket
 import androidx.compose.foundation.background
@@ -57,14 +59,26 @@ fun KdsScreen() {
         val r = c.lanLink.kdsAdvance(t.id, t.rev, to)
         message = if (r.ok) null else r.message
     }
-    val pending = inbox.filter { it.state == KdsState.Pending }.sortedBy { it.createdAt }
-    val working = inbox.filter { it.state == KdsState.Accepted || it.state == KdsState.Cooking }.sortedBy { it.createdAt }
+    fun release(t: KdsTicket) = scope.launch {
+        val r = c.lanLink.kdsRelease(t.id, t.rev)
+        message = if (r.ok) null else r.message
+    }
+    // 分派模式：别的屏负责的卡单独折叠，不占待接单/制作中
+    val store by c.config.current.collectAsStateWithLifecycle()
+    val claim = store?.let { KdsRules.dispatchOf(it, station) } == KdsDispatch.Claim
+    val me = c.deviceId
+    fun mine(t: KdsTicket) = !claim || t.owner.isBlank() || t.owner == me
+    val others = if (claim) inbox.filter { it.owner.isNotBlank() && it.owner != me && it.state != KdsState.Done && it.state != KdsState.Cancelled }.sortedBy { it.createdAt } else emptyList()
+    var showOthers by remember { mutableStateOf(false) }
+    val pending = inbox.filter { it.state == KdsState.Pending && mine(it) }.sortedBy { it.createdAt }
+    val working = inbox.filter { (it.state == KdsState.Accepted || it.state == KdsState.Cooking) && mine(it) }.sortedBy { it.createdAt }
     val finished = inbox.filter { it.state == KdsState.Done || it.state == KdsState.Cancelled }.sortedByDescending { it.updatedAt }.take(12)
     Column(Modifier.fillMaxSize().background(Pos.colors.canvas).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Row(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("厨房屏 · $station", style = Pos.type.title, color = Pos.colors.ink)
             Tag(if (link.connected) "主 POS 已连接" else "主 POS 未连接 · 仅显示已收任务", bg = if (link.connected) Pos.colors.tint else Pos.colors.dangerBg, fg = if (link.connected) Pos.colors.primary else Pos.colors.danger)
-            Text("待接单 ${pending.size} · 制作中 ${working.size}", style = Pos.type.body, color = Pos.colors.sub, modifier = Modifier.weight(1f))
+            Text("待接单 ${pending.size} · 制作中 ${working.size}" + if (claim) " · 先接单者负责" else "", style = Pos.type.body, color = Pos.colors.sub, modifier = Modifier.weight(1f))
+            if (claim) PosButton(if (showOthers) "收起其他屏" else "其他屏 ${others.size}", { showOthers = !showOthers }, size = BtnSize.Small, selected = showOthers)
             PosButton("刷新", { scope.launch { runCatching { c.lanLink.kdsSync() }.onFailure { message = it.message } } }, size = BtnSize.Small)
             PosButton("切换档口", { picking = true }, size = BtnSize.Small)
             PosButton("退出厨房屏", { scope.launch { c.setKdsStation("") } }, size = BtnSize.Small, variant = BtnVariant.Text)
@@ -78,6 +92,10 @@ fun KdsScreen() {
             Lane("制作中", working, now, Modifier.weight(1f)) { t ->
                 if (t.state == KdsState.Accepted) PosButton("开始制作", { act(t, KdsState.Cooking) }, size = BtnSize.Small)
                 PosButton("完成", { act(t, KdsState.Done) }, size = BtnSize.Small, variant = BtnVariant.Primary)
+                if (claim && t.owner == me) PosButton("释放", { release(t) }, size = BtnSize.Small, variant = BtnVariant.Text)
+            }
+            if (claim && showOthers) Lane("其他屏负责", others, now, Modifier.weight(1f)) { t ->
+                Tag(t.ownerName.ifBlank { "其他屏" }, bg = Pos.colors.tile, fg = Pos.colors.sub)
             }
             Lane("最近完成 / 已取消", finished, now, Modifier.weight(1f)) { t ->
                 if (t.state == KdsState.Done) PosButton("撤回完成", { act(t, KdsState.Cooking) }, size = BtnSize.Small, variant = BtnVariant.Text)

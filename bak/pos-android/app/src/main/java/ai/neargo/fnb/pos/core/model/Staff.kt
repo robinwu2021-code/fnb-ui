@@ -51,10 +51,12 @@ object StaffRules {
         "EmployeeSaved" -> Perm.Staff
         "StockAdjusted", "PromotionSaved", "StoreSettingsUpdated", "AreaCreated", "TableConfigCreated", "TableConfigUpdated",
         "CategoryCreated", "SpecGroupCreated", "ProductCreated", "ProductUpdated", "MenuCreated", "MenuUpdated",
-        "MenuPublished", "MenuUnpublished", "TablePositionChanged", "KitchenStationsSaved", "KitchenDeliveryPolicySaved" -> Perm.Settings
+        "MenuPublished", "MenuUnpublished", "TablePositionChanged", "KitchenStationsSaved", "KitchenDeliveryPolicySaved", "KitchenDispatchSaved" -> Perm.Settings
         "DishVoided", "DishGifted", "OrderDiscounted" -> null
         // 厨房屏操作：由已配对工位设备授权
-        "KdsTicketAdvanced" -> null
+        "KdsTicketAdvanced", "KdsTicketReleased" -> null
+        // 收回/指派负责屏：主管级
+        "KdsTicketReassigned" -> Perm.Adjust
         else -> Perm.Order
     }
 }

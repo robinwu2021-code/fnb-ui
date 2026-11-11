@@ -223,6 +223,12 @@ interface StaffRepository {
 /** 厨房屏（N7）：厨师操作经主机仲裁。 */
 interface KdsRepository {
     suspend fun kdsAdvance(ticketId: String, expectedRev: Int, to: ai.neargo.fnb.pos.core.model.KdsState): Result<Unit>
+    /** 分派模式：负责屏释放任务卡。 */
+    suspend fun kdsRelease(ticketId: String, expectedRev: Int): Result<Unit>
+    /** 分派模式：主管收回（deviceId=null）或指派负责屏（仅主机）。 */
+    suspend fun kdsReassign(ticketId: String, deviceId: String?): Result<Unit>
+    /** 档口分派方式（同步显示 / 先接单者负责）。 */
+    suspend fun saveDispatchModes(modes: Map<String, ai.neargo.fnb.pos.core.model.KdsDispatch>): Result<Unit>
     /** 档口配置：档口列表（第一个为默认）与分类映射。 */
     suspend fun saveKdsStations(stations: List<String>, mapping: Map<String, String>): Result<Unit>
     /** 档口出单方式（仅纸单/仅厨房屏/任一/两者）。 */
@@ -234,3 +240,6 @@ internal data class KitchenStationsPayload(val stations: List<String>, val stati
 
 @kotlinx.serialization.Serializable
 internal data class KitchenDeliveryPolicyPayload(val modes: Map<String, ai.neargo.fnb.pos.core.model.DeliveryMode>)
+
+@kotlinx.serialization.Serializable
+internal data class KitchenDispatchPayload(val modes: Map<String, ai.neargo.fnb.pos.core.model.KdsDispatch>)

@@ -434,11 +434,72 @@ class LocalWorkspace(
             when {
                 t == null -> "任务卡不存在"
                 t.rev != expectedRev -> if (t.state == KdsState.Cancelled) "该单已取消（退菜），不能再操作" else "单据已更新（退菜或其他工位操作），请刷新后再试"
-                else -> KdsRules.transition(t.state, to)
+                else -> KdsRules.ownerCheck(KdsRules.dispatchOf(s, t.station), t, deviceOf(origin)) ?: KdsRules.transition(t.state, to)
             }
         }) { s ->
-            s.copy(kdsTickets = s.kdsTickets.map { if (it.id == ticketId) it.copy(state = to, rev = it.rev + 1, seq = s.kdsSeq + 1, updatedAt = clock(), by = actor) else it }, kdsSeq = s.kdsSeq + 1)
+            s.copy(kdsTickets = s.kdsTickets.map {
+                if (it.id != ticketId) it
+                else {
+                    // 分派模式：第一块操作的屏成为负责屏
+                    val claim = KdsRules.dispatchOf(s, it.station) == KdsDispatch.Claim && it.owner.isBlank()
+                    it.copy(state = to, rev = it.rev + 1, seq = s.kdsSeq + 1, updatedAt = clock(), by = actor,
+                        owner = if (claim) deviceOf(origin) else it.owner, ownerName = if (claim) deviceName(deviceOf(origin)) else it.ownerName)
+                }
+            }, kdsSeq = s.kdsSeq + 1)
         }
+    }
+
+    private fun deviceOf(origin: RemoteOrigin?) = origin?.deviceId ?: state.value.deviceId
+    private fun deviceName(id: String) = if (id == state.value.deviceId) "主 POS" else state.value.lan.paired.firstOrNull { it.deviceId == id }?.name ?: "厨房屏"
+
+    /** 负责屏释放：卡回到待接单，其他屏可以接（已完成/已取消的卡不能释放）。 */
+    override suspend fun kdsRelease(ticketId: String, expectedRev: Int): Result<Unit> {
+        val tableId = currentStore()?.kdsTickets?.firstOrNull { it.id == ticketId }?.tableId ?: return fail("任务卡不存在")
+        val origin = kotlinx.coroutines.currentCoroutineContext()[RemoteOrigin]
+        return storeOp(event = EventSpec { _, a ->
+            Triple("KdsTicketReleased", kotlinx.serialization.json.Json.encodeToString(KdsTicket.serializer(), a.kdsTickets.first { it.id == ticketId }), listOf("kds:$ticketId", "table:$tableId"))
+        }, check = { s ->
+            val t = s.kdsTickets.firstOrNull { it.id == ticketId }
+            when {
+                t == null -> "任务卡不存在"
+                t.rev != expectedRev -> "单据已更新，请刷新后再试"
+                t.owner.isBlank() -> "这张卡还没有负责屏"
+                t.owner != deviceOf(origin) -> "只有负责屏可以释放"
+                t.state == KdsState.Done || t.state == KdsState.Cancelled -> "已完成或已取消的卡不能释放"
+                else -> null
+            }
+        }) { s -> s.reassignKds(ticketId, "", "") }
+    }
+
+    /** 主管收回或指派负责屏（仅主机）：收回后卡回到待接单；指派给已配对的设备。 */
+    override suspend fun kdsReassign(ticketId: String, deviceId: String?): Result<Unit> {
+        val tableId = currentStore()?.kdsTickets?.firstOrNull { it.id == ticketId }?.tableId ?: return fail("任务卡不存在")
+        return storeOp(event = EventSpec { _, a ->
+            Triple("KdsTicketReassigned", kotlinx.serialization.json.Json.encodeToString(KdsTicket.serializer(), a.kdsTickets.first { it.id == ticketId }), listOf("kds:$ticketId", "table:$tableId"))
+        }, check = { s ->
+            val t = s.kdsTickets.firstOrNull { it.id == ticketId }
+            when {
+                need(Perm.Adjust) != null -> need(Perm.Adjust)
+                state.value.lan.role == LanRole.Secondary -> "只能在主 POS 收回或指派"
+                t == null -> "任务卡不存在"
+                t.state == KdsState.Done || t.state == KdsState.Cancelled -> "已完成或已取消的卡不需要收回"
+                deviceId != null && state.value.lan.paired.none { it.deviceId == deviceId && it.revokedAt == 0L } -> "设备不存在或已撤销"
+                deviceId == null && t.owner.isBlank() -> "这张卡还没有负责屏"
+                else -> null
+            }
+        }) { s -> s.reassignKds(ticketId, deviceId.orEmpty(), deviceId?.let { deviceName(it) }.orEmpty()) }
+    }
+
+    private fun StoreData.reassignKds(ticketId: String, owner: String, name: String) = copy(kdsTickets = kdsTickets.map {
+        if (it.id != ticketId) it
+        else it.copy(owner = owner, ownerName = name, state = if (owner.isBlank()) KdsState.Pending else it.state, rev = it.rev + 1, seq = kdsSeq + 1, updatedAt = clock())
+    }, kdsSeq = kdsSeq + 1)
+
+    /** 档口分派方式（门店设置权限）。 */
+    override suspend fun saveDispatchModes(modes: Map<String, KdsDispatch>) = storeOp(event = EventSpec { _, a ->
+        Triple("KitchenDispatchSaved", kotlinx.serialization.json.Json.encodeToString(KitchenDispatchPayload.serializer(), KitchenDispatchPayload(a.stationDispatch)), listOf(Aggregates.CATALOG))
+    }, check = { s -> if (modes.keys.any { it !in s.kdsStations }) "档口不存在" else null }) { s ->
+        s.copy(stationDispatch = modes.filterValues { it != KdsDispatch.Sync })
     }
 
     /** 厨房屏增量拉取：返回 seq 大于游标的任务卡及新游标。 */

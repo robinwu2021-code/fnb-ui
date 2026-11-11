@@ -58,6 +58,8 @@ class AppContainer(context: Context) {
     val kdsDevice get() = workspace.kdsDevice
     suspend fun setKdsStation(station: String) = workspace.setKdsStation(station)
     val kds: KdsRepository = workspace
+    /** 本机设备 ID（厨房屏判断负责屏）。 */
+    val deviceId get() = workspace.deviceId()
     /** 客显屏阶段（结账页写入；客显屏与设置预览读取）。 */
     val customerStage = kotlinx.coroutines.flow.MutableStateFlow<ai.neargo.fnb.pos.core.model.CustomerStage>(ai.neargo.fnb.pos.core.model.CustomerStage.Browse)
     val session: SessionRepository = workspace

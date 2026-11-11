@@ -192,6 +192,13 @@ class LanLink(
         return r
     }
 
+    /** 分派模式：负责屏释放任务卡（经主机仲裁）。 */
+    suspend fun kdsRelease(ticketId: String, rev: Int): IntentResult {
+        val r = submit(RemoteIntent.KdsRelease(ticketId, rev), "厨房 释放")
+        runCatching { kdsSync() }
+        return r
+    }
+
     /** 后台循环：连接、重发、同步。 */
     fun start(intervalMs: Long = 2_000) = scope.launch(Dispatchers.IO) {
         while (isActive) {

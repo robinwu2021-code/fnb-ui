@@ -43,6 +43,7 @@ sealed interface RemoteIntent {
     @Serializable data class SetPosition(val tableId: String, val x: Int, val y: Int) : RemoteIntent
     /** 主管授权：凭据只在加密通道内传给主机验证，不保存、不进事件。 */
     @Serializable data class KdsAdvance(val ticketId: String, val rev: Int, val to: ai.neargo.fnb.pos.core.model.KdsState) : RemoteIntent
+    @Serializable data class KdsRelease(val ticketId: String, val rev: Int) : RemoteIntent
     @Serializable data class BindMember(val tableId: String, val memberId: String?) : RemoteIntent
     @Serializable data class SetPromotions(val tableId: String, val ids: List<String>) : RemoteIntent
     @Serializable data class Adjust(val tableId: String, val request: AdjustmentRequest, val email: String, val password: String) : RemoteIntent
@@ -113,6 +114,7 @@ class HostExecutor(
         is RemoteIntent.SetPosition -> r(floor.setPosition(i.tableId, i.x, i.y))
         is RemoteIntent.Adjust -> r(orders.authorizeAdjustment(i.tableId, i.request, i.email, i.password))
         is RemoteIntent.KdsAdvance -> kds?.let { r(it.kdsAdvance(i.ticketId, i.rev, i.to)) } ?: IntentResult(false, "主机不支持厨房屏")
+        is RemoteIntent.KdsRelease -> kds?.let { r(it.kdsRelease(i.ticketId, i.rev)) } ?: IntentResult(false, "主机不支持厨房屏")
         is RemoteIntent.BindMember -> ops?.let { r(it.bindMember(i.tableId, i.memberId)) } ?: IntentResult(false, "主机不支持会员操作")
         is RemoteIntent.SetPromotions -> ops?.let { r(it.setPromotions(i.tableId, i.ids)) } ?: IntentResult(false, "主机不支持优惠操作")
     }
