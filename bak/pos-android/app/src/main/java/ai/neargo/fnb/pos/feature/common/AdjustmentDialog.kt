@@ -48,8 +48,8 @@ fun AdjustmentDialog(order: TableOrder, audits: List<AdjustmentAudit>, onDismiss
         }
         PosTextField(reason, { reason = it }, "操作原因", hint = "2–100 字，将保留在操作记录中")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PosTextField(email, { email = it }, "主管账号", Modifier.weight(1f))
-            PosTextField(password, { password = it }, "主管密码", Modifier.weight(1f), password = true)
+            PosTextField(email, { email = it }, "主管姓名或账号", Modifier.weight(1f))
+            PosTextField(password, { password = it }, "主管 PIN 或密码", Modifier.weight(1f), password = true)
         }
         Text("演示主管：manager@demo.local / demo12345（仅直接体验可用）", style = Pos.type.label, color = Pos.colors.sub)
         error?.let { Text(it, color = Pos.colors.danger, style = Pos.type.label) }

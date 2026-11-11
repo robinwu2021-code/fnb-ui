@@ -123,7 +123,7 @@ class LanLink(
     }
 
     private suspend fun send(p: PendingIntent): IntentResult {
-        val actor = ws.currentUser() ?: "unknown"
+        val actor = ws.actorId()
         val resp = try {
             request { LanRequest(it, "command", p.storeId, p.commandId, actor, p.payload) }
         } catch (e: NotDelivered) {

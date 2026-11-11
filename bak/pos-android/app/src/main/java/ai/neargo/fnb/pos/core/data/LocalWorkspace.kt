@@ -110,6 +110,8 @@ data class Vault(
     val authLog: List<String> = emptyList(),
     /** 局域网主副 POS 状态（N5）。 */
     val lan: LanState = LanState(),
+    /** 本机当班员工（员工模式下 PIN 上岗；换门店/退出登录清空）。 */
+    val staffId: String = "",
 ) {
     val store get() = storeId?.let { stores[it] }
 }
@@ -171,7 +173,7 @@ class LocalWorkspace(
     /** 身份与授权；为空时（单元测试）不做授权限制。 */
     private val identity: IdentityContext? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
@@ -276,7 +278,8 @@ class LocalWorkspace(
 
     override val session: StateFlow<Session> = derive { v ->
         val s = v.store
-        Session(v.user, s?.id, s?.settings?.shortName ?: "未选择门店", DemoCatalog.STAFF, s?.currentTableId ?: "")
+        Session(v.user, s?.id, s?.settings?.shortName ?: "未选择门店",
+            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) DemoCatalog.STAFF else "未上岗", s?.currentTableId ?: "")
     }
     override val stores: StateFlow<List<StoreSummary>> = derive { v ->
         v.stores.values.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }) }
@@ -304,13 +307,15 @@ class LocalWorkspace(
             if (event != null) {
                 val storeId = requireNotNull(next.storeId)
                 val (type, payload, aggregates) = event.resolve(state.value.stores.getValue(storeId), next.stores.getValue(storeId))
+                // 员工模式：按事件类型校验权限（远端命令按副机当班员工）；无权限不落盘
+                permit(state.value, StaffRules.permFor(type), origin)?.let { throw WorkspaceRejectedException(it) }
                 val known = state.value.aggregateRevisions[storeId].orEmpty()
                 val versions = aggregates.distinct().map { AggregateVersion(it, known[it] ?: 0L) }
                 next = next.copy(aggregateRevisions = next.aggregateRevisions + (storeId to known + versions.associate { it.id to it.expected + 1 }))
                 val commandId = origin?.commandId ?: UUID.randomUUID().toString()
                 val command = JournalCommand(
                     storeId = storeId, deviceId = origin?.deviceId ?: state.value.deviceId, commandId = commandId, type = type, payload = payload,
-                    aggregates = versions, tenantId = state.value.tenantId, actorId = origin?.actorId ?: state.value.user ?: DemoCatalog.STAFF,
+                    aggregates = versions, tenantId = state.value.tenantId, actorId = origin?.actorId ?: actorIdOf(state.value),
                     coordinatorId = state.value.deviceId, authorityEpoch = state.value.authorityEpoch, occurredAt = clock(),
                     authorizationRef = status.grant?.jti, policyVersion = status.grant?.policyVersion,
                 )
@@ -370,7 +375,7 @@ class LocalWorkspace(
         val acc = state.value.accounts.firstOrNull { it.email.equals(email.trim(), ignoreCase = true) } ?: return fail("该邮箱未在本机注册，请先注册或直接体验")
         if (ManageRules.hash(password, acc.salt) != acc.hash) return fail("密码不正确")
         return persistenceResult {
-            commit { it.copy(user = acc.email, storeId = null, sessionExpiresAt = sessionEnd(it)) }
+            commit { it.copy(user = acc.email, storeId = null, staffId = "", sessionExpiresAt = sessionEnd(it)) }
             Result.success(Unit)
         }
     }
@@ -391,13 +396,92 @@ class LocalWorkspace(
         }
     }
 
-    override suspend fun enterDemo() { commit { it.copy(user = "体验账号", storeId = null, sessionExpiresAt = sessionEnd(it)) } }
-    override suspend fun logout() { commit { it.copy(user = null, storeId = null, sessionExpiresAt = 0) } }
+    override suspend fun enterDemo() { commit { it.copy(user = "体验账号", storeId = null, staffId = "", sessionExpiresAt = sessionEnd(it)) } }
+    override suspend fun logout() { commit { it.copy(user = null, storeId = null, staffId = "", sessionExpiresAt = 0) } }
 
     /** 本机会话截止：最长 12 小时，且不超过当前有效授权的到期时间（会话不能延长父授权）。 */
     private fun sessionEnd(v: Vault): Long {
         val st = evaluate(v)
         return OfflineAuthority.sessionExpiry(clock(), st.grant?.takeIf { st.state == AuthState.Active }?.exp)
+    }
+
+    // —— 员工与权限 ——
+    private fun staffOf(v: Vault): Employee? = v.store?.employees?.firstOrNull { it.id == v.staffId && it.enabled }
+    /** 审计用操作人名称：当班员工，否则门店账号。 */
+    private fun actorName(v: Vault) = staffOf(v)?.name ?: v.user ?: DemoCatalog.STAFF
+    private fun actorIdOf(v: Vault) = staffOf(v)?.id ?: v.user ?: DemoCatalog.STAFF
+    /** 副机发送意图时使用的操作人ID。 */
+    fun actorId() = actorIdOf(state.value)
+
+    /** 权限：未启用员工模式（无员工）时门店账号按店长处理；远端命令按副机当班员工校验。 */
+    private fun permit(v: Vault, perm: Perm?, origin: RemoteOrigin? = null): String? {
+        val s = v.store ?: return null
+        if (perm == null || s.employees.isEmpty()) return null
+        val e = if (origin != null) s.employees.firstOrNull { it.id == origin.actorId } else staffOf(v)
+        return when {
+            e == null -> if (origin != null) "副机当班员工未上岗或不存在" else "请先用员工 PIN 上岗"
+            !e.enabled -> "员工 ${e.name} 已停用"
+            perm !in Roles.perms(e.role) -> "${e.name}（${e.role.label}）没有「${perm.label}」权限"
+            else -> null
+        }
+    }
+    private fun need(perm: Perm) = permit(state.value, perm)
+
+    override val staff: StateFlow<StaffState> = derive { v ->
+        val s = v.store
+        StaffState(s?.employees.orEmpty(), staffOf(v), required = !s?.employees.isNullOrEmpty(),
+            perms = if (s == null || s.employees.isEmpty()) Perm.entries.toSet() else staffOf(v)?.let { Roles.perms(it.role) } ?: emptySet())
+    }
+
+    private val pinFailures = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Long>>()
+
+    /** PIN 上岗：连续错 5 次锁定 1 分钟（本机内存）。 */
+    override suspend fun signInStaff(employeeId: String, pin: String): Result<Unit> = persistenceResult {
+        transaction { v ->
+            val s = v.store ?: return@transaction v to fail("请先选择门店")
+            val e = s.employees.firstOrNull { it.id == employeeId } ?: return@transaction v to fail("员工不存在")
+            val (n, until) = pinFailures[employeeId] ?: (0 to 0L)
+            if (until > clock()) return@transaction v to fail("PIN 错误次数过多，请 ${(until - clock()) / 1000 + 1} 秒后再试")
+            if (!e.enabled) return@transaction v to fail("员工已停用")
+            if (ManageRules.hash(pin, e.salt) != e.pinHash) {
+                pinFailures[employeeId] = (n + 1).let { c -> c to if (c >= 5) clock() + 60_000 else 0L }
+                return@transaction v to fail("PIN 不正确")
+            }
+            pinFailures.remove(employeeId)
+            v.copy(staffId = e.id) to Result.success(Unit)
+        }
+    }
+
+    override suspend fun signOutStaff() { commit { it.copy(staffId = "") } }
+
+    /**
+     * 新建/编辑员工（Staff 权限）。首个员工必须为店长（创建后当前设备自动以其上岗）；至少保留一名启用的店长。
+     * 事件载荷不含 PIN 盐与哈希。
+     */
+    override suspend fun saveEmployee(id: String?, name: String, role: Role, pin: String?, enabled: Boolean): Result<Unit> {
+        val eid = id ?: newId("E")
+        return storeOp(event = EventSpec { _, a ->
+            val e = a.employees.first { it.id == eid }
+            Triple("EmployeeSaved", """{"id":"${e.id}","name":${kotlinx.serialization.json.JsonPrimitive(e.name)},"role":"${e.role}","enabled":${e.enabled}}""", listOf("staff"))
+        }, check = { s ->
+            val old = s.employees.firstOrNull { it.id == eid }
+            val after = s.employees.filterNot { it.id == eid } + Employee(eid, name.trim(), role, "", "", enabled)
+            when {
+                id != null && old == null -> "员工不存在"
+                name.isBlank() || name.trim().length > 12 -> "姓名 1–12 字"
+                s.employees.any { it.id != eid && it.name == name.trim() } -> "员工姓名重复"
+                old == null && pin == null -> "请设置 PIN"
+                pin != null && StaffRules.pin(pin) != null -> StaffRules.pin(pin)
+                s.employees.isEmpty() && role != Role.Owner -> "第一位员工必须是店长"
+                after.none { it.role == Role.Owner && it.enabled } -> "至少保留一名启用的店长"
+                else -> need(Perm.Staff)
+            }
+        }) { s ->
+            val old = s.employees.firstOrNull { it.id == eid }
+            val salt = if (pin != null) UUID.randomUUID().toString() else old!!.salt
+            val e = Employee(eid, name.trim(), role, salt, if (pin != null) ManageRules.hash(pin, salt) else old!!.pinHash, enabled, old?.createdAt ?: clock())
+            s.copy(employees = s.employees.filterNot { it.id == eid } + e)
+        }.also { r -> if (r.isSuccess && state.value.store?.employees?.size == 1 && id == null) commit { it.copy(staffId = eid) } }
     }
 
     // —— 局域网（N5）：设备管理与副本，均为本机记录，不产生营业事件 ——
@@ -453,7 +537,7 @@ class LocalWorkspace(
             val m = s.members.first { it.id == memberId }
             val m2 = m.copy(balance = Math.addExact(m.balance, amount))
             s.copy(members = s.members.map { if (it.id == memberId) m2 else it },
-                memberTxns = s.memberTxns + MemberTxn(tx, memberId, MemberTxnKind.Recharge, amount, m2.balance, clock(), actor = state.value.user ?: DemoCatalog.STAFF, method = method))
+                memberTxns = s.memberTxns + MemberTxn(tx, memberId, MemberTxnKind.Recharge, amount, m2.balance, clock(), actor = actorName(state.value), method = method))
         }
     }
 
@@ -553,7 +637,7 @@ class LocalWorkspace(
             authLogged(v.copy(lastSeenWall = clock()), "主管 ${email.trim()} 确认校时") to Result.success(Unit)
         }
     }
-    override suspend fun selectStore(storeId: String) { commit { if (storeId in it.stores) it.copy(storeId = storeId) else it } }
+    override suspend fun selectStore(storeId: String) { commit { if (storeId in it.stores) it.copy(storeId = storeId, staffId = if (storeId == it.storeId) it.staffId else "") else it } }
     override suspend fun selectTable(tableId: String) { storeOp { it.copy(currentTableId = tableId) }.getOrThrow() }
 
     // —— 门店配置 ——
@@ -611,7 +695,7 @@ class LocalWorkspace(
     override suspend fun adjustStock(productId: String, skuKey: String?, value: Int, reason: String): Result<Unit> {
         if (value < 0) return fail("库存应为非负整数")
         if (reason.isBlank()) return fail("请填写盘点原因")
-        val actor = state.value.user ?: DemoCatalog.STAFF
+        val actor = actorName(state.value)
         return storeOp(event = EventSpec { b, a -> Triple("StockAdjusted", ManagementEventFactory.stock(b, a), listOf("stock:$productId")) }, check = { s ->
             val p = s.product(productId)
             when {
@@ -757,7 +841,7 @@ class LocalWorkspace(
             val o = s.order(tableId); val t = OrderRules.totals(o)
             val snap = SettledOrder(o.orderId, tableId, pid, clock(), o.lines, t.sub, t.service, t.discount, t.due, method, o.memberId, o.promotions.map { it.name }, s.table(tableId)?.guests ?: 0)
             val member = s.members.firstOrNull { it.id == o.memberId }
-            val actor = state.value.user ?: DemoCatalog.STAFF
+            val actor = actorName(state.value)
             var members = s.members; var txns = s.memberTxns; var wallet = s.walletBalance
             if (member != null) {
                 val stored = method == "储值卡"
@@ -904,13 +988,14 @@ class LocalWorkspace(
     override suspend fun resolveUnknown(jobId: String, printed: Boolean, reason: String) = storeOp(check = { s ->
         val j = s.printJobs.firstOrNull { it.id == jobId }
         when {
+            need(Perm.Checkout) != null -> need(Perm.Checkout)
             j == null -> "打印任务不存在"
             j.state != PrintState.Unknown -> "只有结果未知的任务需要核对"
             reason.isBlank() -> "请填写核对说明"
             else -> null
         }
     }) { s ->
-        val actor = state.value.user ?: DemoCatalog.STAFF
+        val actor = actorName(state.value)
         val j = s.printJobs.first { it.id == jobId }
         if (printed) s.withJob(jobId) { it.copy(state = PrintState.Printed, resolution = "$actor：已出纸 · ${reason.trim()}", updatedAt = clock()) }
             .log(TaskLogKind.PrintAttempt, jobId, "ConfirmedPrinted", "manual", "$actor：${reason.trim()}")
@@ -925,6 +1010,7 @@ class LocalWorkspace(
 
     override suspend fun savePrinter(p: PrinterConfig) = storeOp(check = { s ->
         when {
+            need(Perm.Settings) != null -> need(Perm.Settings)
             p.name.isBlank() -> "请填写打印机名称"
             !Regex("^[A-Za-z0-9.-]{1,253}$").matches(p.host.trim()) -> "请填写打印机 IP 或主机名"
             p.port !in 1..65535 -> "端口应为 1–65535"
@@ -935,14 +1021,14 @@ class LocalWorkspace(
     }) { s -> val q = p.copy(name = p.name.trim(), host = p.host.trim()); s.copy(printers = s.printers.filterNot { it.id == q.id } + q) }
 
     override suspend fun removePrinter(id: String) = storeOp(check = { s ->
-        if (s.printJobs.any { it.printerId == id && it.state in setOf(PrintState.Sending, PrintState.Unknown) }) "该打印机有发送中或结果未知的任务，请先核对" else null
+        need(Perm.Settings) ?: if (s.printJobs.any { it.printerId == id && it.state in setOf(PrintState.Sending, PrintState.Unknown) }) "该打印机有发送中或结果未知的任务，请先核对" else null
     }) { s -> s.copy(printers = s.printers.filterNot { it.id == id }, printRoutes = s.printRoutes.filterValues { it != id }) }
 
     override suspend fun setRoute(station: String, printerId: String?) = storeOp(check = { s ->
-        if (printerId != null && s.printers.none { it.id == printerId }) "打印机不存在" else null
+        need(Perm.Settings) ?: if (printerId != null && s.printers.none { it.id == printerId }) "打印机不存在" else null
     }) { s -> s.copy(printRoutes = if (printerId == null) s.printRoutes - station else s.printRoutes + (station to printerId)) }
 
-    override suspend fun testPrint(printerId: String) = storeOp(check = { s -> if (s.printers.none { it.id == printerId }) "打印机不存在" else null }) { s ->
+    override suspend fun testPrint(printerId: String) = storeOp(check = { s -> need(Perm.Settings) ?: if (s.printers.none { it.id == printerId }) "打印机不存在" else null }) { s ->
         val p = s.printers.first { it.id == printerId }
         val w = p.width
         val body = listOf("打印测试", "-".repeat(w), "打印机：${p.name}", "地址：${p.host}:${p.port}", "纸宽：${if (w == 32) "58mm" else "80mm"}", "中文：南山小馆 · 宫保鸡丁 ¥48.00", "-".repeat(w),
@@ -978,7 +1064,7 @@ class LocalWorkspace(
             else -> null
         }
     }) { s ->
-        val actor = state.value.user ?: DemoCatalog.STAFF
+        val actor = actorName(state.value)
         s.copy(kitchenDeliveries = s.kitchenDeliveries.map {
             if (it.ticketId == ticketId) it.copy(state = DeliveryState.ManualConfirmed, source = "manual", confirmedBy = actor, reason = reason.trim(), updatedAt = clock()) else it
         }).log(TaskLogKind.PrintAttempt, ticketId, "ManualConfirmed", "manual", "${actor}：${reason.trim()}")
@@ -1085,7 +1171,12 @@ class LocalWorkspace(
         commit(page(type, tableId)) { v ->
             val account = v.accounts.firstOrNull { it.supervisor && it.email.equals(email.trim(), true) }
             val demo = v.user == "体验账号" && email.trim() == "manager@demo.local" && password == "demo12345"
-            require(demo || (account != null && ManageRules.hash(password, account.salt) == account.hash)) { "主管账号或密码不正确" }
+            // 员工模式：主管/店长以姓名（或员工ID）+ PIN 授权，需具备「退菜、赠送、折扣授权」权限
+            val emp = v.store?.employees?.firstOrNull { it.enabled && (it.id == email.trim() || it.name == email.trim()) }
+            val empOk = emp != null && Perm.Adjust in Roles.perms(emp.role) && ManageRules.hash(password, emp.salt) == emp.pinHash
+            require(empOk || demo || (account != null && ManageRules.hash(password, account.salt) == account.hash)) {
+                if (emp != null && Perm.Adjust !in Roles.perms(emp.role)) "${emp.name}（${emp.role.label}）无授权权限" else "主管账号或密码（PIN）不正确"
+            }
             val s = v.store ?: error("请先选择门店")
             require(s.table(tableId)?.status == TableStatus.Dining) { "请先开台" }
             val old = s.order(tableId)
@@ -1097,7 +1188,7 @@ class LocalWorkspace(
                 AdjustmentKind.Void -> if (line?.gifted == true) 0 else (line?.unit ?: 0) * request.quantity
                 AdjustmentKind.Discount -> OrderRules.totals(old).due - OrderRules.totals(updated).due
             }
-            val audit = AdjustmentAudit(newId("A"), tableId, request.kind, v.user ?: DemoCatalog.STAFF, email.trim(), request.reason.trim(), amount,
+            val audit = AdjustmentAudit(newId("A"), tableId, request.kind, actorName(v), emp?.takeIf { empOk }?.name ?: email.trim(), request.reason.trim(), amount,
                 if (request.kind == AdjustmentKind.Gift) line?.qty ?: 0 else if (request.kind == AdjustmentKind.Void) request.quantity else 0,
                 clock(), line?.name.orEmpty(), if (request.kind == AdjustmentKind.Discount) "${request.percent}%" else "")
             var next = s.withOrder(tableId, updated).copy(adjustments = s.adjustments + audit)

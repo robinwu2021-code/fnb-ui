@@ -188,3 +188,23 @@ interface OperationsRepository {
     suspend fun savePromotion(p: ai.neargo.fnb.pos.core.model.Promotion): Result<Unit>
     suspend fun closeDay(staff: String): Result<ai.neargo.fnb.pos.core.model.DayClose>
 }
+
+
+/** 当前员工状态：required=已启用员工模式（需 PIN 上岗）；perms=当班员工（或门店账号）权限。 */
+data class StaffState(
+    val employees: List<ai.neargo.fnb.pos.core.model.Employee> = emptyList(),
+    val current: ai.neargo.fnb.pos.core.model.Employee? = null,
+    val required: Boolean = false,
+    val perms: Set<ai.neargo.fnb.pos.core.model.Perm> = ai.neargo.fnb.pos.core.model.Perm.entries.toSet(),
+) {
+    val locked get() = required && current == null
+    fun can(p: ai.neargo.fnb.pos.core.model.Perm) = p in perms
+}
+
+/** 员工与权限。 */
+interface StaffRepository {
+    val staff: StateFlow<StaffState>
+    suspend fun signInStaff(employeeId: String, pin: String): Result<Unit>
+    suspend fun signOutStaff()
+    suspend fun saveEmployee(id: String?, name: String, role: ai.neargo.fnb.pos.core.model.Role, pin: String?, enabled: Boolean = true): Result<Unit>
+}

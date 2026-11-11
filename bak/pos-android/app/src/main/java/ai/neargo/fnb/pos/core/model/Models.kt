@@ -308,6 +308,8 @@ data class StoreData(
     /** 当前营业日开始时间（0=尚未开始，取最早收款时间）。 */
     val dayStart: Long = 0,
     val dayCloses: List<DayClose> = emptyList(),
+    /** 员工（空表示尚未启用员工模式：门店账号按店长处理）。 */
+    val employees: List<Employee> = emptyList(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {

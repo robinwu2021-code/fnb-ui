@@ -69,6 +69,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.RoomService
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.MoreVert
@@ -168,15 +169,29 @@ fun PosApp(shell: ShellViewModel) {
             onCancel = if (session.storeId != null) ({ pickingStore = false }) else null)
         return
     }
+    val container = appContainer()
+    val lockScope = androidx.compose.runtime.rememberCoroutineScope()
+    val staffState by container.staff.staff.collectAsStateWithLifecycle()
+    if (staffState.locked) { ai.neargo.fnb.pos.feature.staff.StaffLockScreen(session.store, onLogout = shell::logout); return }
     val notice: (String) -> Unit = shell.messages::post
-    val onManage = { nav.goTop(ManageRoute) }
+    // 系统管理：需设置、员工、设备或会员相关权限（服务员不可进入）
+    val manageAllowed = staffState.perms.any { it in setOf(ai.neargo.fnb.pos.core.model.Perm.Settings, ai.neargo.fnb.pos.core.model.Perm.Staff, ai.neargo.fnb.pos.core.model.Perm.Device, ai.neargo.fnb.pos.core.model.Perm.Member, ai.neargo.fnb.pos.core.model.Perm.Recharge) }
+    val onManage = { if (manageAllowed) nav.goTop(ManageRoute) else shell.messages.post("${staffState.current?.name.orEmpty()}没有进入系统管理的权限") }
+    // 换人后若当前页面超出新员工权限（系统管理 / 报表 / 交班），回到桌台
+    androidx.compose.runtime.LaunchedEffect(staffState.current?.id, dest) {
+        val denied = (dest?.hasRoute<ManageRoute>() == true && !manageAllowed) ||
+            (dest?.hasRoute<ai.neargo.fnb.pos.navigation.ReportsRoute>() == true && ai.neargo.fnb.pos.core.model.Perm.Reports !in staffState.perms) ||
+            (dest?.hasRoute<ShiftRoute>() == true && ai.neargo.fnb.pos.core.model.Perm.Shift !in staffState.perms)
+        if (denied) nav.goTop(TablesRoute)
+    }
     val go: (TopLevel) -> Unit = { nav.goTop(when (it) { TopLevel.Tables -> TablesRoute; TopLevel.Order -> OrderRoute; TopLevel.Manage -> ManageRoute }) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Pos.colors.canvas)) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
+                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
+                    onLock = { lockScope.launch { container.staff.signOutStaff() } }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
                 val authStatus by appContainer().auth.auth.collectAsStateWithLifecycle()
@@ -232,7 +247,8 @@ private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage:
 /** 页头右侧操作：原页头（消息 / 打印 / 语言 / 显示）与原页脚（在线 / 钱箱 / 交班 / 帮助）合并，统一为图标。 */
 private class HeaderActions(
     val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit, val cloudPending: Int, val kitchenAction: Int,
-    val onShift: () -> Unit, val onPrint: () -> Unit, val onServe: () -> Unit, val onReports: () -> Unit, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
+    val onShift: () -> Unit, val onPrint: () -> Unit, val onServe: () -> Unit, val onReports: () -> Unit,
+    val perms: Set<ai.neargo.fnb.pos.core.model.Perm> = ai.neargo.fnb.pos.core.model.Perm.entries.toSet(), val staffMode: Boolean = false, val onLock: () -> Unit = {}, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
 )
 
 /** AppHeader（宽屏）：门店 / 员工·终端、工作台导航；右侧图标工具栏。无页脚，内容区直达底部。 */
@@ -253,11 +269,12 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusIcon(actions)
             ToolIcon(Icons.Outlined.RoomService, "出菜", onClick = actions.onServe)
-            ToolIcon(Icons.Outlined.Assessment, "报表与日结", onClick = actions.onReports)
+            if (ai.neargo.fnb.pos.core.model.Perm.Reports in actions.perms) ToolIcon(Icons.Outlined.Assessment, "报表与日结", onClick = actions.onReports)
             ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息：A06 预订 19:00 到店；厨房已出 A02 麻婆豆腐（演示）") }
             PrinterIcon(actions)
             ToolIcon(Icons.Outlined.PointOfSale, "钱箱") { actions.notice("钱箱操作需要权限，演示环境未连接钱箱") }
-            ToolIcon(Icons.Outlined.SwapHoriz, "交班", onClick = actions.onShift)
+            if (ai.neargo.fnb.pos.core.model.Perm.Shift in actions.perms) ToolIcon(Icons.Outlined.SwapHoriz, "交班", onClick = actions.onShift)
+            if (actions.staffMode) ToolIcon(Icons.Outlined.Lock, "锁屏换人", onClick = actions.onLock)
             ToolIcon(Icons.Outlined.Translate, "语言：中文 / EN", onClick = actions.onLang)
             ToolIcon(Icons.AutoMirrored.Outlined.HelpOutline, "帮助") { actions.notice("帮助中心 · POS 3.0 演示终端") }
             ToolIcon(Icons.Outlined.Tune, "显示设置", filled = true, onClick = actions.onDisplay)

@@ -51,6 +51,8 @@ class AppContainer(context: Context) {
     val recovery: RecoveryRepository = LocalRecovery(context.applicationContext, database, workspace)
     val syncStatus: SyncStatusRepository = LocalSyncStatus(database, workspace, appScope)
     val auth: AuthRepository = workspace
+    /** 员工与权限：员工管理仅主 POS（副机员工来自主机副本，可本机 PIN 上岗）。 */
+    val staff: StaffRepository = workspace
     fun deviceId() = workspace.deviceId()
     val session: SessionRepository = workspace
     // —— 主副 POS（N5）：副机写入经主机仲裁；主机执行器直接使用本机仓库 ——

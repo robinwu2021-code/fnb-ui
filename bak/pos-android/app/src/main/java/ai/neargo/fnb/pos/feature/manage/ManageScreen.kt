@@ -342,12 +342,8 @@ private fun ColumnScope.PaymentsSection(state: ManageUiState) {
 
 @Composable
 private fun ColumnScope.StaffSection() {
-    PageHeader("员工与权限", "角色职责说明；权限校验在服务接入后执行")
-    val cols = listOf(Col("角色"), Col("职责", 3f))
-    DataTable(cols, Modifier.weight(1f)) {
-        listOf("收银员" to "开台、点餐、送厨、结账", "店长" to "退菜、赠送、折扣授权；交班与钱箱", "管理员" to "门店配置、商品与餐牌、员工管理")
-            .forEach { (a, b) -> item { TableRow(listOf({ Cell(a) }, { Cell(b, sub = true) }), cols) } }
-    }
+    PageHeader("员工与权限", "员工 PIN 上岗；按角色在数据层校验每项营业操作")
+    ai.neargo.fnb.pos.feature.staff.StaffPanel()
 }
 
 @Composable
