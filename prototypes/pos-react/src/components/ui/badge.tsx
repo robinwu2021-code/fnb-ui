@@ -4,6 +4,7 @@ import { Ico } from '@/lib/icon';
 import { stForm, stv, stateOf } from '@/lib/states';
 import { useLang } from '@/i18n';
 import type { ReactNode } from 'react';
+import { curNode } from '@/lib/money';
 
 export function StatusTag({ ent, k, label, form, className }: { ent: string; k: string; label?: ReactNode; form?: 'chip' | 'dot'; className?: string }) {
   const lang = useLang(); const st = stateOf(ent, k);
@@ -21,7 +22,7 @@ export function StatusIcon({ ent, k, size = 16, className }: { ent: string; k: s
 }
 export function Chip({ children, className, act, onCard, onClick }: { children: ReactNode; className?: string; act?: boolean; onCard?: boolean; onClick?: () => void }) {
   const cls = cn('inline-flex items-center gap-1 h-22px px-2 rounded-chip text-xs font-500 whitespace-nowrap', act ? 'bg-mark-bg text-mark-text' : onCard ? 'bg-surface text-ink' : 'bg-faint text-sub', onClick && 'hit cursor-pointer', className);
-  return onClick ? <button type="button" className={cls} onClick={onClick}>{children}</button> : <span className={cls}>{children}</span>;
+  return onClick ? <button type="button" className={cls} onClick={onClick}>{curNode(children)}</button> : <span className={cls}>{curNode(children)}</span>;
 }
 export const Badge = ({ n, className }: { n: number | string; className?: string }) => <i className={cn('inline-block min-w-18px h-18px px-1.25 rounded-full bg-danger-strong text-on-solid text-xs font-600 leading-18px text-center not-italic num', className)}>{n}</i>;
 export const Qty = ({ n, className }: { n: number; className?: string }) => <em className={cn('inline-block min-w-22px h-22px px-1.5 rounded-full bg-primary text-primary-on text-xs font-700 leading-22px text-center not-italic num', className)}>{n}</em>;

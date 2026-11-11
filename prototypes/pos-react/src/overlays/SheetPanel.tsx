@@ -12,6 +12,9 @@ import { Switch } from '@/components/ui/switch';
 import { Keypad } from '@/components/ui/keypad';
 import { Ico } from '@/lib/icon';
 import { StyleControls } from '@/dev/StyleControls';
+import { money } from '@/lib/money';
+import { pendingDelivery, platRef } from '@/lib/channels';
+import { PlatLogo } from '@/components/ui/plat-logo';
 
 const TABS = ['takeout', 'member', 'print', 'net', 'set'] as const;
 export function SheetPanel({ open }: { open: boolean }) {
@@ -21,8 +24,9 @@ export function SheetPanel({ open }: { open: boolean }) {
       <Tabs value={s.sheet} onValueChange={(v) => dispatch('sheet:' + v)} className="contents">
         <TabsList>{TABS.map((k) => <TabsTrigger key={k} value={k}>{t('sheet.' + k)}</TabsTrigger>)}</TabsList>
         <TabsContent value="takeout" className="contents">
-          {['sheet.takeout.1', 'sheet.takeout.2'].map((k) => (
-            <Cells key={k}><Cell k={<span className="text-ink">{t(k)}</span>}><StatusTag ent="delivery" k="new" /></Cell><Cell k={<span className="help">{t('sheet.takeout.eta')}</span>}><span className="flex gap-gap"><Button variant="muted" size="sm" onClick={() => dispatch('toast:sheet.rejected')}>{t('sheet.reject')}</Button><Button variant="soft" size="sm" onClick={() => dispatch('toast:sheet.accepted')}>{t('sheet.accept')}</Button></span></Cell></Cells>
+          {pendingDelivery(s.orders).length === 0 && <Empty title={t('sheet.takeout.none')} />}
+          {pendingDelivery(s.orders).map((o) => (
+            <Cells key={o[0]}><Cell k={<span className="text-ink inline-flex items-center gap-1.5">{platRef(o[1], s, s.lang).key && <PlatLogo k={platRef(o[1], s, s.lang).key!} size={18} />}{t('sheet.takeout.row', { p: platRef(o[1], s, s.lang).label, n: o[4], m: money(o[6]) })}</span>}><StatusTag ent="delivery" k={o[8]} /></Cell><Cell k={<span className="help">{t('sheet.takeout.at', { t: o[5] })}</span>}><span className="flex gap-gap"><Button variant="muted" size="sm" onClick={() => dispatch('toast:sheet.rejected')}>{t('sheet.reject')}</Button><Button variant="soft" size="sm" onClick={() => dispatch('toast:sheet.accepted')}>{t('sheet.accept')}</Button></span></Cell></Cells>
           ))}
         </TabsContent>
         <TabsContent value="member" className="contents">
@@ -30,7 +34,7 @@ export function SheetPanel({ open }: { open: boolean }) {
             <>
               <div className="bg-wash rounded-rt py-2.5 px-3 flex flex-col gap-2">
                 <div className="flex items-center gap-1.5 flex-wrap"><StatusIcon ent="member" k="linked" /><b>{MEMBER.name}</b><Chip>{MEMBER.layer}</Chip>{MEMBER.tags.map((x) => <Chip key={x}>{x}</Chip>)}</div>
-                <div className="grid grid-cols-3 gap-2"><span><small className="block text-xs text-sub">{t('sheet.member.bal')}</small><b className="num">¥{MEMBER.bal.toFixed(2)}</b></span><span><small className="block text-xs text-sub">{t('sheet.member.coupons')}</small><b className="num">{t('sheet.member.couponsV', { n: MEMBER.coupons })}</b></span><span><small className="block text-xs text-sub">{t('sheet.member.visits')}</small><b className="num">{t('sheet.member.visitsV')}</b></span></div>
+                <div className="grid grid-cols-3 gap-2"><span><small className="block text-xs text-sub">{t('sheet.member.bal')}</small><b className="num">{money(MEMBER.bal)}</b></span><span><small className="block text-xs text-sub">{t('sheet.member.coupons')}</small><b className="num">{t('sheet.member.couponsV', { n: MEMBER.coupons })}</b></span><span><small className="block text-xs text-sub">{t('sheet.member.visits')}</small><b className="num">{t('sheet.member.visitsV')}</b></span></div>
               </div>
               <div className="flex flex-wrap gap-gap"><Button variant="soft" onClick={() => dispatch('toast:toast.notYet')}>{t('sheet.member.topup')}</Button><Button variant="muted" onClick={() => dispatch('gomember')}>{t('sheet.member.detail')}</Button><Button variant="muted" onClick={() => dispatch('munbind')}>{t('sheet.member.unbind')}</Button></div>
             </>

@@ -12,6 +12,7 @@ import { Ico } from '@/lib/icon';
 import { StatusIcon } from '@/components/ui/badge';
 import { StatusTile } from '@/components/ui/status-tile';
 import { change, redo, undo } from './floor-ops';
+import { cs } from '@/lib/money';
 
 type Box = { x: number; y: number; w: number; h: number };
 type Drag = { kind: 't' | 'f'; id: string; box: Box; ok: boolean } | null;
@@ -106,7 +107,7 @@ export function FloorCanvas({ area, data, edit, dimOf }: { area: string; data: F
 
 function FloorTile({ id, p, b, u, tb, edit, dim, cls, current, onDown, onPick, onOpen, handle }: { id: string; p: Place; b: Box; u: number; tb?: Table; edit: boolean; dim: boolean; cls: string; current: boolean; onDown: (e: RPE<HTMLElement>) => void; onPick: () => void; onOpen: () => void; handle: ReactNode }) {
   const g = tb ? stGroup('table', tb.st) : 'closed'; const alert = g === 'action' || g === 'failed'; const quiet = !tb || tb.st === 'free' || tb.st === 'disabled';
-  const big = b.w * u >= 60 && b.h * u >= 56; const amt = tb && /^(dining|late|due|shared|partial)$/.test(tb.st) ? '¥' + tb.amt : '';
+  const big = b.w * u >= 60 && b.h * u >= 56; const amt = tb && /^(dining|late|due|shared|partial)$/.test(tb.st) ? cs() + tb.amt : '';
   const back = p.shape === 'booth' ? ({ 0: 'left-0 top-1 bottom-1 w-1.5', 90: 'top-0 left-1 right-1 h-1.5', 180: 'right-0 top-1 bottom-1 w-1.5', 270: 'bottom-0 left-1 right-1 h-1.5' } as Record<number, string>)[p.rot] : '';
   return (
     <div style={{ left: b.x * u, top: b.y * u, width: b.w * u, height: b.h * u }} className={cn('absolute transition-opacity', dim && 'opacity-25', cls)}

@@ -1,5 +1,5 @@
 // 支付服务：现金输入 · 快捷金额 · 找零 / 还差 · 组合支付 · 收款方式可用性。两业态共用。
-import { round2 } from './money';
+import { money, round2 } from './money';
 
 /** 数字键盘输入：退格、清空、只允许一个小数点、最多 8 位 */
 export function keyInput(ent: string, k: string, max = 8): string {
@@ -25,7 +25,7 @@ export function methodBlock(m: string, c: { offline: boolean; member: boolean; b
   if (c.offline && (m === 'wx' || m === 'ali')) return { key: 'offline' };
   if (m === 'sv') {
     if (!c.member) return { key: 'svMember' };
-    if (c.balance < c.rest) return { key: 'svShort', params: { m: '¥' + round2(c.rest - c.balance).toFixed(2) } };
+    if (c.balance < c.rest) return { key: 'svShort', params: { m: money(round2(c.rest - c.balance)) } };
     if (c.paidCount) return { key: 'svMix' };
   }
   return null;

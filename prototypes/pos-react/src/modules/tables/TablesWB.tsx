@@ -18,13 +18,14 @@ import { FloorCanvas } from './FloorCanvas';
 import { IsoCanvas } from './IsoCanvas';
 import { EditorHead, FloorProps } from './FloorEditor';
 import { beginEdit } from './floor-ops';
+import { cs } from '@/lib/money';
 
 const ORDER: TableSt[] = ['free', 'booked', 'seated', 'dining', 'late', 'due', 'partial', 'to_clear', 'shared', 'disabled'];
 export function TableTile({ t: tb, current, onClick }: { t: Table; current: boolean; onClick: () => void }) {
   const t = useT(); const g = stGroup('table', tb.st), alert = g === 'action' || g === 'failed', quiet = tb.st === 'free' || tb.st === 'disabled';
   const info: Record<string, string> = { free: t('tables.seats', { n: tb.seats }), booked: t('tables.booking'), seated: t('tables.guests', { a: tb.ppl, b: tb.seats }) + ' · ' + t('tables.seatedFor', { n: 6 }), dining: t('tables.guests', { a: tb.ppl, b: tb.seats }) + ' · ' + t('tables.min', { n: tb.min }), late: t('tables.guests', { a: tb.ppl, b: tb.seats }) + ' · ' + t('tables.lateDishes'),
     due: t('tables.guests', { a: tb.ppl, b: tb.seats }) + ' · ' + t('tables.min', { n: tb.min }), partial: t('tables.unpaid'), to_clear: t('tables.paidAgo'), shared: t('tables.sharedTwo'), disabled: t('tables.repair') };
-  const amt = /^(dining|late|due|shared)$/.test(tb.st) ? '¥' + tb.amt : tb.st === 'partial' ? '¥' + (tb.amt + 100) : '';
+  const amt = /^(dining|late|due|shared)$/.test(tb.st) ? cs() + tb.amt : tb.st === 'partial' ? cs() + (tb.amt + 100) : '';
   return (
     <StatusTile group={g} alert={alert} quiet={quiet} dim={tb.st === 'disabled'} current={current} onClick={onClick} className="min-h-[calc(var(--tile)+8px)] py-2.5 px-3 gap-0.5 w-auto">
       <b className="text-lg num tracking-[-.01em]">{tb.id}</b>
@@ -64,7 +65,7 @@ export function TablesWB() {
         </div>}
       </Panel>
       <Panel area="detail" ledger head={<div className="row-between"><b className="h-title">{tb.id}</b><StatusTag ent="table" k={tb.st} /></div>}
-        foot={<DueFoot label={busy ? t('tables.unpaidAmt') : ''} amt={'¥' + tb.amt + '.00'} note={t('tables.ppl.min', { a: tb.ppl, b: tb.min })}>
+        foot={<DueFoot label={busy ? t('tables.unpaidAmt') : ''} amt={cs() + tb.amt + '.00'} note={t('tables.ppl.min', { a: tb.ppl, b: tb.min })}>
           {busy && <Acts><Button variant="muted" size="sm" onClick={() => dispatch('ov:x3')}>{t('tables.move')}</Button><Button variant="muted" size="sm" onClick={() => dispatch('ov:x3')}>{t('tables.merge')}</Button><Button variant="muted" size="sm" onClick={() => dispatch('toast:toast.prebill')}>{t('tables.prebill')}</Button><Button variant="danger" size="sm" onClick={() => dispatch('ov:confirm')}>{t('tables.clear')}</Button></Acts>}
           {tb.st === 'due' || tb.st === 'partial' ? <Button block onClick={() => dispatch('gopay')}>{t('tables.gopay')}</Button>
             : busy ? <Button block onClick={() => dispatch('goorder')}>{t('tables.addItems')}</Button>

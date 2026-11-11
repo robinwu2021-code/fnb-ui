@@ -17,13 +17,13 @@ function useHtmlAttrs() {
 }
 function useHash() { const [h, setH] = useState(location.hash); useEffect(() => { const f = () => setH(location.hash); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []); return h; }
 export default function App() {
-  useHtmlAttrs(); const hash = useHash();
+  useHtmlAttrs(); const hash = useHash(); const region = useStore((s) => s.region); // 换地区 = 换币种，重挂一次让金额全部重新格式化
   /* 旧链接 #retail：切到零售业态的收银页 */
   useEffect(() => { if (hash === '#retail') { useBiz.getState().set({ biz: 'retail', rwb: 'pos' }); history.replaceState(null, '', location.pathname); } }, [hash]);
   return (
     <div className="max-w-1400px mx-auto p-5">
       <DevBar page={hash === '#components' ? 'components' : 'app'} />
-      {hash === '#components' ? <ComponentsPage /> : <Device><Workbench /></Device>}
+      {hash === '#components' ? <ComponentsPage key={region} /> : <Device key={region}><Workbench /></Device>}
     </div>
   );
 }

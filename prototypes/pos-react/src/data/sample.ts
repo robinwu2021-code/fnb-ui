@@ -76,16 +76,16 @@ export const PAYS: Pay[] = [['wx', '微信', '扫码', '#07C160', '微'], ['ali'
 export const PAY_EN: Record<string, [string, string]> = { wx: ['WeChat', 'QR'], ali: ['Alipay', 'QR'], cash: ['Cash', 'change'], card: ['Card', 'swipe'], sv: ['Stored value', 'member balance'], mix: ['Split', 'several methods'] };
 export const payOf = (k: string) => PAYS.find((p) => p.key === k);
 
-/* 订单：[单号, 桌号或平台单号, 渠道, 人数, 件数, 下单时间, 金额, 实体, 状态, 上菜进度] */
+/* 订单：[单号, 桌号或平台单号（外卖写 P1 / P2 #号，显示时按地区映射到已连接的平台，见 lib/channels platRef）, 渠道, 人数, 件数, 下单时间, 金额, 实体, 状态, 上菜进度] */
 export type OrderRow = [string, string, string, number, number, string, number, string, string, string];
 export const INITIAL_ORDERS: OrderRow[] = [['#1024', 'A03', '堂食', 4, 6, '11:42', 268, 'order', 'open', '3/6'], ['#1025', 'A05', '堂食', 2, 3, '11:58', 96, 'order', 'due', '3/3'],
-  ['#1026', '—', '外带', 1, 2, '12:03', 42, 'order', 'held', ''], ['#1027', '美团 #88', '外卖', 0, 4, '12:10', 118, 'delivery', 'accepted', ''],
+  ['#1026', '—', '外带', 1, 2, '12:03', 42, 'order', 'held', ''], ['#1027', 'P1 #88', '外卖', 0, 4, '12:10', 118, 'delivery', 'accepted', ''],
   ['#1028', 'V02', '堂食', 10, 12, '12:12', 886, 'order', 'open', '5/12'], ['#1029', 'A09', '堂食', 3, 5, '12:20', 172, 'order', 'partial', '5/5'],
-  ['#1030', '饿了么 #31', '外卖', 0, 2, '12:21', 42, 'delivery', 'new', ''], ['#1031', '美团 #91', '外卖', 0, 3, '12:05', 76, 'delivery', 'timeout', ''],
-  ['#1032', '美团 #79', '外卖', 0, 5, '11:30', 134, 'delivery', 'delivering', ''], ['#1020', 'A01', '堂食', 4, 7, '11:02', 312, 'order', 'paid', '7/7'],
+  ['#1030', 'P2 #31', '外卖', 0, 2, '12:21', 42, 'delivery', 'new', ''], ['#1031', 'P1 #91', '外卖', 0, 3, '12:05', 76, 'delivery', 'timeout', ''],
+  ['#1032', 'P1 #79', '外卖', 0, 5, '11:30', 134, 'delivery', 'delivering', ''], ['#1020', 'A01', '堂食', 4, 7, '11:02', 312, 'order', 'paid', '7/7'],
   ['#1021', 'A04', '堂食', 2, 4, '11:10', 136, 'order', 'paid', '4/4'], ['#1019', 'A07', '堂食', 2, 4, '10:48', 158, 'order', 'reopened', '4/4'],
-  ['#1018', '—', '外带', 1, 2, '10:40', 38, 'order', 'cancelled', ''], ['#1033', '饿了么 #36', '外卖', 0, 2, '12:24', 56, 'delivery', 'pickup', ''],
-  ['#1017', '美团 #70', '外卖', 0, 3, '10:20', 88, 'delivery', 'delivered', ''], ['#1016', '饿了么 #22', '外卖', 0, 1, '10:12', 28, 'delivery', 'refunding', '']];
+  ['#1018', '—', '外带', 1, 2, '10:40', 38, 'order', 'cancelled', ''], ['#1033', 'P2 #36', '外卖', 0, 2, '12:24', 56, 'delivery', 'pickup', ''],
+  ['#1017', 'P1 #70', '外卖', 0, 3, '10:20', 88, 'delivery', 'delivered', ''], ['#1016', 'P2 #22', '外卖', 0, 1, '10:12', 28, 'delivery', 'refunding', '']];
 /* 平台券核销记录（按单）：[券, 张数, 核销时间, 距今小时, 操作人, 状态 redeemed / undone]。当前收银员 = 李敏。
  * 撤销规则（平台券方案 §七）：24 小时内本人直接撤（写原因）；别人核销的需主管授权码；超过 24 小时平台不再受理，只能去平台商家后台退款。 */
 export type Redeemed = [string, number, string, number, string, 'redeemed' | 'undone'];
@@ -175,7 +175,7 @@ export const MENU: SetGroup[] = [
     ['info', '门店信息', 'Store info', [['门店名称', 'Store name', '虹选小馆 · 南山店'], ['联系电话', 'Phone', '0755-8888 6666']]],
     ['hours', '营业时间', 'Opening hours', [['营业时间', 'Hours', '10:00–22:00'], ['休息日', 'Closed on', '无']]],
     ['receipts', '小票模板', 'Receipt templates', [['结账单', 'Bill', '›'], ['厨房单', 'Kitchen ticket', '›'], ['小票打印语言', 'Receipt language', '中英双语']]],
-    ['tax', '税率与币种', 'Tax & currency', [['税率', 'Tax rate', '6%'], ['币种', 'Currency', 'CNY ¥']]]]],
+    ['tax', '税率与币种', 'Tax & currency', [['税率', 'Tax rate', '6%'], ['币种', 'Currency', 'CURRENCY']]]]],
   ['display', '界面与显示', 'Display', [['shape', '界面与显示', 'Display']]],
   ['system', '系统', 'System', [
     ['sync', '数据同步', 'Data sync', [['上次同步', 'Last sync', '12:28'], ['立即同步', 'Sync now', '›']]],

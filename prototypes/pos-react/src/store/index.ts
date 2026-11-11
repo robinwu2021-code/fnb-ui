@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { DISHES, INITIAL_CAMPS, INITIAL_LINES, INITIAL_MEMBERS, INITIAL_MTAGS, INITIAL_ORDERS, INITIAL_PLANS, INITIAL_REDEEMED, INITIAL_TABLES, MEMBER, type Camp, type Dish, type Line, type Member, type OrderRow, type Plan, type Redeemed, type Table } from '@/data/sample';
 import { totals, type Totals } from '@/lib/pricing';
 import { ACT } from './actions';
+import { REGION_CURRENCY, setCurrency } from '@/lib/money';
 import { wireDomainEvents } from './wiring';
 import { DEFAULT_EXTRA, DEFAULT_QUICK, cleanSlots, readSlots, writeSlots, type ExtraSlots } from '@/data/slots';
 import { QUICK } from '@/data/sample';
@@ -35,7 +36,7 @@ export interface PosState extends StyleState {
   /* 结账 */
   pay: string; got: number; ent: string | null; svWait: boolean; mixm: string; change: number; showLines: boolean; pvLast: string; pvN: number; cpScan: boolean; mval: number; memberBal: number;
   /* 订单 */
-  oview: 'list' | 'card'; ost: string; och: string; oper: string; osel: string; redeemed: Record<string, Redeemed[]>; pvu: string; pvuWhy: string;
+  oview: 'list' | 'card'; ost: string; och: string; oplat: string; oper: string; osel: string; redeemed: Record<string, Redeemed[]>; pvu: string; pvuWhy: string;
   /* 菜品管理 */
   dishes: Dish[]; msub: string; mdf: string; mdc: string; mdsel: number; mcsel: number; mmsel: number; mssel: number; sync: SyncMap; syncing: boolean; synced: boolean;
   /* 会员与营销 */
@@ -82,10 +83,13 @@ export const useStore = create<PosState>((set, get) => ({
   plats: JSON.parse(JSON.stringify(INITIAL_PLATS)), psel: '', syncObj: 'dish', paddKey: '',
   devices: INITIAL_DEVICES.map((d) => ({ ...d })), dsel: 'p1', dkind: 'all', daddKind: '', daddEdit: '',
   rsec: '概况', rrange: '今天', rby: 'qty', sg: 'display', si: 'shape',
-  oview: 'list', ost: 'all', och: '全部', oper: '今天', osel: '#1024', redeemed: JSON.parse(JSON.stringify(INITIAL_REDEEMED)), pvu: '', pvuWhy: '',
+  oview: 'list', ost: 'all', och: '全部', oplat: 'all', oper: '今天', osel: '#1024', redeemed: JSON.parse(JSON.stringify(INITIAL_REDEEMED)), pvu: '', pvuWhy: '',
   set: (p) => set(p as any),
   act: (a) => { const i = a.indexOf(':'); const k = i < 0 ? a : a.slice(0, i), v = i < 0 ? '' : a.slice(i + 1); const f = ACT[k]; if (f) f(v, get, (p) => set(p as any)); },
 }));
+/* 币种跟着门店地区走：先按初始地区设好，地区变了再换（App 以地区为 key 重挂，金额全部重新格式化） */
+setCurrency(REGION_CURRENCY[useStore.getState().region] || REGION_CURRENCY.cn);
+useStore.subscribe((s, prev) => { if (s.region !== prev.region) setCurrency(REGION_CURRENCY[s.region] || REGION_CURRENCY.cn); });
 useStore.subscribe((s) => { try { const o: any = {}; STYLE_KEYS.forEach((k) => (o[k] = s[k])); localStorage.setItem(KEY, JSON.stringify(o)); } catch {} });
 wireDomainEvents(useStore.getState, (p) => useStore.setState(p as Partial<PosState>));
 export function useTotals(): Totals {

@@ -9,6 +9,7 @@ import { Ico } from '@/lib/icon';
 import { CatMark, Chip, Qty, StatusTag } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/feedback';
 import { ItemTile, TileFoot, tileClass } from '@/components/pos/item-tile';
+import { cs } from '@/lib/money';
 
 export function DishCard({ d }: { d: Dish }) {
   const t = useT(), lang = useLang();
@@ -23,7 +24,7 @@ export function DishCard({ d }: { d: Dish }) {
     </span>
   );
   const stock = d.timed ? <StatusTag ent="stock" k="timed" label={d.timed} form="dot" /> : out ? <StatusTag ent="stock" k="sold_out" form="dot" /> : rest == null ? t('order.stock.ok') : rest <= 5 ? <StatusTag ent="stock" k="low" label={t('order.stock.low', { n: rest })} form="dot" /> : t('order.stock.n', { n: rest });
-  const foot = <TileFoot price={d.spec ? t('order.from', { p: d.p }) : '¥' + d.p} stock={stock} />;
+  const foot = <TileFoot price={d.spec ? t('order.from', { p: d.p }) : cs() + d.p} stock={stock} />;
   const base = tileClass(q, off);
   const onClick = () => dispatch('add:' + d.n);
   if (pic === 'off') return <ItemTile qty={q} off={off} onClick={onClick} ariaLabel={first} title={<><CatMark k={k} className="mt-1.25" />{nameEl}</>} foot={foot} />;

@@ -1,7 +1,7 @@
 // 订单行 ← 原型 oline：色块小方块 · 菜名 · 金额 / 做法或状态 · 份数或步进器；已下单行点开行内操作；批量模式行首换勾
 import { useStore } from '@/store';
 import { dish, LINE_ST, type Line } from '@/data/sample';
-import { money } from '@/lib/money';
+import { cur, curNode, money } from '@/lib/money';
 import { cn } from '@/lib/cn';
 import { useLang, useT } from '@/i18n';
 import { CatMark, StatusTag } from '@/components/ui/badge';
@@ -14,8 +14,8 @@ import { LineRow } from '@/components/pos/line-row';
 export function OrderLine({ l, i, edit, tappable }: { l: Line; i: number; edit: boolean; tappable?: boolean }) {
   const t = useT(), lang = useLang(); const s = useStore(), dispatch = s.act;
   const name = lang === 'en' ? dish(l.n).en : l.n;
-  const pr = l.st === 'gift' ? <><s className="text-placeholder">{money(l.p * l.q)}</s> ¥0.00</> : money(l.p * l.q);
-  const meta = edit ? (l.sub || t('order.each', { p: l.p })) : <><StatusTag ent="item" k={LINE_ST[l.st]} form="dot" />{l.rp && <StatusTag ent="item" k="repriced" form="dot" />}{l.sub && l.st !== 'gift' && <span>{l.sub}</span>}</>;
+  const pr = l.st === 'gift' ? <><s className="text-placeholder">{money(l.p * l.q)}</s>{cur(' ¥0.00')}</> : money(l.p * l.q);
+  const meta = edit ? (curNode(l.sub) || t('order.each', { p: l.p })) : <><StatusTag ent="item" k={LINE_ST[l.st]} form="dot" />{l.rp && <StatusTag ent="item" k="repriced" form="dot" />}{l.sub && l.st !== 'gift' && <span>{curNode(l.sub)}</span>}</>;
   const side = edit ? <Stepper q={l.q} onDec={() => dispatch('dec:' + i)} onInc={() => dispatch('inc:' + i)} /> : '×' + l.q;
   const ck = !edit && s.batch && l.st !== 'void', on = ck && s.sel.indexOf(i) > -1;
   const base = 'grid gap-x-2.5 gap-y-0.75 items-center py-2.5 [.ledger_&+&]:border-t-2 [.ledger_&+&]:border-surface';

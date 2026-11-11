@@ -12,6 +12,7 @@ import { Cells, Cell } from '@/components/ui/description-list';
 import { StatusTag } from '@/components/ui/badge';
 import { Note } from '@/components/ui/feedback';
 import { Result, Spinner, Amount } from '@/components/ui/result';
+import { cur } from '@/lib/money';
 
 const useClose = () => { const dispatch = useStore((s) => s.act); return () => dispatch('ov:none'); };
 const Gt = ({ children }: { children: React.ReactNode }) => <span className="gt"><span>{children}</span></span>;
@@ -69,8 +70,8 @@ function PlanNew({ open }: { open: boolean }) {
   return (
     <Dialog open={open} onClose={close} ariaLabel={t('plan.title')}>
       <DialogTitle>{t('plan.title')}</DialogTitle>
-      <Gt>{t('plan.pay')}</Gt><Input num defaultValue="¥ 800.00" /><Gt>{t('plan.gift')}</Gt><Input num defaultValue="¥ 100.00" />
-      <Amount sm label={t('plan.total')} value="¥900.00" /><span className="help">{t('plan.help')}</span>
+      <Gt>{t('plan.pay')}</Gt><Input num defaultValue={cur("¥ 800.00")} /><Gt>{t('plan.gift')}</Gt><Input num defaultValue={cur("¥ 100.00")} />
+      <Amount sm label={t('plan.total')} value={cur("¥900.00")} /><span className="help">{t('plan.help')}</span>
       <DialogActs><Button variant="muted" onClick={close}>{t('common.cancel')}</Button><Button onClick={() => s.act('plansave')}>{t('plan.save')}</Button></DialogActs>
     </Dialog>
   );
@@ -85,7 +86,7 @@ function OpenShift({ open }: { open: boolean }) {
     <Dialog open={open} onClose={close} className="max-w-640px" ariaLabel={t('sh.open')}>
       <DialogTitle>{t('sh.open')}</DialogTitle>
       <Cells><Cell k={t('sh.register')} v={t('sh.register1')} go /><Cell k={t('sh.cashier')} v="李敏" /></Cells>
-      <Gt>{t('sh.float')}</Gt><Input num defaultValue="¥ 500.00" />
+      <Gt>{t('sh.float')}</Gt><Input num defaultValue={cur("¥ 500.00")} />
       <Gt>{t('sh.devices')}</Gt><Cells><Cell k={<span className="text-ink">{t('sh.frontPrinter')}</span>}><StatusTag ent="device" k="online" label={t('sh.ok')} /></Cell><Cell k={<span className="text-ink">{t('sh.hotPrinter')}</span>}><StatusTag ent="device" k="no_paper" /></Cell><Cell k={<span className="text-ink">{t('sh.network')}</span>}><StatusTag ent="device" k="online" label={t('sh.ok')} /></Cell><Cell k={<span className="text-ink">{t('sh.drawerK')}</span>}><StatusTag ent="device" k="online" label={t('sh.ok')} /></Cell></Cells>
       <Note tone="warn">{t('sh.noPaperNote')}</Note>
       <DialogActs><Button size="lg" onClick={() => s.act('toast:sh.opened')}>{t('sh.open')}</Button></DialogActs>

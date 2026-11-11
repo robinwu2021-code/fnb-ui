@@ -21,6 +21,7 @@ import { StatusTile } from '@/components/ui/status-tile';
 import { Note } from '@/components/ui/feedback';
 import { stGroup } from '@/lib/states';
 import { cn } from '@/lib/cn';
+import { cs } from '@/lib/money';
 
 const useLeft = () => { const lines = useStore((s) => s.lines); return (d: Dish) => (d.s == null ? null : Math.max(0, d.s - lines.reduce((a, l) => (l.n === d.n && l.st !== 'void' ? a + l.q : a), 0))); };
 function DishStock({ d }: { d: Dish }) {
@@ -55,7 +56,7 @@ function Dishes() {
             <Tr key={x.n} on={s.mdsel === i} onClick={() => dispatch('mdsel:' + i)}>
               <Td><Th img={x.img} text={lang === 'en' ? x.en[0] : x.n[0]} k={CK[x.c] || 'gray'} /></Td>
               <Td><Nm2 a={<>{lang === 'en' ? x.en : x.n} {(x.tg || []).map((g) => <Ico key={g} name={TAGS[g]} size={13} className="text-sub align-[-2px]" />)}</>} b={lang === 'en' ? x.n : x.en} /></Td>
-              <Td>{catOf(x.c)}</Td><Td r>¥{x.p}{x.spec ? (lang === 'en' ? '+' : ' 起') : ''}</Td><Td><DishStock d={x} /></Td><Td><ChIcons n={x.n} /></Td><Td r><Switch checked={true} aria-label={t('md.th.on')} /></Td>
+              <Td>{catOf(x.c)}</Td><Td r>{cs()}{x.p}{x.spec ? (lang === 'en' ? '+' : ' 起') : ''}</Td><Td><DishStock d={x} /></Td><Td><ChIcons n={x.n} /></Td><Td r><Switch checked={true} aria-label={t('md.th.on')} /></Td>
             </Tr>); })}
         </Table>
         <p className="help mt-3">{t('md.chHelp')}</p>
@@ -63,12 +64,12 @@ function Dishes() {
       <Panel area="detail" head={<><div className="row-between"><b className="h-title">{lang === 'en' ? d.en : d.n}</b><DishStock d={d} /></div><span className="help">{lang === 'en' ? d.n : d.en} · {catOf(d.c)}</span></>}
         foot={<Acts><Button variant="muted" onClick={() => dispatch('toast:md.unlisted')}>{t('md.unlist')}</Button><Button block onClick={() => dispatch('mdsave')}>{t('md.save')}</Button></Acts>}>
         <div className="relative aspect-4/3 rounded-rt overflow-hidden bg-slot-bg grid place-items-center text-2xl font-700 mb-3" style={{ color: `var(--cat-${CK[d.c] || 'gray'}-fg)` }}>{d.img ? <img src={d.img} alt="" className="absolute inset-0 w-full h-full object-cover" /> : <span>{d.n.slice(0, 2)}</span>}<Chip onCard className="absolute right-2 bottom-2">{t('md.change')}</Chip></div>
-        <Cells><Cell k={t('md.zh')} v={d.n} go /><Cell k={t('md.en')} v={d.en} go /><Cell k={t('md.th.cat')} v={catOf(d.c)} go /><Cell k={t('md.th.price')} v={'¥' + d.p + (d.spec ? (lang === 'en' ? '+' : ' 起') : '')} go /><Cell k={t('md.memberPrice')} v={t('md.tbd')} /></Cells>
+        <Cells><Cell k={t('md.zh')} v={d.n} go /><Cell k={t('md.en')} v={d.en} go /><Cell k={t('md.th.cat')} v={catOf(d.c)} go /><Cell k={t('md.th.price')} v={cs() + d.p + (d.spec ? (lang === 'en' ? '+' : ' 起') : '')} go /><Cell k={t('md.memberPrice')} v={t('md.tbd')} /></Cells>
         <Block title={t('md.modsSec')} right={<Button variant="link" className="hit text-sm" onClick={() => dispatch('msub:规格')}>{t('md.manage')}</Button>}><div className="flex flex-wrap gap-gap">{(d.spec ? [0, 1, 2] : [3]).map((i) => <Chip key={i}>{lang === 'en' ? MODS[i][4] : MODS[i][0]}</Chip>)}</div></Block>
         <Block title={t('md.tags')}><div className="flex flex-wrap gap-gap">{Object.keys(TAGS).map((g) => <Filter key={g} pressed={(d.tg || []).includes(g)} onPressedChange={() => dispatch('mdtag:' + g)}><Ico name={TAGS[g]} size={15} />{g}</Filter>)}</div></Block>
         <Block title={t('md.sale')}><Cells><Cell k={t('md.todayStock')} v={d.s == null ? t('md.stock.unlimited') : d.s} go /><Cell k={t('md.timed')} v={d.timed || t('md.allDay')} go /><Cell k={t('md.soldOutK')}><Switch checked={left(d) === 0} onCheckedChange={() => dispatch('mdsold')} aria-label={t('md.soldOutK')} /></Cell></Cells></Block>
         <Block title={t('md.channels')} right={<Button variant="link" className="hit text-sm" onClick={() => dispatch('msub:同步')}>{t('md.goSync')}</Button>}>
-          <Cells>{channelsOf(s).map((c) => { const st = s.sync[d.n]?.[c.key] || 'pending', why = st === 'failed' ? whyOf(c.key, d.n, lang) : ''; const mk = c.plat ? s.plats[c.plat.key].markup : 0; return <Cell key={c.key} k={<span className="flex flex-col"><ChName c={c} />{c.plat && <small className="help num pl-6">{t('sy.platPrice')} ¥{Math.round(d.p * (1 + mk / 100))}{mk ? ' · +' + mk + '%' : ''}</small>}</span>}><span className="text-right"><StatusTag ent="sync" k={st} form="dot" />{why && <><br /><small className="help">{why}</small></>}</span></Cell>; })}</Cells>
+          <Cells>{channelsOf(s).map((c) => { const st = s.sync[d.n]?.[c.key] || 'pending', why = st === 'failed' ? whyOf(c.key, d.n, lang) : ''; const mk = c.plat ? s.plats[c.plat.key].markup : 0; return <Cell key={c.key} k={<span className="flex flex-col"><ChName c={c} />{c.plat && <small className="help num pl-6">{t('sy.platPrice')} {cs()}{Math.round(d.p * (1 + mk / 100))}{mk ? ' · +' + mk + '%' : ''}</small>}</span>}><span className="text-right"><StatusTag ent="sync" k={st} form="dot" />{why && <><br /><small className="help">{why}</small></>}</span></Cell>; })}</Cells>
         </Block>
       </Panel>
     </>
@@ -117,10 +118,10 @@ function Sets() {
     <>
       <Panel area="content" head={<><div className="row-between"><b className="h-title">{t('md.sets')}</b><Button variant="soft" size="sm" onClick={() => dispatch('toast:md.setNew')}><Ico name="plus" />{t('md.newSet')}</Button></div><span className="help">{t('md.setHelp')}</span></>}>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-gap content-start">
-          {SETS.map((y, i) => <StatusTile key={y.n} group="progress" current={s.mssel === i} onClick={() => dispatch('mssel:' + i)} className="py-3 px-3.5 gap-0.5 min-h-124px"><span className="flex items-center justify-between gap-2 mb-0.5"><b className="text-lg font-700">{lang === 'en' ? y.en : y.n}</b><StatusTag ent="stock" k="in_stock" label={t('md.onSale')} form="dot" /></span><span className="help ellipsis">{y.groups.map((g) => g[0]).join(' · ')}</span><span className="help">{y.swap ? t('md.swap') : t('md.noSwap')}</span><span className="a mt-auto pt-1.5 text-xl font-700 num">¥{y.p}</span></StatusTile>)}
+          {SETS.map((y, i) => <StatusTile key={y.n} group="progress" current={s.mssel === i} onClick={() => dispatch('mssel:' + i)} className="py-3 px-3.5 gap-0.5 min-h-124px"><span className="flex items-center justify-between gap-2 mb-0.5"><b className="text-lg font-700">{lang === 'en' ? y.en : y.n}</b><StatusTag ent="stock" k="in_stock" label={t('md.onSale')} form="dot" /></span><span className="help ellipsis">{y.groups.map((g) => g[0]).join(' · ')}</span><span className="help">{y.swap ? t('md.swap') : t('md.noSwap')}</span><span className="a mt-auto pt-1.5 text-xl font-700 num">{cs()}{y.p}</span></StatusTile>)}
         </div>
       </Panel>
-      <Panel area="detail" head={<><div className="row-between"><b className="h-title">{lang === 'en' ? x.en : x.n}</b><b className="num">¥{x.p}</b></div><span className="help">{lang === 'en' ? x.n : x.en}</span></>} foot={<Acts><Button variant="muted" onClick={() => dispatch('toast:md.groupAdded')}><Ico name="plus" />{t('md.addGroup')}</Button><Button block onClick={() => dispatch('toast:md.setSaved')}>{t('md.save')}</Button></Acts>}>
+      <Panel area="detail" head={<><div className="row-between"><b className="h-title">{lang === 'en' ? x.en : x.n}</b><b className="num">{cs()}{x.p}</b></div><span className="help">{lang === 'en' ? x.n : x.en}</span></>} foot={<Acts><Button variant="muted" onClick={() => dispatch('toast:md.groupAdded')}><Ico name="plus" />{t('md.addGroup')}</Button><Button block onClick={() => dispatch('toast:md.setSaved')}>{t('md.save')}</Button></Acts>}>
         {x.groups.map((g) => <Block key={g[0]} title={g[0]} right={<Button variant="link" className="hit text-sm" onClick={() => dispatch('toast:md.groupEdit')}>{t('md.edit')}</Button>}><div className="flex flex-wrap gap-gap">{g[1].map((n) => <Chip key={n}>{n}</Chip>)}</div></Block>)}
         <Cells className="mt-4"><Cell k={t('md.allowSwap')}><Switch checked={x.swap} aria-label={t('md.allowSwap')} /></Cell><Cell k={t('md.swapFee')}><Switch checked={x.swap} aria-label={t('md.swapFee')} /></Cell><Cell k={t('md.channels')} v={t('md.setCh')} /></Cells>
         <Note className="mt-2">{t('md.setNote')}</Note>

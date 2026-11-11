@@ -2,7 +2,7 @@
 import { useStore } from '@/store';
 import { useT } from '@/i18n';
 import { dish } from '@/data/sample';
-import { money } from '@/lib/money';
+import { cs, cur, money } from '@/lib/money';
 import { rpPrice, rpNeedsAuth } from '@/store/actions';
 import { Dialog, DialogTitle, DialogDesc, DialogActs } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -47,10 +47,10 @@ function SpecDialog({ open }: { open: boolean }) {
   const tog = (arr: string[], set: (a: string[]) => void, k: string) => set(arr.includes(k) ? arr.filter((x) => x !== k) : [...arr, k]);
   return (
     <Dialog open={open} onClose={close} ariaLabel={lang === 'en' ? d.en : d.n}>
-      <div className="row-between"><DialogTitle>{lang === 'en' ? d.en : d.n}</DialogTitle><b className="num">¥{d.p}</b></div>
-      <Gt>{t('spec.size')}</Gt><OptionGroup value={size} onChange={setSize}><Option value="large" label={t('spec.large')} sub={'¥' + d.p} /><Option value="small" label={t('spec.small')} sub={'¥' + Math.round(d.p * 0.7)} /></OptionGroup>
+      <div className="row-between"><DialogTitle>{lang === 'en' ? d.en : d.n}</DialogTitle><b className="num">{cs()}{d.p}</b></div>
+      <Gt>{t('spec.size')}</Gt><OptionGroup value={size} onChange={setSize}><Option value="large" label={t('spec.large')} sub={cs() + d.p} /><Option value="small" label={t('spec.small')} sub={cs() + Math.round(d.p * 0.7)} /></OptionGroup>
       <Gt>{t('spec.spice')}</Gt><OptionGroup value={spice} onChange={setSpice}>{['none', 'mild', 'medium', 'hot'].map((k) => <Option key={k} value={k} label={t('spec.' + k)} />)}</OptionGroup>
-      <Gt>{t('spec.addons')}</Gt><Row><OptionMulti on={add.includes('peanut')} onToggle={() => tog(add, setAdd, 'peanut')} label={t('spec.peanut')} sub="+¥3" /><OptionMulti on={add.includes('chicken')} onToggle={() => tog(add, setAdd, 'chicken')} label={t('spec.chicken')} sub="+¥12" /></Row>
+      <Gt>{t('spec.addons')}</Gt><Row><OptionMulti on={add.includes('peanut')} onToggle={() => tog(add, setAdd, 'peanut')} label={t('spec.peanut')} sub={cur("+¥3")} /><OptionMulti on={add.includes('chicken')} onToggle={() => tog(add, setAdd, 'chicken')} label={t('spec.chicken')} sub={cur("+¥12")} /></Row>
       <Gt>{t('spec.notes')}</Gt><Row>{['spec.lessOil', 'spec.lessSalt', 'spec.noScallion'].map((k) => <Filter key={k} pressed={notes.includes(k)} onPressedChange={() => tog(notes, setNotes, k)}>{t(k)}</Filter>)}</Row>
       <DialogActs className="[&>button]:flex-1 [&>span]:flex-none"><Stepper q={1} size="md" /><Button variant="muted" onClick={close}>{t('common.cancel')}</Button><Button onClick={() => s.act('addspec')}>{t('spec.add', { p: d.p })}</Button></DialogActs>
     </Dialog>
@@ -118,7 +118,7 @@ function RepriceDialog({ open }: { open: boolean }) {
       <DialogTitle>{t('rp.title')}</DialogTitle>
       <Gt>{t('rp.pick')}</Gt><OptionGroup value={String(s.rpLine)} onChange={(v) => s.act('rpl:' + v)}>{s.lines.map((l, i) => l.st === 'void' ? null : <Option key={i} value={String(i)} label={nm(l.n)} sub={money(l.p) + ' × ' + l.q} />)}</OptionGroup>
       <div className="row-between"><Seg value={s.rpMode} onChange={(v) => s.act('rpm:' + v)} items={[{ v: 'price', label: t('rp.price') }, { v: 'disc', label: t('rp.disc') }, { v: 'off', label: t('rp.off') }]} /><span className="help">{money(rl.p * rl.q)} → <b className="num text-ink">{money(np * rl.q)}</b></span></div>
-      <Row>{vals.map((v) => <Filter key={v} pressed={s.rpVal === v} onPressedChange={() => s.act('rpv:' + v)}>{s.rpMode === 'disc' ? t('rp.discV', { v }) : s.rpMode === 'off' ? t('rp.offV', { v }) : '¥' + v}</Filter>)}</Row>
+      <Row>{vals.map((v) => <Filter key={v} pressed={s.rpVal === v} onPressedChange={() => s.act('rpv:' + v)}>{s.rpMode === 'disc' ? t('rp.discV', { v }) : s.rpMode === 'off' ? t('rp.offV', { v }) : cs() + v}</Filter>)}</Row>
       <Gt>{t('rp.why')}</Gt><Row>{['rp.w1', 'rp.w2', 'rp.w3', 'rp.w4', 'rp.w5'].map((k) => <Filter key={k} pressed={s.rpWhy === k} onPressedChange={() => s.act('rpw:' + k)}>{t(k)}</Filter>)}</Row>
       {need && <Note tone="warn">{t('rp.needAuth')}</Note>}
       <DialogActs><Button variant="muted" onClick={close}>{t('common.cancel')}</Button>{s.rpWhy ? <Button onClick={() => s.act(need ? 'ov:x2' : 'rpok')}>{need ? t('rp.apply') : t('rp.ok')}</Button> : <Button disabled>{t('rp.pickWhy')}</Button>}</DialogActs>

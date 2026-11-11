@@ -15,3 +15,11 @@ export function pauseLabel(ps: PlatState, t: (k: string, p?: Record<string, stri
   if (ps.pauseWhy) return t('pf.pausedWhy', { r: t('pf.why.' + ps.pauseWhy) });
   return t('pf.st.paused');
 }
+/** 外卖单号：数据里写 P1 #88 / P2 #31，按当前地区已连接的平台显示（台湾都是 Uber Eats；阿联酋 P1 = Keeta、P2 = talabat）；没连平台时写「外卖」 */
+export function platRef(ref: string, s: { region: Region; plats: Record<PlatKey, PlatState> }, lang: 'zh' | 'en'): { key?: PlatKey; label: string } {
+  const m = /^P([12]) #(\d+)$/.exec(ref); if (!m) return { label: ref };
+  const live = livePlats(s); const p = live[Number(m[1]) - 1] || live[0];
+  return { key: p?.key, label: (p ? p.name : lang === 'en' ? 'Delivery' : '外卖') + ' #' + m[2] };
+}
+/** 待接的外卖单：待接单 + 接单超时（系统栏角标、外卖侧滑共用） */
+export const pendingDelivery = <T extends unknown[]>(orders: T[]) => orders.filter((o) => o[7] === 'delivery' && (o[8] === 'new' || o[8] === 'timeout'));

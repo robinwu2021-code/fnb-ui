@@ -3,7 +3,7 @@ import { useStore, useTotals } from '@/store';
 import { COUPONS, PLATS, PVERR, pvOf, pvUndoWhy, type PVoucher } from '@/data/sample';
 import { pvName } from '@/store/actions';
 import { cpWhy, pvWhy } from '@/lib/pricing';
-import { money } from '@/lib/money';
+import { cs, money } from '@/lib/money';
 import { useLang, useT } from '@/i18n';
 import { Dialog, DialogTitle, DialogDesc, DialogActs } from '@/components/ui/dialog';
 import { Sheet } from '@/components/ui/sheet';
@@ -33,7 +33,7 @@ function PaidDialog({ open }: { open: boolean }) {
       <Result title={<DialogTitle>{t('p3.title', { m: money(tot.due) })}</DialogTitle>}>{s.change > 0 && <Amount sm label={t('co.change')} value={money(s.change)} className="w-auto gap-3" />}</Result>
       <Cells>
         {pl.map((p, i) => <Cell key={i} k={<span className="inline-flex items-center gap-1.5 text-ink"><StatusIcon ent="payment" k="paid" />{payName(s, p[0]) || t('p3.received')}</span>} v={money(p[1])} num />)}
-        {tot.mem > 0 && <Cell k={t('p3.discount')} v={'−' + money(tot.mem + tot.round)} num />}{s.member && <Cell k={t('p3.svBal')} v={'¥' + s.memberBal.toFixed(2)} num />}
+        {tot.mem > 0 && <Cell k={t('p3.discount')} v={'−' + money(tot.mem + tot.round)} num />}{s.member && <Cell k={t('p3.svBal')} v={money(s.memberBal)} num />}
       </Cells>
       <span className="help">{t('p3.help')}</span>
       <DialogActs><Button variant="muted" onClick={() => s.act('toast:p3.printing')}>{t('p3.reprint')}</Button><Button variant="muted" onClick={() => s.act('toast:p3.invoiceQr')}>{t('p3.invoice')}</Button><Button onClick={() => s.act('paid')}>{t('p3.next')}</Button></DialogActs>
@@ -56,7 +56,7 @@ function CouponsSheet({ open }: { open: boolean }) {
     <Sheet open={open} onClose={close} title={t('cp.title')} closeLabel={t('common.close')}>
       <div className="flex items-center gap-2 h-ctl-sm px-px rounded-rb bg-wash text-base text-hint"><Ico name="scan-line" size={16} className="text-sub" />{t('cp.scan')}</div>
       <span className="help">{t('cp.help')}</span>
-      {COUPONS.map((c) => { const why = cpWhy(c, tot.sub, s.lines), on = s.cpn === c.id; return <CouponCard key={c.id} on={on} off={!!why} onClick={() => s.act('cpn:' + c.id)} value={c.disc ? t('cp.d8') : '¥' + c.amt} title={c.name} lines={[c.kind + ' · ' + (why || t('cp.till'))]} right={on ? <Ico name="circle-check" /> : undefined} />; })}
+      {COUPONS.map((c) => { const why = cpWhy(c, tot.sub, s.lines), on = s.cpn === c.id; return <CouponCard key={c.id} on={on} off={!!why} onClick={() => s.act('cpn:' + c.id)} value={c.disc ? t('cp.d8') : cs() + c.amt} title={c.name} lines={[c.kind + ' · ' + (why || t('cp.till'))]} right={on ? <Ico name="circle-check" /> : undefined} />; })}
       <div><Button variant="muted" onClick={() => s.act('cpn:none')}>{t('cp.none')}</Button></div>
     </Sheet>
   );
@@ -64,7 +64,7 @@ function CouponsSheet({ open }: { open: boolean }) {
 function PvCard({ v, foot }: { v: PVoucher; foot?: React.ReactNode }) {
   const t = useT(); const s = useStore(); const why = pvWhy(v, s.lines);
   const d = t(v.items ? 'pv.kind.set' : 'pv.kind.cash') + ' · ' + t('pv.sold', { p: v.price }) + ' · ' + (why ? t('pv.missing', { i: v.items!.join('、') }) : (v.items ? t('pv.includes', { i: v.items.join('、') }) : t('pv.noChange')) + ' · ' + t('pv.till', { d: v.till }));
-  return <CouponCard off={!!why} value={'¥' + v.face} title={<><PlatMark k={v.plat} />{pvName(s, v.id)}</>} lines={[d, <span className="num">{t('pv.code', { c: v.code, n: v.left })}</span>]} right={foot} />;
+  return <CouponCard off={!!why} value={cs() + v.face} title={<><PlatMark k={v.plat} />{pvName(s, v.id)}</>} lines={[d, <span className="num">{t('pv.code', { c: v.code, n: v.left })}</span>]} right={foot} />;
 }
 function PVoucherSheet({ open }: { open: boolean }) {
   const t = useT(), close = useClose(); const s = useStore(), tot = useTotals(); const dispatch = s.act;

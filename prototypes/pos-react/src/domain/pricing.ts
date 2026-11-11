@@ -1,7 +1,7 @@
 // 计价引擎（方案：零售 §八 · 架构文档 §二）：公共流水线 + 业态规则。
 // 小计 → 行级促销 → 会员价 → 费用 → 平台券 → 整单活动 → 券 → 人工折扣 → 抹零 → 应收 → 已收 / 待收
 // 输入是「价格行」，由各业态的适配器从自己的订单行 / 购物车行算出来（餐饮 lib/pricing.ts，零售 retail/data.ts）。
-import { round2 } from './money';
+import { money, round2 } from './money';
 
 /** 价格行：gross 已是这一行的原价小计（赠送 / 已退行传 0）；promo 行级促销减额；memberSave 会员价减额 */
 export interface PriceLine { gross: number; promo?: number; memberSave?: number; pcs?: number }
@@ -29,7 +29,7 @@ export const rulesOf = (k: PricingRules['key']) => RULES[k];
 export function couponAmt(c: Coupon, sub: number) { return c.disc ? Math.min(c.cap!, round2(sub * c.disc)) : c.amt!; }
 /** 券不可用的原因（空 = 可用）；has(n) 判断本单有没有某菜 / 商品 */
 export function couponBlock(c: Coupon, sub: number, has: (n: string) => boolean): { key: string; params?: Record<string, string> } | null {
-  if (c.min && sub < c.min) return { key: 'short', params: { m: '¥' + (c.min - sub).toFixed(2) } };
+  if (c.min && sub < c.min) return { key: 'short', params: { m: money(c.min - sub) } };
   if (c.need && !has(c.need)) return { key: 'noItem' };
   return null;
 }

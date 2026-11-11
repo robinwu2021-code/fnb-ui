@@ -129,7 +129,7 @@ ACT.paid = (_v, get, set) => {
 };
 /* 订单 */
 ACT.ost = (v, _g, set) => set({ ost: v });
-ACT.och = (v, _g, set) => set({ och: v, ost: 'all' });
+ACT.och = (v, _g, set) => set({ och: v, ost: 'all', oplat: 'all' });
 ACT.oper = (v, _g, set) => set({ oper: v });
 ACT.osel = (v, _g, set) => set({ osel: v });
 ACT.pvundo = (v, _g, set) => set({ pvu: v, pvuWhy: '', ov: 'pvundo' });

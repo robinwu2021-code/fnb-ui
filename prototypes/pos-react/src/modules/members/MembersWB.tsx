@@ -20,6 +20,7 @@ import { Note, Empty } from '@/components/ui/feedback';
 import { CouponCard } from '@/components/ui/coupon';
 import { cn } from '@/lib/cn';
 import { useState } from 'react';
+import { cs, cur, money } from '@/lib/money';
 
 const useName = () => { const t = useT(); return (m: Member) => (m[9] ? t('mb.leadName', { n: m[0] }) : m[0]); };
 const useLayer = () => { const lang = useLang(); return (l: string) => (lang === 'en' ? LAYER_EN[l] || l : l); };
@@ -31,20 +32,20 @@ export function MembersWB() {
 }
 function MCard({ bal, spent, visits }: { bal: number; spent: number; visits: number }) {
   const t = useT();
-  return <div className="bg-wash rounded-rt py-2.5 px-3 grid grid-cols-3 gap-2"><span><small className="block text-xs text-sub">{t('sheet.member.bal')}</small><b className="num">¥{bal.toFixed(2)}</b></span><span><small className="block text-xs text-sub">{t('mb.spent')}</small><b className="num">¥{spent.toLocaleString()}</b></span><span><small className="block text-xs text-sub">{t('mb.visits')}</small><b className="num">{t('mb.visitsN', { n: visits })}</b></span></div>;
+  return <div className="bg-wash rounded-rt py-2.5 px-3 grid grid-cols-3 gap-2"><span><small className="block text-xs text-sub">{t('sheet.member.bal')}</small><b className="num">{money(bal)}</b></span><span><small className="block text-xs text-sub">{t('mb.spent')}</small><b className="num">{cs()}{spent.toLocaleString()}</b></span><span><small className="block text-xs text-sub">{t('mb.visits')}</small><b className="num">{t('mb.visitsN', { n: visits })}</b></span></div>;
 }
 function List() {
   const t = useT(); const s = useStore(), dispatch = s.act, name = useName(), layer = useLayer(); const [seg, setSeg] = useState('all');
   const match = (m: Member, l: string) => matchLayer(l, m[2], !!m[9]); /* 规则在 domain/member */
   const list = s.members.filter((m) => match(m, s.mlayer)); const m = s.members[s.msel] || s.members[0];
-  const ledger: [string, string, string, string][] = [['10-23 12:02', t('mb.l1'), '+¥330.00', '¥520.00'], ['10-20 19:14', t('mb.l2'), '−¥186.00', '¥190.00'], ['10-12 18:40', t('mb.l3'), '+¥200.00', '¥376.00']];
+  const ledger: [string, string, string, string][] = [['10-23 12:02', t('mb.l1'), cur('+¥330.00'), cur('¥520.00')], ['10-20 19:14', t('mb.l2'), cur('−¥186.00'), cur('¥190.00')], ['10-12 18:40', t('mb.l3'), cur('+¥200.00'), cur('¥376.00')]];
   return (
     <>
       <Panel area="content" head={<>
         <div className="flex flex-wrap gap-gap items-center [&>label]:flex-[1_1_220px] [&>label]:w-auto"><Search placeholder={t('mb.search')} /><Button variant="soft" size="sm" onClick={() => dispatch('ov:mnew')}><Ico name="user-plus" />{t('mb.new')}</Button></div>
         <div className="flex flex-wrap gap-gap">{['全部', ...LAYERS, '线索'].map((l) => <Filter key={l} pressed={s.mlayer === l} onPressedChange={() => dispatch('mlayer:' + l)}>{layer(l)}<FilterCount n={s.members.filter((x) => match(x, l)).length} /></Filter>)}</div></>}>
         <Table cols="minmax(0,1.2fr) 72px 64px minmax(0,1.4fr) 88px 72px 80px" head={[t('mb.th.member'), t('mb.th.phone'), t('mb.th.layer'), t('mb.th.tags'), <span className="block text-right">{t('mb.th.bal')}</span>, <span className="block text-right">{t('mb.th.visits')}</span>, <span className="block text-right">{t('mb.th.last')}</span>]}>
-          {list.map((x) => { const i = s.members.indexOf(x); return <Tr key={i} on={s.msel === i} onClick={() => dispatch('msel:' + i)}><Td><b>{name(x)}</b></Td><Td className="num">****{x[1]}</Td><Td>{x[9] ? <StatusTag ent="member" k="lead" label={t('mb.lead')} form="dot" /> : <Chip>{layer(x[2])}</Chip>}</Td><Td><span className="flex flex-wrap gap-1">{x[3].map((g) => <Chip key={g}>{g}</Chip>)}</span></Td><Td r>¥{x[4]}</Td><Td r>{t('mb.visitsN', { n: x[5] })}</Td><Td r>{x[7]}</Td></Tr>; })}
+          {list.map((x) => { const i = s.members.indexOf(x); return <Tr key={i} on={s.msel === i} onClick={() => dispatch('msel:' + i)}><Td><b>{name(x)}</b></Td><Td className="num">****{x[1]}</Td><Td>{x[9] ? <StatusTag ent="member" k="lead" label={t('mb.lead')} form="dot" /> : <Chip>{layer(x[2])}</Chip>}</Td><Td><span className="flex flex-wrap gap-1">{x[3].map((g) => <Chip key={g}>{g}</Chip>)}</span></Td><Td r>{cs()}{x[4]}</Td><Td r>{t('mb.visitsN', { n: x[5] })}</Td><Td r>{x[7]}</Td></Tr>; })}
         </Table>
         <p className="help mt-3">{t('mb.listHelp')}</p>
       </Panel>
@@ -85,12 +86,12 @@ function Stored() {
         </Block>
         <Block title={t('mb.todayRech')} right={<span>{t('mb.rechHelp')}</span>}>
           <Table cols="64px minmax(0,1fr) minmax(0,1.2fr) 80px 120px 56px" head={[t('mb.th.no'), t('mb.th.member'), t('mb.th.plan'), <span className="block text-right">{t('mb.th.paid')}</span>, t('mb.th.status'), <span className="block text-right">{t('mb.th.time')}</span>]}>
-            {RECH.map((r) => <Tr key={r[0]}><Td className="num">{r[0]}</Td><Td>{r[1]}</Td><Td>{r[2]}</Td><Td r>¥{r[3]}</Td><Td><StatusTag ent="recharge" k={r[4]} form="dot" /></Td><Td r>{r[5]}</Td></Tr>)}
+            {RECH.map((r) => <Tr key={r[0]}><Td className="num">{r[0]}</Td><Td>{r[1]}</Td><Td>{r[2]}</Td><Td r>{cs()}{r[3]}</Td><Td><StatusTag ent="recharge" k={r[4]} form="dot" /></Td><Td r>{r[5]}</Td></Tr>)}
           </Table>
         </Block>
       </Panel>
       <Panel area="detail" head={<><b className="h-title">{t('mb.doRecharge')}</b><span className="help">{t('mb.rechHint')}</span></>} foot={<Button block onClick={() => dispatch('ov:recharge')}>{t('mb.doRecharge')}</Button>}>
-        <Cells><Cell k={t('mb.todayPaid')} v="¥2,300.00" num /><Cell k={t('mb.todayGift')} v="¥270.00" num /><Cell k={t('mb.toVerify')} v={t('mb.n1')} num /></Cells>
+        <Cells><Cell k={t('mb.todayPaid')} v={cur("¥2,300.00")} num /><Cell k={t('mb.todayGift')} v={cur("¥270.00")} num /><Cell k={t('mb.toVerify')} v={t('mb.n1')} num /></Cells>
         <Note className="mt-3">{t('mb.rechNote')}</Note>
       </Panel>
     </>

@@ -2,7 +2,7 @@
 import { useStore } from '@/store';
 import { ALERT, OST, pvOf, pvUndoWhy, type OrderRow, type Redeemed } from '@/data/sample';
 import { pvName } from '@/store/actions';
-import { money } from '@/lib/money';
+import { cs, money } from '@/lib/money';
 import { stGroup, stName, stateOf } from '@/lib/states';
 import { useLang, useT } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -17,21 +17,25 @@ import { StatusTile } from '@/components/ui/status-tile';
 import { Empty, Note } from '@/components/ui/feedback';
 import { CouponCard, PlatMark } from '@/components/ui/coupon';
 import { OrderLine } from '@/modules/order/OrderLine';
+import { livePlats, platRef } from '@/lib/channels';
+import { PlatLogo } from '@/components/ui/plat-logo';
 
 export function OrdersWB() {
   const t = useT(), lang = useLang(); const s = useStore(), dispatch = s.act;
   const ent = s.och === '外卖' ? 'delivery' : 'order';
-  const base = s.orders.filter((o) => (s.och === '全部' ? true : o[2] === s.och));
+  const live = livePlats(s);
+  const base = s.orders.filter((o) => (s.och === '全部' ? true : o[2] === s.och) && (s.och !== '外卖' || s.oplat === 'all' || platRef(o[1], s, lang).key === s.oplat));
   const shown = base.filter((o) => s.ost === 'all' || (o[7] === ent && o[8] === s.ost));
   const sum = shown.reduce((a, o) => a + o[6], 0);
   const ch = (c: string) => t('od.ch.' + c);
-  const where = (o: OrderRow) => (o[2] === '外卖' ? o[1] : o[1] === '—' ? ch(o[2]) : o[1] + ' · ' + ch(o[2]));
+  const where = (o: OrderRow) => (o[2] === '外卖' ? platRef(o[1], s, lang).label : o[1] === '—' ? ch(o[2]) : o[1] + ' · ' + ch(o[2]));
   const cur = s.orders.find((o) => o[0] === s.osel) || s.orders[0];
   const head = (
     <>
       <div className="flex flex-wrap gap-gap items-center [&>label]:flex-[1_1_220px] [&>label]:w-auto">
         <Search placeholder={t('od.search')} />
         <Seg value={s.och} onChange={(v) => dispatch('och:' + v)} items={[{ v: '全部', label: t('od.all') }, { v: '堂食', label: t('od.dinein') }, { v: '外带', label: t('od.takeaway') }, { v: '外卖', label: t('od.delivery') }]} />
+        {s.och === '外卖' && live.length > 1 && <Seg value={s.oplat} onChange={(v) => s.set({ oplat: v, ost: 'all' })} items={[{ v: 'all', label: t('od.allPlats') }, ...live.map((p) => ({ v: p.key, label: <><PlatLogo k={p.key} size={16} />{p.name}</> }))]} />}
         <Seg value={s.oview} onChange={(v) => s.set({ oview: v })} items={[{ v: 'list', label: t('od.list') }, { v: 'card', label: t('od.card') }]} />
       </div>
       <div className="flex flex-wrap gap-gap items-center">
@@ -83,7 +87,7 @@ function PvRecords({ cur }: { cur: OrderRow }) {
     <div className="flex flex-col gap-2">
       {rs.map((r, i) => { const v = pvOf(r[0])!, why = pvUndoWhy(r), amt = v.face * r[1]; if (r[5] !== 'undone') pvSum += amt; else undone += amt; return (
         <div key={i} className="flex flex-col gap-1.5">
-          <CouponCard off={why === 'done'} value={'¥' + v.face} title={<><PlatMark k={v.plat} />{pvName(s, v.id)}</>} lines={[t('od.redeemedMeta', { t: r[2], who: r[4], n: r[1], m: money(amt) })]} className="bg-surface" />
+          <CouponCard off={why === 'done'} value={cs() + v.face} title={<><PlatMark k={v.plat} />{pvName(s, v.id)}</>} lines={[t('od.redeemedMeta', { t: r[2], who: r[4], n: r[1], m: money(amt) })]} className="bg-surface" />
           <div className="row-between text-sm">
             <StatusTag ent="coupon" k={why === 'done' ? 'unused' : 'used'} label={why === 'done' ? t('od.returned') : t('od.redeemed')} form="dot" />
             {why === 'done' ? <StatusTag ent="coupon" k="unused" label={t('od.undoneTag')} form="dot" /> : why === 'late' ? <span className="help">{t('od.late')}</span> : <Button variant="link" className="hit text-sm" onClick={() => dispatch('pvundo:' + cur[0] + '|' + i)}>{why === 'auth' ? t('od.undoAuth') : t('od.undo')}</Button>}

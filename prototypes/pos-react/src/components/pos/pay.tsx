@@ -1,7 +1,7 @@
 // 收款区（餐饮结账工作台右栏、零售收银收款态共用）：
 // PayHead 步骤条 + 待收 / 应付 / 已收 + 收款方式 · CashPad 现金（实收 · 找零 · 快捷金额 · 键盘）· WaitBlock 等待扫码 / 刷卡 / 推送
 import { PAYS, PAY_EN } from '@/data/sample';
-import { money } from '@/lib/money';
+import { cs, money } from '@/lib/money';
 import { cashResult, quickAmounts } from '@/domain/payment';
 import { cn } from '@/lib/cn';
 import { useLang, useT } from '@/i18n';
@@ -53,7 +53,7 @@ export function CashPad({ due, got, onKey, onQuick, onOk, okLabel }: { due: numb
         <div className="flex justify-between items-center rounded-rk bg-wash py-pad px-px"><span className="help">{t('co.got')}</span><b className="text-2xl font-700 tracking-[-.02em] num leading-[1.1]">{money(got)}</b></div>
         {short ? <Amount sm short label={t('co.short')} value={money(r.short)} /> : <Amount sm label={t('co.change')} value={money(r.change)} />}
         <span className="gt"><span>{t('co.quick')}</span></span>
-        <div className="flex flex-wrap gap-gap">{quick.map((v) => <Filter key={v} pressed={got === v} onPressedChange={() => onQuick(v)}>¥{v % 1 ? v.toFixed(2) : v}</Filter>)}</div>
+        <div className="flex flex-wrap gap-gap">{quick.map((v) => <Filter key={v} pressed={got === v} onPressedChange={() => onQuick(v)}>{cs()}{v % 1 ? v.toFixed(2) : v}</Filter>)}</div>
       </div>
       <Keypad cols={4} keys={keys} onKey={(k) => (k === 'ok' ? (short ? null : onOk()) : onKey(k))} />
     </div>
