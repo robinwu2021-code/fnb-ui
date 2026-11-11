@@ -17,7 +17,7 @@ export function Rail({ items, cur, onPick, ariaLabel }: { items: RailItem[]; cur
         const on = it.v === cur;
         return (
           <button key={it.v} type="button" aria-current={on ? 'true' : undefined} onClick={() => onPick(it.v!)}
-            className={cn('flex items-center justify-between gap-1.5 px-2.5 rounded-rk text-sub whitespace-nowrap text-left', top ? 'flex-none min-h-ctl-sm px-[calc(var(--px)-2px)] rounded-rb' : 'min-h-ctl', it.second != null && 'py-1.5', on && 'sel')}>
+            className={cn('flex items-center justify-between gap-1.5 px-2.5 rounded-rk text-sub text-left', top ? 'flex-none whitespace-nowrap min-h-ctl-sm px-[calc(var(--px)-2px)] rounded-rb' : 'min-h-ctl leading-tight [overflow-wrap:anywhere]', it.second != null && 'py-1.5', on && 'sel')}>
             <span className="inline-flex items-center gap-1.5 min-w-0">
               {it.icon && <Ico name={it.icon} size={16} />}{it.k && <CatMark k={it.k} />}
               {it.second != null ? <span className="flex flex-col items-start justify-center leading-tight min-w-0"><b className="font-inherit">{it.label ?? it.v}</b><small className={cn('text-xs font-400 ellipsis', on ? 'text-inherit opacity-75' : 'text-sub')}>{it.second}</small></span> : <span>{it.label ?? it.v}</span>}

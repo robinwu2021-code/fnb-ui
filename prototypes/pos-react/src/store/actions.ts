@@ -55,7 +55,7 @@ ACT.add = (v, get, set) => {
   if (why === 'spec') { set({ spec: d.n, ov: 'x1' }); return; }
   set({ lines: order.addItem(s.lines, d) });
 };
-ACT.addspec = (_v, get, set) => { const s = get(); set({ lines: order.addWithSpec(s.lines, dish(s.spec), '大份 · 微辣 · 少油'), ov: 'none' }); };
+ACT.addspec = (_v, get, set) => { const s = get(); set({ lines: order.addWithSpec(s.lines, dish(s.spec), 'spec.sample'), ov: 'none' }); };
 ACT.inc = (v, get, set) => set({ lines: order.incAt(get().lines, +v) });
 ACT.dec = (v, get, set) => set({ lines: order.decAt(get().lines, +v) });
 ACT.clear = (_v, get, set) => { set({ lines: order.clearNew(get().lines) }); notify(get, 'toast.cleared'); };

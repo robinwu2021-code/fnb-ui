@@ -30,7 +30,7 @@ export function dish(n: string): Dish { return DISHES.find((d) => d.n === n) ?? 
 export type LineSt = 'new' | 'cook' | 'done' | 'rush' | 'gift' | 'void';
 export interface Line { n: string; q: number; p: number; st: LineSt; sub?: string; rp?: boolean }
 export const INITIAL_LINES: Line[] = [
-  { n: '宫保鸡丁', q: 1, p: 48, sub: '大份 · 微辣 · 少油', st: 'new' }, { n: '米饭', q: 4, p: 3, st: 'new' },
+  { n: '宫保鸡丁', q: 1, p: 48, sub: 'spec.sample', st: 'new' }, { n: '米饭', q: 4, p: 3, st: 'new' },
   { n: '酸菜鱼', q: 1, p: 78, st: 'cook' }, { n: '夫妻肺片', q: 1, p: 38, st: 'done' }, { n: '小炒黄牛肉', q: 1, p: 68, st: 'rush' }, { n: '酸梅汤', q: 1, p: 12, st: 'gift', sub: '原价 ¥12.00' },
 ];
 /* 订单行状态 → 业务状态字典 item 实体 */

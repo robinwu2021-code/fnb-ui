@@ -109,14 +109,14 @@ function CartLine({ l }: { l: RLine }) {
   const t = useRT(), en = useEn(); const r = useR(); const pay = r.mode === 'pay';
   const it = l.custom ? null : item(l.id), promo = linePromo(l), mem = lineMember(l, r.member), open = !pay && r.open === l.key;
   const meta: ReactNode[] = [];
-  if (l.w != null) meta.push(<StatusTag key="w" ent="item" k="weighed" form="dot" label={t('line.kg', { w: l.w.toFixed(3), p: lineUnit(l).toFixed(2) })} />);
-  else meta.push(<span key="u">{t('line.each', { p: lineUnit(l).toFixed(2) })}</span>);
+  if (l.w != null) meta.push(<StatusTag key="w" ent="item" k="weighed" form="dot" label={t('line.kg', { w: l.w.toFixed(3), p: money(lineUnit(l)) })} />);
+  else meta.push(<span key="u">{t('line.each', { p: money(lineUnit(l)) })}</span>);
   if (l.sku) meta.push(<span key="s">{en ? l.sku[1] : l.sku[0]}</span>);
   if (l.custom) meta.push(<StatusTag key="c" ent="item" k="custom" form="dot" label={t('line.custom')} />);
   if (l.gift) meta.push(<StatusTag key="g" ent="item" k="comp" form="dot" />);
   if (promo) meta.push(<StatusTag key="p" ent="item" k="promo" form="dot" label={<>{t('line.half2')} <span className="text-saving num">−{money(promo)}</span></>} />);
-  if (mem) meta.push(<StatusTag key="m" ent="item" k="promo" form="dot" label={<>{t('line.mp', { p: it!.mp!.toFixed(2) })} <span className="text-saving num">−{money(mem)}</span></>} />);
-  const amt = l.gift ? <><s className="text-placeholder">{money(lineUnit(l) * l.q)}</s> ¥0.00</> : money(lineAmt(l));
+  if (mem) meta.push(<StatusTag key="m" ent="item" k="promo" form="dot" label={<>{t('line.mp', { p: money(it!.mp!) })} <span className="text-saving num">−{money(mem)}</span></>} />);
+  const amt = l.gift ? <><s className="text-placeholder">{money(lineUnit(l) * l.q)}</s> {money(0)}</> : money(lineAmt(l));
   const side = l.w != null ? null : pay ? '×' + l.q : <Stepper q={l.q} onDec={() => bump(l.key, -1)} onInc={() => bump(l.key, 1)} />;
   return (
     <LineRow name={lineName(l, en)} amt={amt} meta={meta} side={side} strong open={open} highlight={!pay && r.last === l.key}
@@ -212,7 +212,7 @@ function ItemCard({ it }: { it: Item }) {
     </span>
   );
   const stock = out ? <StatusTag ent="stock" k="out" form="dot" /> : it.s != null && it.s <= 5 ? <StatusTag ent="stock" k="low" form="dot" label={t('card.low', { n: it.s })} /> : null;
-  return <ItemTile qty={q} off={out} onClick={onClick} ariaLabel={en ? it.en : it.n} title={title} foot={<TileFoot price={it.weigh ? t('card.kg', { p: it.p.toFixed(2) }) : '¥' + it.p.toFixed(2)} stock={stock} />} />;
+  return <ItemTile qty={q} off={out} onClick={onClick} ariaLabel={en ? it.en : it.n} title={title} foot={<TileFoot price={it.weigh ? t('card.kg', { p: money(it.p) }) : money(it.p)} stock={stock} />} />;
 }
 /** 扫码框下一行：未知条码横幅 / 查价卡 / 刚扫的一件（撤销 · 再来一件）/ 提示 */
 function ScanStrip() {
@@ -228,8 +228,8 @@ function ScanStrip() {
     return (
       <div className="flex items-center gap-3 min-h-52px px-pad rounded-rk bg-faint">
         <Ico name="search-check" size={18} className="flex-none" />
-        <span className="flex flex-col min-w-0 leading-tight"><b className="ellipsis">{en ? it.en : it.n}</b><span className="help num">{it.code}{it.promo ? ' · ' + t('line.half2') : ''}{it.mp ? ' · ' + t('line.mp', { p: it.mp.toFixed(2) }) : ''}</span></span>
-        <b className="text-xl font-700 num ml-auto">{it.weigh ? t('card.kg', { p: it.p.toFixed(2) }) : money(it.p)}</b>
+        <span className="flex flex-col min-w-0 leading-tight"><b className="ellipsis">{en ? it.en : it.n}</b><span className="help num">{it.code}{it.promo ? ' · ' + t('line.half2') : ''}{it.mp ? ' · ' + t('line.mp', { p: money(it.mp) }) : ''}</span></span>
+        <b className="text-xl font-700 num ml-auto">{it.weigh ? t('card.kg', { p: money(it.p) }) : money(it.p)}</b>
         <span className="help num whitespace-nowrap">{t('peek.stock', { n: it.s ?? 36 })}</span>
         <Button variant="muted" size="sm" className="bg-surface" disabled={it.s === 0} onClick={() => { r.set({ peek: false, peekId: null }); if (it.weigh) r.set({ ov: 'weigh', weighId: it.id, w: 0.5 }); else if (it.sku) r.set({ ov: 'sku', skuId: it.id, sku: null }); else addLine({ id: it.id, q: 1 }); }}>{t('peek.add')}</Button>
       </div>
@@ -304,7 +304,7 @@ function WeighDialog() {
   const t = useRT(), tc = useT(), en = useEn(); const r = useR(); const it = item(r.weighId); const amt = round2(it.p * r.w);
   return (
     <Dialog open={r.ov === 'weigh'} onClose={() => r.set({ ov: '' })} ariaLabel={t('weigh.title', { n: it.n })}>
-      <div className="row-between"><DialogTitle>{t('weigh.title', { n: en ? it.en : it.n })}</DialogTitle><span className="help num">{t('weigh.unit', { p: it.p.toFixed(2) })} · {it.code}</span></div>
+      <div className="row-between"><DialogTitle>{t('weigh.title', { n: en ? it.en : it.n })}</DialogTitle><span className="help num">{t('weigh.unit', { p: money(it.p) })} · {it.code}</span></div>
       <DialogDesc>{t('weigh.help')}</DialogDesc>
       <div className="rounded-rk bg-wash py-5 px-px flex flex-col items-center gap-1.5">
         <b className="text-48px font-700 tracking-[-.03em] num leading-none">{r.w.toFixed(3)}<small className="text-xl font-600 ml-1.5">kg</small></b>
@@ -325,7 +325,7 @@ function SkuDialog() {
   const label = r.sku ? [SKU.colors[r.sku[0]][0] + ' / ' + SKU.sizes[r.sku[1]], SKU.colors[r.sku[0]][1] + ' / ' + SKU.sizes[r.sku[1]]] as [string, string] : null;
   return (
     <Dialog wide open={r.ov === 'sku'} onClose={() => r.set({ ov: '' })} ariaLabel={t('sku.title', { n: it.n })}>
-      <div className="row-between"><DialogTitle>{t('sku.title', { n: en ? it.en : it.n })}</DialogTitle><b className="text-lg num">¥{it.p.toFixed(2)}</b></div>
+      <div className="row-between"><DialogTitle>{t('sku.title', { n: en ? it.en : it.n })}</DialogTitle><b className="text-lg num">{money(it.p)}</b></div>
       <DialogDesc>{t('sku.help')}</DialogDesc>
       <div className="grid gap-1.5" style={{ gridTemplateColumns: `88px repeat(${SKU.sizes.length}, minmax(0,1fr))` }}>
         <span className="help self-end">{t('sku.color')}</span>

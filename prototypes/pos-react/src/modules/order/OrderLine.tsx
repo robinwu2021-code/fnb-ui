@@ -15,7 +15,7 @@ export function OrderLine({ l, i, edit, tappable }: { l: Line; i: number; edit: 
   const t = useT(), lang = useLang(); const s = useStore(), dispatch = s.act;
   const name = lang === 'en' ? dish(l.n).en : l.n;
   const pr = l.st === 'gift' ? <><s className="text-placeholder">{money(l.p * l.q)}</s>{cur(' ¥0.00')}</> : money(l.p * l.q);
-  const meta = edit ? (curNode(l.sub) || t('order.each', { p: l.p })) : <><StatusTag ent="item" k={LINE_ST[l.st]} form="dot" />{l.rp && <StatusTag ent="item" k="repriced" form="dot" />}{l.sub && l.st !== 'gift' && <span>{curNode(l.sub)}</span>}</>;
+  const meta = edit ? ((l.sub ? curNode(t(l.sub)) : '') || t('order.each', { p: l.p })) : <><StatusTag ent="item" k={LINE_ST[l.st]} form="dot" />{l.rp && <StatusTag ent="item" k="repriced" form="dot" />}{l.sub && l.st !== 'gift' && <span>{curNode(t(l.sub))}</span>}</>;
   const side = edit ? <Stepper q={l.q} onDec={() => dispatch('dec:' + i)} onInc={() => dispatch('inc:' + i)} /> : '×' + l.q;
   const ck = !edit && s.batch && l.st !== 'void', on = ck && s.sel.indexOf(i) > -1;
   const base = 'grid gap-x-2.5 gap-y-0.75 items-center py-2.5 [.ledger_&+&]:border-t-2 [.ledger_&+&]:border-surface';

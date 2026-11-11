@@ -63,7 +63,7 @@ function SaleDetail({ s, en }: { s: Sale; en: boolean }) {
       </DueFoot>}>
       <Block title={t('od.lines', { n: salePcs(s) })}>
         {s.lines.map((l) => { const it = item(l.id), ret = l.returned || 0;
-          const meta = <>{l.weighed ? <StatusTag ent="item" k="weighed" form="dot" label={`${l.w!.toFixed(3)} kg × ¥${l.p.toFixed(2)}`} /> : <span>¥{l.p.toFixed(2)} × {l.q}</span>}{l.sku && <span>{en ? l.sku[1] : l.sku[0]}</span>}{ret > 0 && <StatusTag ent="item" k="returned" form="dot" label={t('od.returnedN', { n: l.weighed ? '' : ret }).trim()} />}</>;
+          const meta = <>{l.weighed ? <StatusTag ent="item" k="weighed" form="dot" label={`${l.w!.toFixed(3)} kg × ${money(l.p)}`} /> : <span>{money(l.p)} × {l.q}</span>}{l.sku && <span>{en ? l.sku[1] : l.sku[0]}</span>}{ret > 0 && <StatusTag ent="item" k="returned" form="dot" label={t('od.returnedN', { n: l.weighed ? '' : ret }).trim()} />}</>;
           return <LineRow key={l.key} name={en ? it.en : it.n} amt={money(l.amt)} meta={meta} side={l.weighed ? '' : '×' + l.q} voided={refundableQty(l) === 0} />; })}
       </Block>
       {s.disc > 0 && <Block title={t('od.disc')}><FeeRow icon="badge-percent" name={t('od.disc')} amt={'−' + money(s.disc)} neg /></Block>}

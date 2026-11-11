@@ -86,7 +86,7 @@ export function ReturnDialog() {
               <div key={l.key} className={cn('grid grid-cols-[22px_minmax(0,1fr)_auto_88px] gap-x-3 items-center py-2.5 [&+&]:border-t-2 [&+&]:border-surface', !left && 'opacity-50')}>
                 <Checkbox checked={on} disabled={!left} onCheckedChange={toggle} aria-label={name(l.id)} />
                 <span className="flex flex-col min-w-0"><b className="font-600 ellipsis">{name(l.id)}{l.sku && <span className="font-400 text-sub"> · {en ? l.sku[1] : l.sku[0]}</span>}</b>
-                  <small className="help num">{l.weighed ? `${l.w!.toFixed(3)} kg · ${t('rt.wholeLine')}` : (noReceipt ? '' : t('rt.left', { n: left }) + ' · ') + t('line.each', { p: unit.toFixed(2) })}{!noReceipt && (l.returned || 0) > 0 ? ' · ' + t('od.returnedN', { n: l.weighed ? '' : l.returned! }) : ''}</small></span>
+                  <small className="help num">{l.weighed ? `${l.w!.toFixed(3)} kg · ${t('rt.wholeLine')}` : (noReceipt ? '' : t('rt.left', { n: left }) + ' · ') + t('line.each', { p: money(unit) })}{!noReceipt && (l.returned || 0) > 0 ? ' · ' + t('od.returnedN', { n: l.weighed ? '' : l.returned! }) : ''}</small></span>
                 <span>{l.weighed ? <span className="help">{on ? '1' : '—'}</span> : <Stepper q={q} onDec={() => set({ pick: { ...r.pick, [l.key]: Math.max(0, q - 1) } })} onInc={() => set({ pick: { ...r.pick, [l.key]: Math.min(left, q + 1) } })} />}</span>
                 <span className={cn('text-right font-600 num', !on && 'text-placeholder')}>{money(on ? (l.weighed ? unit : unit * q) : 0)}</span>
               </div>); })}

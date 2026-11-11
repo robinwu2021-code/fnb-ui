@@ -1,5 +1,6 @@
 // 零售收银词条：只放零售差异的 key（方案 §1.1 dict.retail），和主词表同一格式 [中, 英]
 import { useStore } from '@/store';
+import { cur } from '@/lib/money';
 import { STATES, type StDef } from '@/lib/states';
 
 const D: Record<string, [string, string]> = {
@@ -9,7 +10,7 @@ const D: Record<string, [string, string]> = {
   'cart': ['购物车', 'Cart'], 'cart.no': ['单号 {no}', 'No. {no}'], 'cart.empty': ['扫码开始收银', 'Scan to start'], 'cart.emptyDesc': ['扫码枪对准商品条码即可加入；无码商品点右侧快捷商品', 'Point the scanner at a barcode, or tap a quick item on the right'],
   'q.member': ['会员', 'Member'], 'q.hold': ['挂单', 'Hold'], 'q.pick': ['取单', 'Recall'], 'q.disc': ['整单折扣', 'Discount'], 'q.reprice': ['改价', 'Price'],
   'member.add': ['扫会员码 / 输手机号', 'Scan member code / phone'], 'member.on': ['王女士 · 金卡 · 余额 ¥520.00', 'Ms Wang · Gold · balance ¥520.00'], 'member.help': ['识别会员后自动按会员价计算', 'Member prices apply once identified'],
-  'line.each': ['¥{p} / 件', '¥{p} each'], 'line.kg': ['{w} kg × ¥{p}/kg', '{w} kg × ¥{p}/kg'], 'line.half2': ['第二件半价', '2nd at half price'], 'line.mp': ['会员价 ¥{p}', 'Member ¥{p}'], 'line.custom': ['临时商品', 'Custom item'],
+  'line.each': ['{p} / 件', '{p} each'], 'line.kg': ['{w} kg × {p}/kg', '{w} kg × {p}/kg'], 'line.half2': ['第二件半价', '2nd at half price'], 'line.mp': ['会员价 {p}', 'Member {p}'], 'line.custom': ['临时商品', 'Custom item'],
   'line.reprice': ['改价', 'Price'], 'line.gift': ['赠送', 'Free'], 'line.del': ['删除', 'Remove'], 'line.note': ['备注', 'Note'],
   'fees': ['优惠', 'Savings'], 'fees.order': ['促销 → 会员价 → 券 → 抹零', 'Promo → member → coupon → rounding'],
   'fee.promo': ['促销 · 第二件半价', 'Promo · 2nd half price'], 'fee.mem': ['会员价', 'Member price'], 'fee.memOff': ['会员价 · 识别会员后可用', 'Member price · identify member first'], 'fee.coupon': ['优惠券 · 在促销后计算', 'Coupon · applied after promos'], 'fee.round': ['抹零 · 抹分', 'Rounding · cents'],
@@ -19,8 +20,8 @@ const D: Record<string, [string, string]> = {
   'scan.unknown': ['条码 {c} 没有找到商品', 'Barcode {c} not found'], 'scan.custom': ['临时商品', 'Custom item'], 'scan.new': ['新建商品', 'New product'],
   'scan.weighCode': ['称重码已解析', 'Scale label read'],
   'quick': ['快捷商品', 'Quick items'], 'quick.hint': ['无码商品、散称、购物袋', 'No-barcode, by-weight and bags'],
-  'card.kg': ['¥{p}/kg', '¥{p}/kg'], 'card.sku': ['多规格', 'Variants'], 'card.out': ['缺货', 'Out of stock'], 'card.low': ['仅剩 {n}', 'Only {n} left'],
-  'weigh.title': ['称重 · {n}', 'Weigh · {n}'], 'weigh.unit': ['单价 ¥{p}/kg', '¥{p}/kg'], 'weigh.stable': ['电子秤 · 已稳定', 'Scale · stable'], 'weigh.tare': ['去皮', 'Tare'], 'weigh.zero': ['清零', 'Zero'], 'weigh.manual': ['手输重量', 'Enter weight'],
+  'card.kg': ['{p}/kg', '{p}/kg'], 'card.sku': ['多规格', 'Variants'], 'card.out': ['缺货', 'Out of stock'], 'card.low': ['仅剩 {n}', 'Only {n} left'],
+  'weigh.title': ['称重 · {n}', 'Weigh · {n}'], 'weigh.unit': ['单价 {p}/kg', '{p}/kg'], 'weigh.stable': ['电子秤 · 已稳定', 'Scale · stable'], 'weigh.tare': ['去皮', 'Tare'], 'weigh.zero': ['清零', 'Zero'], 'weigh.manual': ['手输重量', 'Enter weight'],
   'weigh.amt': ['金额', 'Amount'], 'weigh.add': ['加入 {m}', 'Add {m}'], 'weigh.help': ['把商品放上秤，读数稳定后自动变黑；去皮后再放商品', 'Place the item on the scale; the reading turns dark once stable'],
   'sku.title': ['选规格 · {n}', 'Choose variant · {n}'], 'sku.help': ['格子里是库存；缺货的不能选', 'Numbers are stock; out-of-stock cells are disabled'], 'sku.color': ['颜色', 'Colour'], 'sku.add': ['加入 {s}', 'Add {s}'], 'sku.pick': ['先选颜色和尺码', 'Pick colour and size'],
   'held.title': ['取单 · 挂起 {n} 单', 'Recall · {n} on hold'], 'held.note': ['当前购物车还有 {n} 行；取单前会先把它挂起', 'Current cart has {n} lines; it will be put on hold first'], 'held.take': ['取回', 'Recall'], 'held.pcs': ['{n} 件', '{n} items'],
@@ -98,7 +99,7 @@ const D: Record<string, [string, string]> = {
   'proto': ['原型只画了收银工作台', 'Only the checkout workbench is drawn in this prototype'],
 };
 function tr(lang: string, key: string, params?: Record<string, string | number>) {
-  let s = D[key] ? D[key][lang === 'en' ? 1 : 0] : key;
+  let s = cur(D[key] ? D[key][lang === 'en' ? 1 : 0] : key); // 词条里写死的 ¥ 换成当前地区币种；价格参数由调用方用 money() 格式化后传入
   if (params) for (const k in params) s = s.split('{' + k + '}').join(String(params[k]));
   return s;
 }

@@ -29,6 +29,7 @@ export const DICT: Record<string, [string, string]> = {
   'order.empty': ['还没有点菜', 'Nothing ordered yet'], 'order.emptyHint': ['从菜单里点一道菜', 'Pick a dish from the menu'],
   'order.due': ['应收', 'Due'], 'order.dueNote': ['{n} 道 · 已优惠 {m}', '{n} items · {m} off'], 'order.send': ['送厨 · {n}', 'Send · {n}'], 'order.pay': ['结账', 'Pay'],
   'order.cancel': ['取消', 'Cancel'], 'order.splitTo': ['拆到新单', 'Split to new order'], 'order.rush': ['催菜', 'Rush'], 'order.transfer': ['转菜', 'Transfer'], 'order.void': ['退菜', 'Void'], 'order.comp': ['赠送', 'Comp'], 'order.reprice': ['调价', 'Reprice'],
+  'spec.sample': ['大份 · 微辣 · 少油', 'Large · mild · less oil'],
   'order.meta': ['4 人 · 48 分钟 · 堂食 · #1024', '4 guests · 48 min · Dine-in · #1024'], 'order.note': ['备注：', 'Note: '], 'order.more': ['更多', 'More'], 'order.each': ['¥{p} / 份', '¥{p} each'],
   'quick.member': ['会员码', 'Member'], 'quick.hold': ['挂单', 'Hold'], 'quick.split': ['拆单', 'Split'], 'quick.share': ['拼桌', 'Share'], 'quick.reprice': ['调价', 'Reprice'], 'quick.note': ['备注', 'Note'], 'quick.move': ['换桌', 'Move'], 'quick.comp': ['赠送', 'Comp'], 'quick.prebill': ['预结单', 'Pre-bill'], 'quick.pvoucher': ['验券', 'Voucher'], 'quick.drawer': ['开钱箱', 'Drawer'], 'quick.soldout': ['沽清', 'Sold out'], 'quick.custom': ['临时菜', 'Custom'], 'quick.call': ['叫号', 'Call no.'],
   'spec.size': ['规格 · 必选', 'Size · required'], 'spec.large': ['大份', 'Large'], 'spec.small': ['小份', 'Small'], 'spec.spice': ['辣度', 'Spice'], 'spec.none': ['不辣', 'None'], 'spec.mild': ['微辣', 'Mild'], 'spec.medium': ['中辣', 'Medium'], 'spec.hot': ['特辣', 'Hot'],
