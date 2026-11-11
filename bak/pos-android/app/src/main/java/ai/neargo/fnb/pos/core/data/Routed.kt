@@ -1,0 +1,104 @@
+package ai.neargo.fnb.pos.core.data
+
+import ai.neargo.fnb.pos.core.lan.IntentResult
+import ai.neargo.fnb.pos.core.lan.LanLink
+import ai.neargo.fnb.pos.core.lan.RemoteIntent
+import ai.neargo.fnb.pos.core.lan.RemoteIntent as I
+import ai.neargo.fnb.pos.core.model.AdjustmentRequest
+import ai.neargo.fnb.pos.core.model.LineStatus
+import ai.neargo.fnb.pos.core.model.OrderResult
+import ai.neargo.fnb.pos.core.model.Product
+import ai.neargo.fnb.pos.core.model.ShiftRecord
+import ai.neargo.fnb.pos.core.model.Sku
+import ai.neargo.fnb.pos.core.model.StoreSettings
+import ai.neargo.fnb.pos.core.model.TableOrder
+
+/**
+ * 副 POS 写入路由（N5）：读取一律来自本机（副机为主机只读副本）；
+ * 副机的营业写入转为意图交主机仲裁，管理/库存/交班/打印仅主 POS 可执行。单机或主机时直接调用本机仓库。
+ */
+private const val HOST_ONLY = "仅主 POS 可执行此操作"
+
+private fun IntentResult.unit(): Result<Unit> = if (ok) Result.success(Unit) else Result.failure(IllegalStateException(message))
+
+class RoutedFloor(private val ws: LocalWorkspace, private val link: LanLink) : FloorRepository by ws {
+    private suspend fun go(i: RemoteIntent, s: String, local: suspend () -> Result<Unit>) = if (link.isSecondary) link.submit(i, s).unit() else local()
+    override suspend fun createReservation(tableId: String, name: String, phone: String, guests: Int, arrivesAt: Long, note: String) =
+        go(I.CreateReservation(tableId, name, phone, guests, arrivesAt, note), "$tableId 预订") { ws.createReservation(tableId, name, phone, guests, arrivesAt, note) }
+    override suspend fun cancelReservation(id: String) = go(I.CancelReservation(id), "取消预订") { ws.cancelReservation(id) }
+    override suspend fun checkInReservation(id: String) = go(I.CheckInReservation(id), "预订到店") { ws.checkInReservation(id) }
+    override suspend fun openTable(tableId: String, guests: Int) = go(I.OpenTable(tableId, guests), "$tableId 开台") { ws.openTable(tableId, guests) }
+    override suspend fun settle(tableId: String, amount: Long, method: String, online: Boolean, received: Long) =
+        go(I.Settle(tableId, amount, method, online, received), "$tableId 结账") { ws.settle(tableId, amount, method, online, received) }
+    override suspend fun startCleaning(tableId: String) = go(I.StartCleaning(tableId), "$tableId 清台") { ws.startCleaning(tableId) }
+    override suspend fun finishCleaning(tableId: String) = go(I.FinishCleaning(tableId), "$tableId 清台完成") { ws.finishCleaning(tableId) }
+    override suspend fun setPosition(tableId: String, x: Int, y: Int) = go(I.SetPosition(tableId, x, y), "$tableId 位置") { ws.setPosition(tableId, x, y) }
+    override suspend fun changeTable(from: String, to: String) = go(I.ChangeTable(from, to), "$from 换桌 $to") { ws.changeTable(from, to) }
+    override suspend fun mergeTable(from: String, into: String) = go(I.MergeTable(from, into), "$from 并台 $into") { ws.mergeTable(from, into) }
+    override suspend fun splitLines(from: String, uids: Set<Long>, to: String, guests: Int) = go(I.SplitLines(from, uids, to, guests), "$from 拆单 $to") { ws.splitLines(from, uids, to, guests) }
+}
+
+class RoutedOrders(private val ws: LocalWorkspace, private val link: LanLink) : OrderRepository by ws {
+    private suspend fun go(i: RemoteIntent, s: String, local: suspend () -> Result<Unit>) = if (link.isSecondary) link.submit(i, s).unit() else local()
+    private suspend fun order(tableId: String, i: RemoteIntent, s: String, local: suspend () -> OrderResult): OrderResult {
+        if (!link.isSecondary) return local()
+        val r = link.submit(i, s)
+        return if (r.ok) OrderResult.Ok(ws.lanSnapshot().store?.orders?.get(tableId) ?: TableOrder()) else OrderResult.Rejected(r.message)
+    }
+    private suspend fun unit(i: RemoteIntent, s: String, local: suspend () -> Unit) {
+        if (!link.isSecondary) return local()
+        val r = link.submit(i, s)
+        if (!r.ok) throw WorkspaceRejectedException(r.message)
+    }
+    override suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String, mealChoiceIds: List<String>) =
+        order(tableId, I.AddDish(tableId, product.id, sku?.key, qty, note, mealChoiceIds), "$tableId 加 ${product.name}×$qty") { ws.addDish(tableId, product, sku, qty, note, mealChoiceIds) }
+    override suspend fun authorizeAdjustment(tableId: String, request: AdjustmentRequest, email: String, password: String) =
+        go(I.Adjust(tableId, request, email, password), "$tableId 主管授权") { ws.authorizeAdjustment(tableId, request, email, password) }
+    override suspend fun setBenefits(tableId: String, coupon: Boolean, activity: Boolean) = go(I.SetBenefits(tableId, coupon, activity), "$tableId 优惠") { ws.setBenefits(tableId, coupon, activity) }
+    override suspend fun setLineNote(tableId: String, uid: Long, note: String) = order(tableId, I.LineNote(tableId, uid, note), "$tableId 菜品备注") { ws.setLineNote(tableId, uid, note) }
+    override suspend fun setOrderNote(tableId: String, note: String) = go(I.OrderNote(tableId, note), "$tableId 整单备注") { ws.setOrderNote(tableId, note) }
+    override suspend fun hold(tableId: String): Result<Int> {
+        if (!link.isSecondary) return ws.hold(tableId)
+        val r = link.submit(I.Hold(tableId), "$tableId 挂单")
+        return if (r.ok) Result.success(r.qty) else Result.failure(IllegalStateException(r.message))
+    }
+    override suspend fun retrieve(ticketId: String, tableId: String) = go(I.Retrieve(ticketId, tableId), "$tableId 取单") { ws.retrieve(ticketId, tableId) }
+    override suspend fun changeQty(tableId: String, uid: Long, delta: Int) = order(tableId, I.ChangeQty(tableId, uid, delta), "$tableId 改数量") { ws.changeQty(tableId, uid, delta) }
+    override suspend fun clearNew(tableId: String) = unit(I.ClearNew(tableId), "$tableId 清空新菜") { ws.clearNew(tableId) }
+    override suspend fun sendToKitchen(tableId: String, online: Boolean): SendResult {
+        if (!link.isSecondary) return ws.sendToKitchen(tableId, online)
+        val r = link.submit(I.SendToKitchen(tableId, online), "$tableId 送厨")
+        if (!r.ok && r.qty == 0 && r.message != "没有待送厨的菜品") throw WorkspaceRejectedException(r.message)
+        return SendResult(r.qty, queued = false)
+    }
+    override suspend fun advance(tableId: String, uid: Long, to: LineStatus) = unit(I.Advance(tableId, uid, to), "$tableId 菜品状态") { ws.advance(tableId, uid, to) }
+    override suspend fun setMember(tableId: String, member: Boolean) = unit(I.SetMember(tableId, member), "$tableId 会员") { ws.setMember(tableId, member) }
+}
+
+class RoutedConfig(private val ws: LocalWorkspace, private val link: LanLink) : StoreConfigRepository by ws {
+    private inline fun host(local: () -> Result<Unit>) = if (link.isSecondary) Result.failure(IllegalStateException(HOST_ONLY)) else local()
+    override suspend fun addArea(name: String, en: String) = host { return ws.addArea(name, en) }
+    override suspend fun saveTable(id: String, areaId: String, seats: String, isNew: Boolean) = host { return ws.saveTable(id, areaId, seats, isNew) }
+    override suspend fun addCategory(name: String, en: String) = host { return ws.addCategory(name, en) }
+    override suspend fun addSpecGroup(name: String, en: String, options: String) = host { return ws.addSpecGroup(name, en, options) }
+    override suspend fun saveProduct(product: Product, menuIds: Set<String>) = host { return ws.saveProduct(product, menuIds) }
+    override suspend fun adjustStock(productId: String, skuKey: String?, value: Int, reason: String) = host { return ws.adjustStock(productId, skuKey, value, reason) }
+    override suspend fun saveMenu(id: String?, name: String, en: String, productIds: List<String>) = host { return ws.saveMenu(id, name, en, productIds) }
+    override suspend fun setPublished(menuId: String, published: Boolean) = host { return ws.setPublished(menuId, published) }
+    override suspend fun saveSettings(settings: StoreSettings) = host { return ws.saveSettings(settings) }
+}
+
+class RoutedShift(private val ws: LocalWorkspace, private val link: LanLink) : ShiftRepository by ws {
+    override suspend fun closeShift(counted: Long, staff: String): Result<ShiftRecord> =
+        if (link.isSecondary) Result.failure(IllegalStateException(HOST_ONLY)) else ws.closeShift(counted, staff)
+}
+
+class RoutedPrint(private val ws: LocalWorkspace, private val link: LanLink) : PrintRepository by ws {
+    override suspend fun preBill(tableId: String) = if (link.isSecondary) Result.failure(IllegalStateException("打印由主 POS 负责，请在主 POS 操作")) else ws.preBill(tableId)
+    override suspend fun reprint(jobId: String) = if (link.isSecondary) Result.failure(IllegalStateException("打印由主 POS 负责，请在主 POS 操作")) else ws.reprint(jobId)
+}
+
+class RoutedSync(private val ws: LocalWorkspace, private val link: LanLink) : SyncRepository by ws {
+    override suspend fun confirmDelivery(ticketId: String, reason: String) =
+        if (link.isSecondary) Result.failure(IllegalStateException(HOST_ONLY)) else ws.confirmDelivery(ticketId, reason)
+}

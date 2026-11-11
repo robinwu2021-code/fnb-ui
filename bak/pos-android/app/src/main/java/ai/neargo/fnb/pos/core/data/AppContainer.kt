@@ -53,12 +53,26 @@ class AppContainer(context: Context) {
     val auth: AuthRepository = workspace
     fun deviceId() = workspace.deviceId()
     val session: SessionRepository = workspace
-    val config: StoreConfigRepository = workspace
-    val floor: FloorRepository = workspace
-    val orders: OrderRepository = workspace
-    val sync: SyncRepository = workspace
-    val print: PrintRepository = workspace
-    val shift: ShiftRepository = workspace
+    // —— 主副 POS（N5）：副机写入经主机仲裁；主机执行器直接使用本机仓库 ——
+    private val deviceKeys get() = identity.keys
+    val lanLink = ai.neargo.fnb.pos.core.lan.LanLink(workspace, deviceKeys, appScope, deviceName = android.os.Build.MODEL ?: "副 POS")
+    val lanHost = ai.neargo.fnb.pos.core.lan.LanHost(workspace, ai.neargo.fnb.pos.core.lan.HostExecutor(workspace, workspace, workspace, database), deviceKeys, appScope,
+        hostName = android.os.Build.MODEL ?: "主 POS")
+    val lan get() = workspace.lanState
+    suspend fun setHostRole(on: Boolean) {
+        if (on) { workspace.updateLan("设为主 POS") { it.copy(role = LanRole.Host) }; kotlinx.coroutines.withContext(Dispatchers.IO) { lanHost.start() } }
+        else { lanHost.stop(); workspace.updateLan("停止主 POS，回到单机") { it.copy(role = LanRole.Standalone) } }
+    }
+    suspend fun revokeDevice(deviceId: String) {
+        workspace.updateLan("撤销副机 $deviceId") { l -> l.copy(paired = l.paired.map { if (it.deviceId == deviceId) it.copy(revokedAt = System.currentTimeMillis()) else it }) }
+        lanHost.disconnect(deviceId)
+    }
+    val config: StoreConfigRepository = RoutedConfig(workspace, lanLink)
+    val floor: FloorRepository = RoutedFloor(workspace, lanLink)
+    val orders: OrderRepository = RoutedOrders(workspace, lanLink)
+    val sync: SyncRepository = RoutedSync(workspace, lanLink)
+    val print: PrintRepository = RoutedPrint(workspace, lanLink)
+    val shift: ShiftRepository = RoutedShift(workspace, lanLink)
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
     val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
     val messages: MessageBus = SimpleMessageBus()
@@ -68,6 +82,8 @@ class AppContainer(context: Context) {
     init {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
+        if (workspace.lanState.value.role == LanRole.Host) appScope.launch(Dispatchers.IO) { runCatching { lanHost.start() }.onFailure { messages.post("主 POS 服务启动失败：${it.message}") } }
+        lanLink.start()
         // 授权到期、会话过期随时间发生：定时重新评估
         appScope.launch { while (true) { workspace.refreshAuth(); kotlinx.coroutines.delay(30_000) } }
     }

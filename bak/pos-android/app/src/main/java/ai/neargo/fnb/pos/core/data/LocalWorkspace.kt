@@ -106,6 +106,8 @@ data class Vault(
     val sessionExpiresAt: Long = 0,
     /** 授权相关操作记录（导入/签发/撤销/校时），不含凭证内容。 */
     val authLog: List<String> = emptyList(),
+    /** 局域网主副 POS 状态（N5）。 */
+    val lan: LanState = LanState(),
 ) {
     val store get() = storeId?.let { stores[it] }
 }
@@ -118,6 +120,39 @@ interface SnapshotStore {
     suspend fun load(): String?
     suspend fun save(json: String)
     suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt
+}
+
+/** 局域网角色：单机、主 POS（唯一协调方）、副 POS（经主机仲裁，本机只保存只读副本）。 */
+@Serializable enum class LanRole(val label: String) { Standalone("单机"), Host("主 POS"), Secondary("副 POS") }
+
+/** 主机登记的副机。 */
+@Serializable data class PairedDevice(
+    val deviceId: String, val name: String, val publicKey: String, val thumbprint: String,
+    val pairedAt: Long, val revokedAt: Long = 0, val lastSeen: Long = 0,
+)
+
+/** 副机待主机确认的意图：发送前保存，超时/重启后用同一命令ID重发。 */
+@Serializable data class PendingIntent(
+    val commandId: String, val storeId: String, val payload: String, val summary: String, val createdAt: Long,
+    val attempts: Int = 0, val lastError: String = "", val nextAt: Long = 0,
+)
+
+@Serializable data class LanState(
+    val role: LanRole = LanRole.Standalone,
+    val port: Int = 47600,
+    // 主机
+    val paired: List<PairedDevice> = emptyList(),
+    // 副机
+    val hostAddress: String = "", val hostId: String = "", val hostName: String = "", val hostPublicKey: String = "",
+    val sessionExpiresAt: Long = 0, val replicaToken: String = "", val replicaAt: Long = 0,
+    val pending: List<PendingIntent> = emptyList(),
+    val log: List<String> = emptyList(),
+)
+
+/** 主机执行副机意图时的命令来源：命令日志以副机设备/命令ID/操作人记录，用于同事务去重。 */
+class RemoteOrigin(val deviceId: String, val commandId: String, val actorId: String) :
+    kotlin.coroutines.AbstractCoroutineContextElement(RemoteOrigin) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<RemoteOrigin>
 }
 
 /** 命令被协调方判为冲突或拒绝（快照未写入）。 */
@@ -254,7 +289,9 @@ class LocalWorkspace(
         blockedState.value?.let { throw WorkspaceWriteException(IllegalStateException(it)) }
         // 营业写入（带事件）须有效授权；授权失效时保留账本，只拒绝新写入
         val status = evaluate(state.value)
+        if (event != null && state.value.lan.role == LanRole.Secondary) throw WorkspaceRejectedException("副 POS 不直接写入业务数据，请经主 POS 执行")
         if (event != null && !status.writable) { authState.value = status; throw WorkspaceRejectedException(status.blockMessage) }
+        val origin = kotlinx.coroutines.currentCoroutineContext()[RemoteOrigin]
         val (candidate, result) = f(state.value)
         // 每张厨房票据都有送达记录（送厨、退菜、补打）；纯计算，无新增时不改变对象
         var next = candidate.storeId?.let { id -> candidate.stores[id]?.let { s0 -> ensureDeliveries(s0, "simulation").takeIf { it !== s0 }?.let { candidate.copy(stores = candidate.stores + (id to it)) } } } ?: candidate
@@ -266,10 +303,10 @@ class LocalWorkspace(
                 val known = state.value.aggregateRevisions[storeId].orEmpty()
                 val versions = aggregates.distinct().map { AggregateVersion(it, known[it] ?: 0L) }
                 next = next.copy(aggregateRevisions = next.aggregateRevisions + (storeId to known + versions.associate { it.id to it.expected + 1 }))
-                val commandId = UUID.randomUUID().toString()
+                val commandId = origin?.commandId ?: UUID.randomUUID().toString()
                 val command = JournalCommand(
-                    storeId = storeId, deviceId = state.value.deviceId, commandId = commandId, type = type, payload = payload,
-                    aggregates = versions, tenantId = state.value.tenantId, actorId = state.value.user ?: DemoCatalog.STAFF,
+                    storeId = storeId, deviceId = origin?.deviceId ?: state.value.deviceId, commandId = commandId, type = type, payload = payload,
+                    aggregates = versions, tenantId = state.value.tenantId, actorId = origin?.actorId ?: state.value.user ?: DemoCatalog.STAFF,
                     coordinatorId = state.value.deviceId, authorityEpoch = state.value.authorityEpoch, occurredAt = clock(),
                     authorizationRef = status.grant?.jti, policyVersion = status.grant?.policyVersion,
                 )
@@ -357,6 +394,27 @@ class LocalWorkspace(
     private fun sessionEnd(v: Vault): Long {
         val st = evaluate(v)
         return OfflineAuthority.sessionExpiry(clock(), st.grant?.takeIf { st.state == AuthState.Active }?.exp)
+    }
+
+    // —— 局域网（N5）：设备管理与副本，均为本机记录，不产生营业事件 ——
+    val lanState: StateFlow<LanState> = derive { it.lan }
+    fun lanSnapshot(): Vault = state.value
+    fun tenantId() = state.value.tenantId
+    fun currentUser() = state.value.user
+
+    private fun lanLogged(l: LanState, line: String) = l.copy(log = (l.log + "${clock()} $line").takeLast(200))
+
+    suspend fun updateLan(note: String? = null, f: (LanState) -> LanState) {
+        commit { v -> val n = f(v.lan); if (n == v.lan) v else v.copy(lan = if (note != null) lanLogged(n, note) else n) }
+    }
+
+    /** 副机：用主机快照替换本店只读副本，保留本机的选桌状态。 */
+    suspend fun applyReplica(store: StoreData, token: String) {
+        commit { v ->
+            if (v.lan.role != LanRole.Secondary) return@commit v
+            val keep = v.stores[store.id]?.currentTableId?.takeIf { id -> store.tables.any { it.id == id } } ?: store.currentTableId
+            v.copy(stores = v.stores + (store.id to store.copy(currentTableId = keep)), lan = v.lan.copy(replicaToken = token, replicaAt = clock()))
+        }
     }
 
     // —— 授权中心 ——
@@ -712,7 +770,7 @@ class LocalWorkspace(
     }
 
     override suspend fun process(kitchenOk: Boolean): Int {
-        if (blockedState.value != null) return 0
+        if (blockedState.value != null || state.value.lan.role == LanRole.Secondary) return 0
         var failed = 0
         val s = currentStore() ?: return 0
         if (s.printJobs.none { it.state != PrintState.Printed }) return 0
@@ -894,7 +952,7 @@ class LocalWorkspace(
      * 幂等：只处理 Pending；送厨只把该批次的待同步行改为已下单，重复补发不会重复出单。
      */
     override suspend fun syncNow(): Int {
-        if (blockedState.value != null) return 0
+        if (blockedState.value != null || state.value.lan.role == LanRole.Secondary) return 0
         var done = 0
         commit { v ->
             v.copy(stores = v.stores.mapValues { (_, s) ->

@@ -178,6 +178,7 @@ fun PosApp(shell: ShellViewModel) {
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
                 val authStatus by appContainer().auth.auth.collectAsStateWithLifecycle()
+                ai.neargo.fnb.pos.feature.lan.LanBanner()
                 ai.neargo.fnb.pos.feature.authcenter.AuthBanner(authStatus, onOpen = { nav.goTop(ai.neargo.fnb.pos.navigation.AuthRoute) }, onRelogin = shell::logout)
                 Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
                 if (!layout.wide) Box(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(vertical = 2.dp), contentAlignment = Alignment.Center) { WorkNav(current, go, onManage) }

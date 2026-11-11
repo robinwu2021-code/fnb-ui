@@ -17,7 +17,11 @@ import java.io.Closeable
  * 第一阶段事务存储：保留门店级 JSON，队列独立存行，所有行同一事务提交。
  * 尚不是领域事件日志，不能将这里的快照用作多 POS 或云端整库覆盖协议。
  */
-internal class SqliteSnapshotStore(private val context: Context, private val name: String = "pos-workspace.db") : SnapshotStore, Closeable {
+internal class SqliteSnapshotStore(private val context: Context, private val name: String = "pos-workspace.db") : SnapshotStore, Closeable, ai.neargo.fnb.pos.core.lan.CommandReceipts {
+    /** 主机去重：副机命令是否已与业务同事务提交。 */
+    override suspend fun committed(storeId: String, deviceId: String, commandId: String) =
+        journal.receipt(storeId, deviceId, commandId)?.status == ReceiptStatus.Committed
+
     /** 损坏时不删除库文件（系统默认处理会删库），保留原件供诊断导出。 */
     private val keepCorrupt = DatabaseErrorHandler { db -> android.util.Log.e("SqliteSnapshotStore", "数据库损坏，保留原件：${db.path}") }
     private val helper = object : SQLiteOpenHelper(context.applicationContext, name, null, DB_VERSION, keepCorrupt) {

@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
     val supervisor: String, val reason: String, val amount: Long, val qty: Int, val at: Long,
     val lineName: String = "", val detail: String = "",
 )
-data class AdjustmentRequest(val kind: AdjustmentKind, val uid: Long? = null, val quantity: Int = 1, val percent: Int = 100, val reason: String = "")
+@kotlinx.serialization.Serializable data class AdjustmentRequest(val kind: AdjustmentKind, val uid: Long? = null, val quantity: Int = 1, val percent: Int = 100, val reason: String = "")
 
 object AdjustmentRules {
     fun apply(order: TableOrder, request: AdjustmentRequest): OrderResult {
