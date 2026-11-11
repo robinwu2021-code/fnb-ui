@@ -13,7 +13,8 @@ export const cs = () => currency().sym;
 export function cur(s: string): string {
   if (!s || s.indexOf('¥') < 0) return s;
   const c = currency();
-  return s.replace(/¥(\s?)([\d,]+(?:\.\d+)?)?/g, (_m, _sp, num?: string) => (num == null ? c.sym.trimEnd() : c.sym + (c.dp === 0 ? num.replace(/\.\d+$/, '') : num)));
+  // ¥ 后面紧跟数字或占位符 {p} 时用完整符号（保留 AED 后的空格）；单独的 ¥ 用去掉尾空格的符号
+  return s.replace(/¥(\s?)([\d,]+(?:\.\d+)?)?/g, (_m, _sp, num: string | undefined, at: number, all: string) => (num != null ? c.sym + (c.dp === 0 ? num.replace(/\.\d+$/, '') : num) : all[at + 1] === '{' ? c.sym : c.sym.trimEnd()));
 }
 /** 展示组件用：传进来是纯文字就换币种（示例数据里的「+¥3」「最多减 ¥30」等），别的原样返回 */
 export function curNode<T>(n: T): T { return (typeof n === 'string' ? cur(n) : n) as T; }

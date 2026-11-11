@@ -27,7 +27,7 @@ export const INITIAL_DEVICES: Device[] = [
   { id: 'kds1', name: 'KDS-热菜', en: 'KDS Hot', kind: 'kds', st: 'online', ip: '192.168.1.41', via: 'mdns', use: ['hot'], model: 'KDS-15', fw: '1.4.2', addedAt: '11-01' },
   { id: 'kds2', name: 'KDS-凉菜', en: 'KDS Cold', kind: 'kds', st: 'offline', ip: '192.168.1.43', via: 'mdns', use: ['cold'], model: 'KDS-15', fw: '1.4.2', addedAt: '11-01' },
   { id: 'cds1', name: '客显 1', en: 'Customer display 1', kind: 'cds', st: 'online', conn: 'HDMI-2', via: 'hdmi', model: '10.1" 1280×800', addedAt: '10-28' },
-  { id: 'scale1', name: '电子秤', en: 'Scale', kind: 'scale', st: 'unplugged', conn: 'COM3', via: 'serial', model: '大华 TM-15', addedAt: '11-02' },
+  { id: 'scale1', name: '电子秤', en: 'Scale', kind: 'scale', st: 'unplugged', conn: 'COM3', via: 'serial', model: 'Dahua TM-15', addedAt: '11-02' },
   { id: 'scan1', name: '扫码枪', en: 'Scanner', kind: 'scanner', st: 'online', conn: 'USB-HID', via: 'usb', model: 'Honeywell 1470g', addedAt: '10-28' },
   { id: 'pick1', name: '取餐叫号屏', en: 'Pickup screen', kind: 'pickup', st: 'unplugged', via: 'mdns', todo: true },
   // 附近发现（mDNS 广播，未添加）

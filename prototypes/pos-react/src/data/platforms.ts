@@ -38,7 +38,7 @@ const blank = (): PlatState => ({ st: 'disconnected', prep: 15, markup: 0, map: 
 export const INITIAL_PLATS: Record<PlatKey, PlatState> = {
   uber: { st: 'connected', storeId: 'ue-7f3a9c21', prep: 15, markup: 15, lastSync: '12:28', map: { ...AUTO_MAP, 主食: '' }, menuPush: { all: '12:28', lunch: '10:05' } },
   panda: blank(),
-  keeta: { st: 'connected', hours: '10:00–21:30', storeId: 'KT-88213', prep: 20, markup: 10, lastSync: '12:26', map: { ...AUTO_MAP }, menuPush: { all: '12:26', dinner: '昨天' } },
+  keeta: { st: 'connected', hours: '10:00–21:30', storeId: 'KT-88213', prep: 20, markup: 10, lastSync: '12:26', map: { ...AUTO_MAP }, menuPush: { all: '12:26', dinner: 'yesterday' } },
   talabat: blank(), deliveroo: blank(), noon: blank(), careem: blank(),
 };
 

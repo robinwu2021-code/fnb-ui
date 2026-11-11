@@ -4,7 +4,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPE, type ReactNode } from 'react';
 import { useStore } from '@/store';
 import { busyTable, type Table } from '@/data/sample';
-import { FIX_ICON, fits, SOLID, type Fixture, type FloorData, type Place } from '@/data/floors';
+import { FIX_ICON, fits, SOLID, type Fixture, type FloorData, type Place, fixLabel } from '@/data/floors';
 import { stGroup } from '@/lib/states';
 import { useT } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -87,14 +87,14 @@ export function FloorCanvas({ area, data, edit, dimOf }: { area: string; data: F
         {ground.map((f) => { const b = boxOf('f', f.id, f); return (
           <div key={f.id} onPointerDown={(e) => down(e, 'f', f.id, 'move')} style={pos(b)}
             className={cn('absolute', edit && 'cursor-grab', ring('f', f.id), f.kind === 'zone' && 'fl-zone rounded-rk', f.kind === 'room' && 'rounded-rk shadow-[inset_0_0_0_3px_var(--c-strong)]', f.kind === 'door' && 'bg-surface grid place-items-center')}>
-            {f.kind === 'door' ? <span className="inline-flex items-center gap-1 text-[10px] text-sub leading-none"><Ico name="door-open" size={12} />{f.label}</span>
-              : <span className={cn('absolute left-1.5 top-1 text-[11px] leading-tight', f.kind === 'room' ? 'font-700 text-ink' : 'text-sub')}>{f.label || t('fl.fix.' + f.kind)}</span>}
+            {f.kind === 'door' ? <span className="inline-flex items-center gap-1 text-[10px] text-sub leading-none"><Ico name="door-open" size={12} />{fixLabel(f, t)}</span>
+              : <span className={cn('absolute left-1.5 top-1 text-[11px] leading-tight', f.kind === 'room' ? 'font-700 text-ink' : 'text-sub')}>{fixLabel(f, t)}</span>}
             <Handle kind="f" id={f.id} />
           </div>); })}
         {solid.map((f) => { const b = boxOf('f', f.id, f); return (
           <div key={f.id} onPointerDown={(e) => down(e, 'f', f.id, 'move')} style={pos(b)}
             className={cn('absolute grid place-items-center text-sub', edit && 'cursor-grab', ring('f', f.id), f.kind === 'pillar' ? 'bg-[var(--c-strong)] rounded-1' : f.kind === 'plant' ? 'rounded-full bg-wash-strong' : 'rounded-rk bg-wash-strong')}>
-            {f.kind !== 'pillar' && <span className="inline-flex flex-col items-center gap-0.5 text-[11px] leading-none text-center"><Ico name={FIX_ICON[f.kind]} size={Math.min(18, u)} />{f.kind !== 'plant' && b.h * u >= 40 && (f.label || t('fl.fix.' + f.kind))}</span>}
+            {f.kind !== 'pillar' && <span className="inline-flex flex-col items-center gap-0.5 text-[11px] leading-none text-center"><Ico name={FIX_ICON[f.kind]} size={Math.min(18, u)} />{f.kind !== 'plant' && b.h * u >= 40 && fixLabel(f, t)}</span>}
             <Handle kind="f" id={f.id} />
           </div>); })}
         {tables.map(([id, p]) => { const b = boxOf('t', id, p); const tb = s.tables.find((x) => x.id === id); return (

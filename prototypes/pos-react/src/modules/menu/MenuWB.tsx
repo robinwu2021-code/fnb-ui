@@ -147,7 +147,7 @@ function Sync() {
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-gap content-start">
           {chs.slice(1).map((c) => { const f = cnt(c.key, 'failed'), p = cnt(c.key, 'pending'), ok = cnt(c.key, 'synced'); const ps = c.plat ? s.plats[c.plat.key] : null; return (
             <StatusTile key={c.key} group={f ? 'failed' : p ? 'waiting' : 'done'} alert={f > 0} className="py-3 px-3.5 gap-0.5 min-h-124px">
-              <span className="flex items-center justify-between gap-2 mb-0.5"><b className="text-lg font-700 inline-flex items-center gap-2">{c.plat ? <PlatLogo k={c.key} size={22} /> : <Ico name={c.icon} size={18} />}{lang === 'en' ? c.en : c.name}</b>
+              <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-0.5"><b className="text-lg font-700 inline-flex items-center gap-2 whitespace-nowrap">{c.plat ? <PlatLogo k={c.key} size={22} /> : <Ico name={c.icon} size={18} />}{lang === 'en' ? c.en : c.name}</b>
                 {ps?.st === 'paused' ? <StatusTag ent="campaign" k="paused" label={t('pf.st.paused')} form="dot" /> : <StatusTag ent="device" k="online" label={t('md.connected')} form="dot" />}</span>
               <span className="help">{t('md.lastSync', { t: ps?.lastSync || (s.synced ? t('md.justNow') : '09:02') })}{c.plat ? ' · ' + t('pf.mode.' + c.plat.menuMode) : ''}</span>
               <span className="flex flex-wrap gap-2 mt-auto pt-1.5"><StatusTag ent="sync" k="synced" label={t('md.syncedN', { n: ok })} form="dot" /><StatusTag ent="sync" k="pending" label={t('md.pendingN', { n: p })} form="dot" />{f > 0 && <StatusTag ent="sync" k="failed" label={t('md.failedN', { n: f })} form="dot" />}</span>
@@ -161,7 +161,7 @@ function Sync() {
         </Block>}
         {s.syncObj === 'menu' && <Block title={t('sy.menus')} right={<span>{t('sy.menusHint')}</span>} className="mt-4">
           <Table cols="minmax(0,1fr) minmax(0,1fr) 112px 108px 88px 80px" head={[t('sy.th.plat'), t('sy.th.menu'), t('sy.th.hours'), t('sy.th.mode'), t('sy.th.lastPush'), '']}>
-            {plats.flatMap((p) => MENUS.map((m) => { const at = s.plats[p.key].menuPush[m[0]]; return <Tr key={p.key + m[0]}><Td>{ph(p)}</Td><Td>{lang === 'en' ? m[2] : m[1]}</Td><Td className="num">{m[3]}</Td><Td className="help">{t('pf.mode.' + p.menuMode)}</Td><Td>{at ? <span className="num">{at}</span> : <StatusTag ent="sync" k="pending" label={t('sy.never')} form="dot" />}</Td><Td r><Button variant="muted" size="sm" onClick={() => dispatch('plat:push:' + p.key + ':' + m[0])}>{t('sy.push')}</Button></Td></Tr>; }))}
+            {plats.flatMap((p) => MENUS.map((m) => { const at = s.plats[p.key].menuPush[m[0]]; return <Tr key={p.key + m[0]}><Td>{ph(p)}</Td><Td>{lang === 'en' ? m[2] : m[1]}</Td><Td className="num">{m[3]}</Td><Td className="help">{t('pf.mode.' + p.menuMode)}</Td><Td>{at ? <span className="num">{at === 'yesterday' ? t('md.yesterday') : at}</span> : <StatusTag ent="sync" k="pending" label={t('sy.never')} form="dot" />}</Td><Td r><Button variant="muted" size="sm" onClick={() => dispatch('plat:push:' + p.key + ':' + m[0])}>{t('sy.push')}</Button></Td></Tr>; }))}
           </Table>
         </Block>}
         {s.syncObj === 'store' && <Block title={t('sy.storeTitle')} right={<span>{t('sy.storeHint')}</span>} className="mt-4">

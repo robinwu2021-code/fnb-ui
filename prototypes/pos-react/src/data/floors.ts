@@ -20,21 +20,21 @@ const P = (area: string, x: number, y: number, w: number, h: number, shape: Shap
 export const DEFAULT_FLOOR: FloorData = {
   areas: {
     大厅: { cols: 40, rows: 26, fixtures: [
-      { id: 'z-win', kind: 'zone', x: 0, y: 0, w: 8, h: 26, label: '靠窗区' },
-      { id: 'kitchen', kind: 'kitchen', x: 31, y: 0, w: 9, h: 5, label: '厨房' },
-      { id: 'bar', kind: 'bar', x: 35, y: 7, w: 5, h: 11, label: '吧台' },
-      { id: 'cashier', kind: 'cashier', x: 31, y: 21, w: 6, h: 5, label: '收银' },
-      { id: 'door', kind: 'door', x: 17, y: 25, w: 5, h: 1, label: '入口' },
+      { id: 'z-win', kind: 'zone', x: 0, y: 0, w: 8, h: 26, label: 'fl.lbl.window' },
+      { id: 'kitchen', kind: 'kitchen', x: 31, y: 0, w: 9, h: 5 },
+      { id: 'bar', kind: 'bar', x: 35, y: 7, w: 5, h: 11 },
+      { id: 'cashier', kind: 'cashier', x: 31, y: 21, w: 6, h: 5 },
+      { id: 'door', kind: 'door', x: 17, y: 25, w: 5, h: 1, label: 'fl.lbl.entrance' },
       { id: 'p1', kind: 'pillar', x: 15, y: 14, w: 1, h: 1 }, { id: 'p2', kind: 'pillar', x: 24, y: 14, w: 1, h: 1 },
       { id: 'plant1', kind: 'plant', x: 9, y: 23, w: 2, h: 2 }, { id: 'plant2', kind: 'plant', x: 27, y: 23, w: 2, h: 2 },
     ] },
     包间: { cols: 40, rows: 26, fixtures: [
-      { id: 'corr', kind: 'zone', x: 0, y: 12, w: 40, h: 2, label: '走廊' },
+      { id: 'corr', kind: 'zone', x: 0, y: 12, w: 40, h: 2, label: 'fl.lbl.corridor' },
       ...[0, 1, 2].flatMap((i) => [
         { id: 'rm' + (i + 1), kind: 'room' as FixKind, x: 1 + i * 13, y: 0, w: 12, h: 12, label: 'V0' + (i + 1) },
         { id: 'rm' + (i + 4), kind: 'room' as FixKind, x: 1 + i * 13, y: 14, w: 12, h: 12, label: 'V0' + (i + 4) },
       ]),
-      { id: 'door-r', kind: 'door', x: 0, y: 12, w: 1, h: 2, label: '入口' },
+      { id: 'door-r', kind: 'door', x: 0, y: 12, w: 1, h: 2, label: 'fl.lbl.entrance' },
     ] },
   },
   place: {
@@ -46,6 +46,8 @@ export const DEFAULT_FLOOR: FloorData = {
     V04: P('包间', 4, 17, 6, 6, 'round'), V05: P('包间', 17, 17, 6, 6, 'round'), V06: P('包间', 30, 17, 6, 6, 'round'),
   },
 };
+/** 固定物显示名：没写 → 类型名；fl. 开头 → 词表；用户自己填的 → 原样 */
+export function fixLabel(f: { kind: FixKind; label?: string }, t: (k: string) => string) { return !f.label ? t('fl.fix.' + f.kind) : f.label.startsWith('fl.') ? t(f.label) : f.label; }
 export const cloneFloor = (f: FloorData): FloorData => JSON.parse(JSON.stringify(f));
 export const AREAS = Object.keys(DEFAULT_FLOOR.areas);
 

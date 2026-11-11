@@ -4,7 +4,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useStore } from '@/store';
 import { busyTable, type Table } from '@/data/sample';
-import { FIX_ICON, type Fixture, type FloorData, type Place } from '@/data/floors';
+import { FIX_ICON, type Fixture, type FloorData, type Place, fixLabel } from '@/data/floors';
 import { stGroup, stName, stv } from '@/lib/states';
 import { useLang, useT } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -66,8 +66,8 @@ export function IsoCanvas({ area, data, dimOf, interactive = true }: { area: str
         style={{ width: plan.cols * u, height: plan.rows * u, top: `calc(50% + ${flat ? 0 : rise / 2}px)`, transform: `translate(-50%,-50%) ${flat ? 'rotateX(0deg) rotateZ(0deg)' : `rotateX(${TILT}deg) rotateZ(${SPIN}deg)`}` }}>
         {/* 地面 */}
         <div className="absolute inset-0 rounded-[3px]" style={{ background: 'var(--c-surface)', boxShadow: '0 0 0 1px var(--c-strong)' }} />
-        {fx.filter((f) => f.kind === 'zone').map((f) => <div key={f.id} className="absolute fl-zone rounded-[3px] grid place-items-start p-1" style={{ left: f.x * u, top: f.y * u, width: f.w * u, height: f.h * u }}><span className="text-[10px] text-sub">{f.label}</span></div>)}
-        {doors.map((d) => <div key={d.id} className="absolute grid place-items-center" style={{ left: d.x * u, top: d.y * u, width: d.w * u, height: d.h * u, background: 'repeating-linear-gradient(45deg, var(--c-wash-strong) 0 4px, transparent 4px 8px)' }}><Billboard lift={2}><span className="inline-flex items-center gap-0.5 text-[10px] text-sub"><Ico name="door-open" size={11} />{d.label}</span></Billboard></div>)}
+        {fx.filter((f) => f.kind === 'zone').map((f) => <div key={f.id} className="absolute fl-zone rounded-[3px] grid place-items-start p-1" style={{ left: f.x * u, top: f.y * u, width: f.w * u, height: f.h * u }}><span className="text-[10px] text-sub">{fixLabel(f, t)}</span></div>)}
+        {doors.map((d) => <div key={d.id} className="absolute grid place-items-center" style={{ left: d.x * u, top: d.y * u, width: d.w * u, height: d.h * u, background: 'repeating-linear-gradient(45deg, var(--c-wash-strong) 0 4px, transparent 4px 8px)' }}><Billboard lift={2}><span className="inline-flex items-center gap-0.5 text-[10px] text-sub"><Ico name="door-open" size={11} />{fixLabel(d, t)}</span></Billboard></div>)}
         {/* 远侧外墙（上、左）：全高，半透明 */}
         <Box x={0} y={-T} w={plan.cols} h={T} z={H.wall} u={u} top={wallC} alpha={0.55} />
         <Box x={-T} y={-T} w={T} h={plan.rows + T} z={H.wall} u={u} top={wallC} alpha={0.55} />
@@ -80,7 +80,7 @@ export function IsoCanvas({ area, data, dimOf, interactive = true }: { area: str
         {fx.filter((f) => ['kitchen', 'bar', 'cashier', 'pillar', 'plant'].includes(f.kind)).map((f) => {
           const z = H[f.kind as keyof typeof H]; const c = f.kind === 'pillar' ? wallC : f.kind === 'plant' ? 'var(--c-success-tint)' : 'var(--c-wash-strong)';
           return <Box key={f.id} x={f.x} y={f.y} w={f.w} h={f.h} z={z} u={u} top={c} round={f.kind === 'plant'}>
-            {f.kind !== 'pillar' && <Billboard lift={2}><span className="inline-flex items-center gap-1 text-[11px] text-sub font-500"><Ico name={FIX_ICON[f.kind]} size={12} />{f.kind !== 'plant' && (f.label || t('fl.fix.' + f.kind))}</span></Billboard>}
+            {f.kind !== 'pillar' && <Billboard lift={2}><span className="inline-flex items-center gap-1 text-[11px] text-sub font-500"><Ico name={FIX_ICON[f.kind]} size={12} />{f.kind !== 'plant' && fixLabel(f, t)}</span></Billboard>}
           </Box>;
         })}
         {/* 桌台：贴地色块 + 桌号 */}
@@ -93,6 +93,7 @@ export function IsoCanvas({ area, data, dimOf, interactive = true }: { area: str
 
 /** 包间：远侧（上、左）半透明矮墙 · 近侧（下、右）矮边 · 朝走廊的一面留门 */
 function Room({ f, u, T }: { f: Fixture; u: number; T: number }) {
+  const t = useT();
   const c = 'var(--c-strong)', z = H.room, gap = Math.min(3, f.w - 2), g0 = f.x + Math.floor((f.w - gap) / 2);
   const doorBottom = f.y < 12; // 上排房间门朝下（走廊在 y 12–13），下排朝上
   const hwall = (y: number, far: boolean, door: boolean) => (door
@@ -103,7 +104,7 @@ function Room({ f, u, T }: { f: Fixture; u: number; T: number }) {
     {hwall(f.y + f.h - T, false, doorBottom)}
     <Box x={f.x} y={f.y} w={T} h={f.h} z={z} u={u} top={c} alpha={0.45} />
     <Box x={f.x + f.w - T} y={f.y} w={T} h={f.h} z={H.curb} u={u} top={c} />
-    <div className="absolute [transform-style:preserve-3d]" style={{ left: (f.x + 0.8) * u, top: (f.y + 0.8) * u }}><Billboard><b className="text-[11px] text-ink font-700">{f.label}</b></Billboard></div>
+    <div className="absolute [transform-style:preserve-3d]" style={{ left: (f.x + 0.8) * u, top: (f.y + 0.8) * u }}><Billboard><b className="text-[11px] text-ink font-700">{fixLabel(f, t)}</b></Billboard></div>
   </>;
 }
 

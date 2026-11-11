@@ -1,7 +1,7 @@
 // 编辑平面（方案 §4.5）：工具条（桌区 · 撤销 / 重做 · 自动排布 · 恢复默认 · 取消 / 保存）+ 桌台库 / 固定物库 · 属性面板（详情栏）
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store';
-import { AREAS, autoArrange, FIX_ICON, FIX_LIB, freeSpot, TABLE_LIB, type FixKind, type FloorData, type Place, type Shape } from '@/data/floors';
+import { AREAS, autoArrange, FIX_ICON, FIX_LIB, freeSpot, TABLE_LIB, type FixKind, type FloorData, type Place, type Shape, fixLabel } from '@/data/floors';
 import { notify } from '@/store/actions';
 import { useT } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -61,7 +61,7 @@ export function FloorProps({ area }: { area: string }) {
   const t = useT(); const s = useStore(); const d = s.fdraft!; const sel = s.fsel;
   const p = sel?.kind === 't' ? d.place[sel.id] : undefined;
   const f = sel?.kind === 'f' ? d.areas[area].fixtures.find((x) => x.id === sel.id) : undefined;
-  const head = <b className="h-title">{p ? sel!.id : f ? f.label || t('fl.fix.' + f.kind) : t('fl.props')}</b>;
+  const head = <b className="h-title">{p ? sel!.id : f ? fixLabel(f, t) : t('fl.props')}</b>;
   return (
     <Panel area="detail" head={head}>
       {p && sel ? <TableProps id={sel.id} p={p} area={area} d={d} /> : f && sel ? <FixProps id={sel.id} area={area} d={d} /> : <AreaInfo area={area} d={d} />}
@@ -113,13 +113,13 @@ function TableProps({ id, p, area, d }: { id: string; p: Place; area: string; d:
 
 function FixProps({ id, area, d }: { id: string; area: string; d: FloorData }) {
   const t = useT(); const f = d.areas[area].fixtures.find((x) => x.id === id)!;
-  const [label, setLabel] = useState(f.label || ''); useEffect(() => setLabel(f.label || ''), [id]);
+  const [label, setLabel] = useState(fixLabel(f, t)); useEffect(() => setLabel(fixLabel(f, t)), [id]);
   const size = (dw: number, dh: number) => { const w = Math.max(1, f.w + dw), h = Math.max(1, f.h + dh); tryBox(d, area, 'f', id, { w, h }, (n) => { n.areas[area].fixtures = n.areas[area].fixtures.map((x) => (x.id === id ? { ...x, w, h } : x)); }); };
   const named = f.kind !== 'pillar' && f.kind !== 'plant';
   return (
     <div className="flex flex-col gap-3">
       <Cells><Cell k={t('fl.kind')}><span className="inline-flex items-center gap-1.5"><Ico name={FIX_ICON[f.kind]} size={16} />{t('fl.fix.' + f.kind)}</span></Cell></Cells>
-      {named && <label className="flex flex-col gap-1"><span className="text-xs text-sub">{t('fl.label')}</span><Input value={label} onChange={(e) => setLabel(e.target.value)} onBlur={() => label !== (f.label || '') && change((n) => { n.areas[area].fixtures = n.areas[area].fixtures.map((x) => (x.id === id ? { ...x, label } : x)); })} className="h-ctl-sm" /></label>}
+      {named && <label className="flex flex-col gap-1"><span className="text-xs text-sub">{t('fl.label')}</span><Input value={label} onChange={(e) => setLabel(e.target.value)} onBlur={() => label !== fixLabel(f, t) && change((n) => { n.areas[area].fixtures = n.areas[area].fixtures.map((x) => (x.id === id ? { ...x, label } : x)); })} className="h-ctl-sm" /></label>}
       <Cells>
         <Cell k={t('fl.w')}><Stepper q={f.w} onDec={() => size(-1, 0)} onInc={() => size(1, 0)} /></Cell>
         <Cell k={t('fl.h')}><Stepper q={f.h} onDec={() => size(0, -1)} onInc={() => size(0, 1)} /></Cell>
