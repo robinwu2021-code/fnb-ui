@@ -236,7 +236,7 @@ private fun BenefitCard(label: String, value: String, on: Boolean, modifier: Mod
 
 /** 支付结果（演示）。 */
 @Composable
-private fun PaidView(amount: Int, method: PayMethod, online: Boolean, onDone: () -> Unit) {
+private fun PaidView(amount: Long, method: PayMethod, online: Boolean, onDone: () -> Unit) {
     val c = Pos.colors
     val t = Pos.type
     val composition by rememberLottieComposition(LottieCompositionSpec.Asset("lottie/success.json"))

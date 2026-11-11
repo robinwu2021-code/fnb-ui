@@ -37,6 +37,7 @@ object TableRules {
         discountPercent = if (b.lines.isEmpty()) a.discountPercent else b.discountPercent,
         coupon = a.coupon || b.coupon, activity = a.activity || b.activity,
         note = listOf(b.note, a.note).filter { it.isNotBlank() }.joinToString("；"),
+        mergedOrderIds = (b.mergedOrderIds + a.orderId + a.mergedOrderIds).filter { it.isNotBlank() }.distinct(),
     )
 
     /** 拆单：把选中行移到目标桌（空闲桌会被开台）；至少留一行、至少移一行。 */
@@ -110,15 +111,15 @@ object Receipts {
 
 /** 交班汇总：只统计本班开始后的收款。 */
 object ShiftRules {
-    data class Summary(val count: Int, val total: Int, val byMethod: Map<String, Int>, val cash: Int, val cashExpected: Int, val tables: Int, val voidAmount: Int = 0, val voidCount: Int = 0, val giftAmount: Int = 0, val giftCount: Int = 0)
+    data class Summary(val count: Int, val total: Long, val byMethod: Map<String, Long>, val cash: Long, val cashExpected: Long, val tables: Int, val voidAmount: Long = 0, val voidCount: Int = 0, val giftAmount: Long = 0, val giftCount: Int = 0)
 
     fun summary(payments: List<PaymentRecord>, shift: ShiftState, adjustments: List<AdjustmentAudit> = emptyList()): Summary {
         val ps = payments.filter { it.at >= shift.start }
-        val by = ps.groupBy { it.method }.mapValues { (_, v) -> v.sumOf { it.amount } }
-        val cash = by["现金"] ?: 0
+        val by = ps.groupBy { it.method }.mapValues { (_, v) -> Money.sum(v.map { it.amount }) }
+        val cash = by["现金"] ?: 0L
         val voids = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Void }
         val gifts = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Gift }
-        return Summary(ps.size, ps.sumOf { it.amount }, by, cash, shift.float + cash, ps.map { it.tableId }.distinct().size,
-            voids.sumOf { it.amount }, voids.size, gifts.sumOf { it.amount }, gifts.size)
+        return Summary(ps.size, Money.sum(ps.map { it.amount }), by, cash, Math.addExact(shift.float, cash), ps.map { it.tableId }.distinct().size,
+            Money.sum(voids.map { it.amount }), voids.size, Money.sum(gifts.map { it.amount }), gifts.size)
     }
 }

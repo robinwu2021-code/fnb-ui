@@ -5,7 +5,9 @@ import ai.neargo.fnb.pos.core.model.PrintJob
 import ai.neargo.fnb.pos.core.model.StoreData
 import android.content.ContentValues
 import android.content.Context
+import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
+import java.io.File
 import android.database.sqlite.SQLiteOpenHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,8 +17,10 @@ import java.io.Closeable
  * 第一阶段事务存储：保留门店级 JSON，队列独立存行，所有行同一事务提交。
  * 尚不是领域事件日志，不能将这里的快照用作多 POS 或云端整库覆盖协议。
  */
-internal class SqliteSnapshotStore(context: Context, name: String = "pos-workspace.db") : SnapshotStore, Closeable {
-    private val helper = object : SQLiteOpenHelper(context.applicationContext, name, null, 2) {
+internal class SqliteSnapshotStore(private val context: Context, private val name: String = "pos-workspace.db") : SnapshotStore, Closeable {
+    /** 损坏时不删除库文件（系统默认处理会删库），保留原件供诊断导出。 */
+    private val keepCorrupt = DatabaseErrorHandler { db -> android.util.Log.e("SqliteSnapshotStore", "数据库损坏，保留原件：${db.path}") }
+    private val helper = object : SQLiteOpenHelper(context.applicationContext, name, null, DB_VERSION, keepCorrupt) {
         override fun onConfigure(db: SQLiteDatabase) {
             db.setForeignKeyConstraintsEnabled(true)
         }
@@ -27,13 +31,35 @@ internal class SqliteSnapshotStore(context: Context, name: String = "pos-workspa
                 db.execSQL("CREATE TABLE $table (store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE, id TEXT NOT NULL, position INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY(store_id,id))")
             }
             CommandJournal.createTables(db)
+            CommandJournal.upgradeToV3(db)
+            CommandOutbox.createTables(db)
+            createMigrations(db)
+            recordMigration(db, DB_VERSION, "新建数据库")
         }
+        /** 逐级迁移，均在 SQLiteOpenHelper 的同一事务中；失败整体回滚，不清库。 */
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion == 1 && newVersion == 2) { "缺少数据库迁移：$oldVersion → $newVersion" }
-            CommandJournal.createTables(db)
+            check(oldVersion in 1..2 && newVersion == DB_VERSION) { "缺少数据库迁移：$oldVersion → $newVersion" }
+            if (oldVersion < 2) CommandJournal.createTables(db)
+            CommandJournal.upgradeToV3(db)
+            CommandOutbox.createTables(db)
+            createMigrations(db)
+            // 旧流水位：local-page / page-order-stream 事件保留原ID、顺序、载荷；新事件按聚合另起版本，不混入旧流。
+            val (events, revision) = db.rawQuery("SELECT COUNT(*),COALESCE(MAX(revision),0) FROM command_events", null).use { it.moveToFirst(); it.getLong(0) to it.getLong(1) }
+            recordMigration(db, DB_VERSION, "v$oldVersion→v$DB_VERSION；旧事件 $events 条为 legacy（envelope 为空），旧流最高版本 $revision")
         }
     }
-    val journal = CommandJournal { helper.writableDatabase }
+    val journal = CommandJournal({ helper.writableDatabase })
+    val commandOutbox = CommandOutbox { helper.writableDatabase }
+
+    /** 迁移记录（版本、时间、说明），用于恢复页显示。 */
+    fun migrations(): List<Triple<Int, Long, String>> = helper.readableDatabase.rawQuery("SELECT version,at,note FROM schema_migrations ORDER BY at", null).use {
+        buildList { while (it.moveToNext()) add(Triple(it.getInt(0), it.getLong(1), it.getString(2))) }
+    }
+
+    private fun createMigrations(db: SQLiteDatabase) =
+        db.execSQL("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER NOT NULL,at INTEGER NOT NULL,note TEXT NOT NULL)")
+    private fun recordMigration(db: SQLiteDatabase, version: Int, note: String) =
+        db.insertOrThrow("schema_migrations", null, ContentValues().apply { put("version", version); put("at", System.currentTimeMillis()); put("note", note) })
     private val json get() = VaultCodec.json
 
     override suspend fun load(): String? = withContext(Dispatchers.IO) {
@@ -83,11 +109,9 @@ internal class SqliteSnapshotStore(context: Context, name: String = "pos-workspa
         } finally { db.endTransaction() }
     }
 
-    override suspend fun saveCommand(source: String, command: JournalCommand) {
+    override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt {
         val vault = VaultCodec.decode(source)
-        journal.execute(command, persistBusiness = { db -> writeSnapshot(db, vault) }) {
-            JournalChange("snapshot-projection", command.type, command.payload, "committed")
-        }
+        return journal.execute(command, persistBusiness = { db -> writeSnapshot(db, vault) }) { JournalChange(command.type, command.payload, "committed") }
     }
 
     private fun writeSnapshot(db: SQLiteDatabase, vault: Vault) {
@@ -118,4 +142,42 @@ internal class SqliteSnapshotStore(context: Context, name: String = "pos-workspa
         }
 
     override fun close() = helper.close()
+
+    val file: File get() = context.getDatabasePath(name)
+
+    /** 当前恢复点：数据库版本、最新事件序号、未确认事件、未决发送命令、旧版事件数。 */
+    fun recoveryPoint(): RecoveryPoint {
+        val db = helper.readableDatabase
+        fun long(sql: String) = db.rawQuery(sql, null).use { it.moveToFirst(); it.getLong(0) }
+        return RecoveryPoint(
+            at = System.currentTimeMillis(), dbVersion = db.version,
+            lastSequence = long("SELECT COALESCE(MAX(sequence),0) FROM command_events"),
+            unackedEvents = long("SELECT COUNT(*) FROM command_events WHERE acked=0").toInt(),
+            openCommands = long("SELECT COUNT(*) FROM command_outbox WHERE state IN ('Saved','Waiting','Sending')").toInt(),
+            legacyEvents = long("SELECT COUNT(*) FROM command_events WHERE envelope IS NULL").toInt(),
+            pendingQueue = long("SELECT COUNT(*) FROM outbox").toInt(),
+        )
+    }
+
+    /** 一致性备份：VACUUM INTO 在单一读事务中生成完整副本（业务、Inbox/Outbox、事件、版本同一恢复点）。 */
+    suspend fun backupTo(target: File) = withContext(Dispatchers.IO) {
+        require(!target.exists()) { "备份文件已存在" }
+        target.parentFile?.mkdirs()
+        helper.writableDatabase.execSQL("VACUUM INTO ?", arrayOf(target.absolutePath))
+    }
+
+    /** 原样复制当前库文件（含损坏库），只用于诊断导出，不做任何解析。 */
+    fun exportRaw(target: File) {
+        target.parentFile?.mkdirs()
+        file.copyTo(target, overwrite = false)
+    }
+
+    /** 用已校验的备份替换当前库：先关闭连接，复制后由下次访问重新打开（必要时升级）。 */
+    fun replaceWith(validated: File) {
+        helper.close()
+        for (suffix in listOf("-journal", "-wal", "-shm")) File(file.path + suffix).delete()
+        validated.copyTo(file, overwrite = true)
+    }
+
+    companion object { const val DB_VERSION = 3 }
 }

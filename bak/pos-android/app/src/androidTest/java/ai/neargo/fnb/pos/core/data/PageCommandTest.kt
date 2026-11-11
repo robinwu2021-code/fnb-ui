@@ -192,4 +192,32 @@ class PageCommandTest {
             }
         } finally { scope.cancel(); context.deleteDatabase(name) }
     }
+
+    @Test fun stockAndShiftEventsCommitWithSnapshot() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "manage-${UUID.randomUUID()}.db"
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            SqliteSnapshotStore(context, name).use { db ->
+                val w = LocalWorkspace(db, scope)
+                w.enterDemo(); w.selectStore("s-main")
+                val p = w.current.value!!.products.first { it.skus.isEmpty() && it.stock != null }
+                val before = db.load(); val memory = w.current.value
+                SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+                    it.execSQL("CREATE TRIGGER fail_stock BEFORE INSERT ON command_events BEGIN SELECT RAISE(ABORT, 'failure'); END")
+                }
+                assertTrue(w.adjustStock(p.id, null, 7, "盘点").isFailure)
+                assertEquals(before, db.load()); assertEquals(memory, w.current.value)
+                SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { it.execSQL("DROP TRIGGER fail_stock") }
+                assertTrue(w.adjustStock(p.id, null, 7, "盘点").isSuccess)
+                assertTrue(w.addCategory("夜宵", "Late").isSuccess)
+                assertTrue(w.closeShift(50_000, "林晓").isSuccess)
+                assertEquals(listOf("StockAdjusted", "CategoryCreated", "ShiftClosed"), db.journal.pending("s-main").map { it.type })
+                val reopened = LocalWorkspace(db, scope); reopened.restore()
+                assertEquals(1, reopened.current.value!!.stockMovements.size)
+                assertEquals(w.current.value!!.shift.history.last().id,
+                    VaultCodec.json.parseToJsonElement(db.journal.pending("s-main").last().payload).jsonObject.getValue("record").jsonObject.getValue("id").jsonPrimitive.content)
+            }
+        } finally { scope.cancel(); context.deleteDatabase(name) }
+    }
 }

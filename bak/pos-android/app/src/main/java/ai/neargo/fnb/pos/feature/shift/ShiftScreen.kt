@@ -64,7 +64,7 @@ class ShiftViewModel(config: StoreConfigRepository, session: SessionRepository, 
 
     /** 交班：实盘金额（元）校验后生成交班记录与交班单，开启新班次。 */
     fun close(counted: String, done: (String?) -> Unit) = viewModelScope.launchStorage(messages) {
-        val fen = ManageRules.price(counted, "实盘金额").getOrElse { done(it.message); return@launchStorage }
+        val fen = ai.neargo.fnb.pos.core.model.Money.input(counted, "实盘金额").getOrElse { done(it.message); return@launchStorage }
         shift.closeShift(fen, state.value.staff)
             .onSuccess { r -> messages.post("已交班，差额 ${yuan(r.cashCounted - r.cashExpected)}；交班单已加入打印队列"); done(null) }
             .onFailure { done(it.message) }
@@ -157,15 +157,15 @@ private fun CloseDialog(state: ShiftUiState, onDismiss: () -> Unit, onClose: (St
     var counted by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val expected = state.summary.cashExpected
-    val diff = ManageRules.price(counted).getOrNull()?.minus(expected)
+    val diff = ai.neargo.fnb.pos.core.model.Money.parse(counted)?.minus(expected)
     PosDialog("交班 · 钱箱实盘", onDismiss, maxWidth = 440.dp, subtitle = "应有现金 ${yuan(expected)}（备用金 + 现金收入）", footer = {
         PosButton("取消", onDismiss, size = BtnSize.Large)
         PosButton("确认交班", { onClose(counted) { e -> error = e; if (e == null) onDismiss() } }, variant = BtnVariant.Primary, size = BtnSize.Large)
     }) {
         PosTextField(counted, { counted = it }, "实盘金额（元）", error = error, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
         Text(
-            if (diff == null) "输入实盘金额后显示差额" else "差额 ${yuan(diff)}${if (diff == 0) "（平账）" else if (diff > 0) "（长款）" else "（短款）"}",
-            style = Pos.type.body, color = if (diff == null || diff == 0) Pos.colors.sub else Pos.colors.warning, modifier = Modifier.padding(vertical = 8.dp),
+            if (diff == null) "输入实盘金额后显示差额" else "差额 ${yuan(diff)}${if (diff == 0L) "（平账）" else if (diff > 0) "（长款）" else "（短款）"}",
+            style = Pos.type.body, color = if (diff == null || diff == 0L) Pos.colors.sub else Pos.colors.warning, modifier = Modifier.padding(vertical = 8.dp),
         )
     }
 }

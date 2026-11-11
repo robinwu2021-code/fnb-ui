@@ -14,6 +14,7 @@ class ReservationWorkspaceTest {
     private class MemoryStore : SnapshotStore {
         var json: String? = null
         override suspend fun load() = json
+        override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt { save(source); return testReceipt(command) }
         override suspend fun save(json: String) { this.json = json }
     }
     @Test fun bookingLifecyclePersistsAndRejectsRepeatedActions() = runTest(UnconfinedTestDispatcher()) {

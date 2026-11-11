@@ -41,7 +41,12 @@ class AppContainer(context: Context) {
     private val dataStore = context.applicationContext.posStore
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val workspace = LocalWorkspace(MigratingSnapshotStore(SqliteSnapshotStore(context), DataStoreSnapshot(dataStore)), appScope).also { runBlocking { it.restore() } }
+    private val database = SqliteSnapshotStore(context.applicationContext)
+    /** 恢复失败不崩溃也不回落演示：workspace 进入只读阻断，界面显示恢复页。 */
+    private val workspace = LocalWorkspace(MigratingSnapshotStore(database, DataStoreSnapshot(dataStore)), appScope).also {
+        runBlocking { runCatching { it.restore() }.onFailure { e -> android.util.Log.e("AppContainer", "本地数据恢复失败", e) } }
+    }
+    val recovery: RecoveryRepository = LocalRecovery(context.applicationContext, database, workspace)
     val session: SessionRepository = workspace
     val config: StoreConfigRepository = workspace
     val floor: FloorRepository = workspace
@@ -128,6 +133,9 @@ private class DataStoreSnapshot(private val ds: DataStore<Preferences>) : Snapsh
     private val key = stringPreferencesKey("vault_v2")
     override suspend fun load(): String? = ds.data.first()[key]
     override suspend fun save(json: String) { ds.edit { it[key] = json } }
+    /** 旧 DataStore 只用于一次性导入，不能承载命令事务。 */
+    override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt =
+        throw UnsupportedOperationException("旧版存储不支持命令事务")
 }
 
 private class DataStorePreferences(private val ds: DataStore<Preferences>) : PreferencesRepository {

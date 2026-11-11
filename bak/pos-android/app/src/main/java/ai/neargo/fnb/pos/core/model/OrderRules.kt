@@ -12,8 +12,11 @@ sealed interface OrderResult {
  */
 object OrderRules {
     const val DEFAULT_SPEC = "标准做法"
-    private const val SERVICE_RATE = 0.05
-    private const val MEMBER_RATE = 0.05
+    /** 服务费、会员折扣：万分比。 */
+    private const val SERVICE_BP = 500
+    private const val MEMBER_BP = 500
+    private const val COUPON_FEN = 1000L
+    private const val ACTIVITY_FEN = 500L
 
     fun qtyOf(order: TableOrder, dishId: String) = order.lines.filter { it.dishId == dishId }.sumOf { it.qty }
     private fun qtyOfSku(order: TableOrder, key: String) = order.lines.filter { it.skuKey == key }.sumOf { it.qty }
@@ -35,13 +38,19 @@ object OrderRules {
         val unit = MealRules.price(sku?.price ?: product.price, selections)
         val lines = order.lines.toMutableList()
         val i = lines.indexOfFirst { it.status == LineStatus.New && !it.gifted && it.dishId == product.id && it.skuKey == sku?.key && it.spec == spec && it.unit == unit && it.note == note.trim() }
+        if (unit > Money.MAX_UNIT) return OrderResult.Rejected("${product.name}单价超出上限 ${yuan(Money.MAX_UNIT)}")
         if (i >= 0) {
+            if (lines[i].qty + qty > Money.MAX_QTY) return OrderResult.Rejected("单行最多 ${Money.MAX_QTY} 份")
             lines[i] = lines[i].copy(qty = lines[i].qty + qty)
         } else {
+            if (qty > Money.MAX_QTY) return OrderResult.Rejected("单行最多 ${Money.MAX_QTY} 份")
             val at = lines.indexOfLast { it.status == LineStatus.New } + 1
             lines.add(at, OrderLine(newUid, product.id, product.name, spec, unit, qty, LineStatus.New, skuKey = sku?.key, note = note.trim(), mealSelections = selections))
         }
-        return OrderResult.Ok(order.copy(lines = lines))
+        val next = order.copy(lines = lines)
+        val due = runCatching { totals(next).due }.getOrNull()
+        if (due == null || due > Money.MAX_BILL) return OrderResult.Rejected("单据金额超出上限 ${yuan(Money.MAX_BILL)}")
+        return OrderResult.Ok(next)
     }
 
     /** 只改草稿行；增加走库存校验，减到 0 移除；已送厨（含待同步）行拒绝。 */
@@ -87,15 +96,15 @@ object OrderRules {
     )
 
     fun totals(order: TableOrder): Totals {
-        val sub = order.lines.sumOf { if (it.gifted) 0 else it.unit * it.qty }
-        val service = Math.round(sub * SERVICE_RATE).toInt()
-        val member = if (order.member) Math.round(sub * MEMBER_RATE).toInt() else 0
-        val manual = Math.round((sub - member) * (100 - order.discountPercent.coerceIn(1, 100)) / 100.0).toInt()
-        val coupon = if (order.coupon && sub >= 20_000) 1000 else 0
-        val activity = if (order.activity && sub >= 10_000) 500 else 0
-        val discount = (member + manual + coupon + activity).coerceAtMost(sub)
+        val sub = Money.sum(order.lines.map { if (it.gifted) 0L else Money.line(it.unit, it.qty) })
+        val service = Money.rate(sub, SERVICE_BP)
+        val member = if (order.member) Money.rate(sub, MEMBER_BP) else 0L
+        val manual = Money.rate(sub - member, (100 - order.discountPercent.coerceIn(1, 100)) * 100)
+        val coupon = if (order.coupon && sub >= 20_000) COUPON_FEN else 0L
+        val activity = if (order.activity && sub >= 10_000) ACTIVITY_FEN else 0L
+        val discount = Money.sum(listOf(member, manual, coupon, activity)).coerceAtMost(sub)
         return Totals(
-            sub = sub, service = service, discount = discount, due = sub + service - discount,
+            sub = sub, service = service, discount = discount, due = Math.subtractExact(Math.addExact(sub, service), discount),
             items = order.lines.sumOf { it.qty }, newItems = order.pending.sumOf { it.qty }, queuedItems = order.queued.sumOf { it.qty },
         )
     }
@@ -110,11 +119,11 @@ object OrderRules {
 }
 
 /** 金额统一两位小数，负数写作 −¥。 */
-fun yuan(fen: Int): String {
+fun yuan(fen: Long): String {
     val sign = if (fen < 0) "−" else ""
     val abs = kotlin.math.abs(fen)
     return "$sign¥${abs / 100}.${(abs % 100).toString().padStart(2, '0')}"
 }
 
 /** 分转「元」输入文本：4800 → "48"，4850 → "48.5"。 */
-fun fenToInput(fen: Int): String = if (fen % 100 == 0) "${fen / 100}" else yuan(fen).removePrefix("¥").trimEnd('0')
+fun fenToInput(fen: Long): String = if (fen % 100 == 0L) "${fen / 100}" else yuan(fen).removePrefix("¥").trimEnd('0')

@@ -149,6 +149,8 @@ fun PosApp(shell: ShellViewModel) {
         dest?.hasRoute<ManageRoute>() == true -> TopLevel.Manage
         else -> TopLevel.Order
     }
+    val blocked by appContainer().recovery.blocked.collectAsStateWithLifecycle()
+    blocked?.let { ai.neargo.fnb.pos.feature.recovery.BlockedRecoveryScreen(it); return }
     val session = state.session ?: return
     var pickingStore by rememberSaveable { mutableStateOf(false) }
     // 会话守卫：未登录 → 登录；未选店（或主动切店）→ 选择门店；否则进入工作台

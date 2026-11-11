@@ -40,7 +40,7 @@ internal object DemoCatalog {
         "14" to "hongtangciba htcb", "15" to "shuangrentaocan srtc",
     )
 
-    private fun p(id: String, name: String, en: String, cat: String, price: Int, stock: Int?, tags: List<String> = emptyList(), spec: Boolean = false, hot: Boolean = false, image: String? = null): Product {
+    private fun p(id: String, name: String, en: String, cat: String, price: Long, stock: Int?, tags: List<String> = emptyList(), spec: Boolean = false, hot: Boolean = false, image: String? = null): Product {
         val base = Product(id, name, en, cat, price, if (spec) null else stock, if (spec) specs.map { it.id } else emptyList(), emptyList(), image, tags, hot, searchAliases = demoAliases[id].orEmpty())
         return if (!spec) base else base.copy(skus = ManageRules.skus(specs, price, stock ?: 0, emptyList()).getOrThrow())
     }

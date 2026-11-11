@@ -26,7 +26,7 @@ class ManageRulesTest {
     }
 
     @Test fun optionsParsing() {
-        assertEquals(listOf("标准" to 0, "大份" to 2000), ManageRules.options("标准:0,大份:20").getOrThrow())
+        assertEquals(listOf("标准" to 0L, "大份" to 2000L), ManageRules.options("标准:0,大份:20").getOrThrow())
         assertTrue(ManageRules.options("标准:0,标准:1").isFailure)
         assertTrue(ManageRules.options("大份:1.234").isFailure)
     }

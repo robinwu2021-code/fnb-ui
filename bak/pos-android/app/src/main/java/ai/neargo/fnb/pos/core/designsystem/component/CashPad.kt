@@ -13,8 +13,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun CashPad(value: String, due: Int, onChange: (String) -> Unit, enabled: Boolean = true) {
-    PosTextField(value, { if (enabled && Regex("^\\d{0,5}(\\.\\d{0,2})?$").matches(it)) onChange(it) }, "现金实收（元）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+fun CashPad(value: String, due: Long, onChange: (String) -> Unit, enabled: Boolean = true) {
+    PosTextField(value, { if (enabled && Regex("^\\d{0,8}(\\.\\d{0,2})?$").matches(it)) onChange(it) }, "现金实收（元）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         PosButton("刚好", { onChange(fenToInput(due)) }, Modifier.weight(1f), size = BtnSize.Small, enabled = enabled)
         listOf(20, 50, 100).forEach { n -> PosButton("¥$n", { onChange(n.toString()) }, Modifier.weight(1f), size = BtnSize.Small, enabled = enabled) }

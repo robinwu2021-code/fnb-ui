@@ -10,6 +10,7 @@ class SnapshotMigrationTest {
         var writes = 0
         var fail = false
         override suspend fun load() = value
+        override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt { save(source); return testReceipt(command) }
         override suspend fun save(json: String) {
             if (fail) throw IOException("unavailable")
             writes++

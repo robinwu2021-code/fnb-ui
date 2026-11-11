@@ -36,6 +36,12 @@ import ai.neargo.fnb.pos.core.model.Reservation
 import ai.neargo.fnb.pos.core.model.ReservationRules
 import ai.neargo.fnb.pos.core.model.ReservationStatus
 import ai.neargo.fnb.pos.core.model.StoreData
+import ai.neargo.fnb.pos.core.model.StockMovement
+import ai.neargo.fnb.pos.core.model.TaskLogKind
+import ai.neargo.fnb.pos.core.model.TaskLogEntry
+import ai.neargo.fnb.pos.core.model.TASK_LOG_LIMIT
+import ai.neargo.fnb.pos.core.model.IdMapping
+import ai.neargo.fnb.pos.core.model.Money
 import ai.neargo.fnb.pos.core.model.StoreSettings
 import ai.neargo.fnb.pos.core.model.StoreSummary
 import ai.neargo.fnb.pos.core.model.TableOrder
@@ -66,17 +72,31 @@ data class Vault(
     val storeId: String? = null,
     val stores: Map<String, StoreData>,
     val version: Int = 3,
+    /** 旧单流 page-order-stream 的版本（只读水位，v2 信封后不再写入）。 */
     val commandRevisions: Map<String, Long> = emptyMap(),
+    /** 本机设备ID：首次启动生成并持久保存；N4 前不是可信身份。 */
+    val deviceId: String = "",
+    val tenantId: String = "local-tenant",
+    /** 协调权 epoch：受控切主时递增（N9）。 */
+    val authorityEpoch: Long = 1,
+    /** 每店各聚合的已提交版本（与命令日志 command_aggregates 同事务更新）。 */
+    val aggregateRevisions: Map<String, Map<String, Long>> = emptyMap(),
 ) {
     val store get() = storeId?.let { stores[it] }
 }
 
-/** 快照存储：应用用 SQLite，测试用内存实现。 */
+/**
+ * 快照存储：应用用 SQLite，测试用内存实现。
+ * saveCommand 必须把快照与命令/事件原子提交；不支持的适配器须明确抛错，不得静默只存快照。
+ */
 interface SnapshotStore {
     suspend fun load(): String?
     suspend fun save(json: String)
-    suspend fun saveCommand(source: String, command: JournalCommand) { save(source) }
+    suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt
 }
+
+/** 命令被协调方判为冲突或拒绝（快照未写入）。 */
+class WorkspaceCommandException(val receipt: JournalReceipt) : Exception(receipt.result)
 
 /**
  * 完整离线的本机仓库：同一份 Vault 同时实现会话 / 门店配置 / 桌台 / 订单 / 同步队列接口，
@@ -90,11 +110,26 @@ class LocalWorkspace(
 ) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val state = MutableStateFlow(Vault(stores = DemoCatalog.stores(clock()).mapValues { ReservationRules.importLegacy(it.value, clock()) }))
+    // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
+    private val state = MutableStateFlow(Vault(stores = DemoCatalog.stores(clock()).mapValues { assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "demo") }, deviceId = "dev-" + UUID.randomUUID()))
     private val writeLock = Mutex()
 
-    /** 读取并校验快照；只有无快照才使用演示数据，损坏或未知版本报错并保留原件。 */
+    private val blockedState = MutableStateFlow<String?>(null)
+    /** 启动恢复失败原因；非空时拒绝所有写入，避免用演示数据覆盖原库。 */
+    val blocked: StateFlow<String?> = blockedState
+    fun deviceId() = state.value.deviceId
+
+    /** 读取并校验快照；只有无快照才使用演示数据，损坏或未知版本报错、进入只读阻断并保留原件。 */
     suspend fun restore() {
+        try { restoreSnapshot(); blockedState.value = null }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { blockedState.value = "本地数据无法读取：${e.message ?: e.javaClass.simpleName}"; throw e }
+    }
+
+    /** 恢复备份后重新加载。 */
+    suspend fun reload() = restore()
+
+    private suspend fun restoreSnapshot() {
         val saved = store.load() ?: return
         writeLock.withLock {
             val loaded = VaultCodec.decode(saved)
@@ -106,7 +141,10 @@ class LocalWorkspace(
                     p.copy(searchAliases = p.searchAliases.ifBlank { original?.searchAliases.orEmpty() }, mealGroups = p.mealGroups.ifEmpty { original?.mealGroups.orEmpty() })
                 })
             }) else loaded
-            val restored = migrated.copy(stores = migrated.stores.mapValues { ReservationRules.importLegacy(it.value, clock()) })
+            val restored = migrated.copy(
+                deviceId = migrated.deviceId.ifBlank { state.value.deviceId },
+                stores = migrated.stores.mapValues { assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3") },
+            )
             withContext(NonCancellable) {
                 store.save(json.encodeToString(Vault.serializer(), restored))
                 state.value = restored
@@ -114,9 +152,28 @@ class LocalWorkspace(
         }
     }
 
+    /**
+     * 为没有订单ID的活动订单补发稳定ID并记录映射；已结账历史（收款无 orderId）保持关联未知，不按桌号推断。
+     */
+    private fun assignOrderIds(s: StoreData, source: String): StoreData {
+        val maps = mutableListOf<IdMapping>()
+        val tables = s.tables.map { t ->
+            val o = s.orders[t.id]
+            val active = t.status == TableStatus.Dining || (o != null && o.lines.isNotEmpty())
+            if (!active || (t.sessionId.isNotBlank() && !o?.orderId.isNullOrBlank())) t
+            else {
+                val m = IdMapping(t.id, o?.orderId?.ifBlank { null } ?: newId("O"), t.sessionId.ifBlank { newId("TS") }, clock(), source)
+                maps += m; t.copy(sessionId = m.sessionId)
+            }
+        }
+        if (maps.isEmpty()) return s
+        val orders = s.orders + maps.associate { m -> m.tableId to (s.orders[m.tableId] ?: TableOrder()).copy(orderId = m.orderId) }
+        return s.copy(tables = tables, orders = orders, idMappings = s.idMappings + maps)
+    }
+
     /** 重置当前门店为演示初始数据（账号与登录状态保留）。 */
     suspend fun resetDemo() = commit { v ->
-        val fresh = DemoCatalog.stores(clock()).mapValues { ReservationRules.importLegacy(it.value, clock()) }
+        val fresh = DemoCatalog.stores(clock()).mapValues { assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "demo") }
         v.copy(stores = v.stores + (v.storeId?.let { id -> fresh[id]?.let { mapOf(id to it) } } ?: fresh))
     }
 
@@ -137,38 +194,58 @@ class LocalWorkspace(
     override val pendingCount: StateFlow<Int> = derive { v -> v.stores.values.sumOf { s -> s.outbox.count { it.state == OutboxState.Pending } } }
 
     /** 校验和修改均在锁内执行；落盘完成才发布状态及返回成功。 */
-    private suspend fun <T> transaction(event: Pair<String, String>? = null, f: (Vault) -> Pair<Vault, T>): T = writeLock.withLock {
+    private suspend fun <T> transaction(event: EventSpec? = null, f: (Vault) -> Pair<Vault, T>): T = writeLock.withLock {
+        blockedState.value?.let { throw WorkspaceWriteException(IllegalStateException(it)) }
         val (candidate, result) = f(state.value)
         var next = candidate
         if (next != state.value) withContext(NonCancellable) {
             if (event != null) {
                 val storeId = requireNotNull(next.storeId)
-                val revision = state.value.commandRevisions[storeId] ?: 0L
-                next = next.copy(commandRevisions = next.commandRevisions + (storeId to revision + 1))
-                val data = next.stores.getValue(storeId)
-                val payload = BusinessEventFactory.encode(
-                    BusinessEventFactory.build(event.first, event.second, state.value.stores.getValue(storeId), data),
+                val (type, payload, aggregates) = event.resolve(state.value.stores.getValue(storeId), next.stores.getValue(storeId))
+                val known = state.value.aggregateRevisions[storeId].orEmpty()
+                val versions = aggregates.distinct().map { AggregateVersion(it, known[it] ?: 0L) }
+                next = next.copy(aggregateRevisions = next.aggregateRevisions + (storeId to known + versions.associate { it.id to it.expected + 1 }))
+                val commandId = UUID.randomUUID().toString()
+                val command = JournalCommand(
+                    storeId = storeId, deviceId = state.value.deviceId, commandId = commandId, type = type, payload = payload,
+                    aggregates = versions, tenantId = state.value.tenantId, actorId = state.value.user ?: DemoCatalog.STAFF,
+                    coordinatorId = state.value.deviceId, authorityEpoch = state.value.authorityEpoch, occurredAt = clock(),
                 )
-                val command = JournalCommand(storeId, "local-page", UUID.randomUUID().toString(), "page-order-stream", revision, event.first, payload)
-                try { store.saveCommand(json.encodeToString(Vault.serializer(), next), command) }
+                val receipt = try { store.saveCommand(json.encodeToString(Vault.serializer(), next), command) }
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (e: Exception) { throw WorkspaceWriteException(e) }
+                if (receipt.status != ReceiptStatus.Committed) throw WorkspaceWriteException(WorkspaceCommandException(receipt))
             } else saveSnapshot(store, json.encodeToString(Vault.serializer(), next))
             state.value = next
         }
         result
     }
 
-    private suspend fun commit(event: Pair<String, String>? = null, f: (Vault) -> Vault): Vault = transaction(event) { v ->
+    private suspend fun commit(event: EventSpec? = null, f: (Vault) -> Vault): Vault = transaction(event) { v ->
         val next = f(v)
         next to next
     }
+
+    /** 事件规格：在锁内用提交前后的门店数据决定事件类型与载荷。 */
+    /** resolve 返回（事件类型，载荷，参与聚合）；参与聚合在同一事务内全部校验版本。 */
+    internal class EventSpec(val resolve: (before: StoreData, after: StoreData) -> Triple<String, String, List<String>>)
+
+    /** 页面订单/桌台事件（兼容载荷 v1）；聚合按受影响的订单、桌台、预订划分。 */
+    private fun page(type: String, tableId: String) = EventSpec { b, a ->
+        Triple(type, BusinessEventFactory.encode(BusinessEventFactory.build(type, tableId, b, a)), Aggregates.page(tableId, b, a))
+    }
+
+    /** 门店配置事件：聚合为门店目录。 */
+    private fun config(type: String, entity: String, id: () -> String) = EventSpec { b, a -> Triple(type, ManagementEventFactory.config(entity, id(), b, a), listOf(Aggregates.CATALOG)) }
+
+    private fun StoreData.log(kind: TaskLogKind, refId: String, result: String, source: String, detail: String = "") =
+        copy(taskLog = (taskLog + TaskLogEntry(newId("T"), kind, refId, result, source, clock(), detail)).takeLast(TASK_LOG_LIMIT))
 
     private fun fail(msg: String) = Result.failure<Unit>(IllegalStateException(msg))
     private fun currentStore(): StoreData? = state.value.store
 
     /** 修改当前门店；校验与业务变更基于同一已提交版本。 */
-    private suspend fun storeOp(event: Pair<String, String>? = null, check: (StoreData) -> String? = { null }, f: (StoreData) -> StoreData): Result<Unit> = persistenceResult {
+    private suspend fun storeOp(event: EventSpec? = null, check: (StoreData) -> String? = { null }, f: (StoreData) -> StoreData): Result<Unit> = persistenceResult {
         transaction(event) { v ->
             val s = v.store ?: return@transaction v to fail("请先选择门店")
             check(s)?.let { return@transaction v to fail(it) }
@@ -216,13 +293,17 @@ class LocalWorkspace(
     override suspend fun selectTable(tableId: String) { storeOp { it.copy(currentTableId = tableId) }.getOrThrow() }
 
     // —— 门店配置 ——
-    override suspend fun addArea(name: String, en: String) = storeOp(
+    override suspend fun addArea(name: String, en: String): Result<Unit> {
+        val id = newId("area")
+        return storeOp(event = config("AreaCreated", "area") { id },
         check = { s -> ManageRules.required(name, "区域名称") ?: ManageRules.unique(name, s.areas.map { it.name }, "区域") },
-    ) { s -> s.copy(areas = s.areas + Area(newId("area"), name.trim(), en.trim())) }
+    ) { s -> s.copy(areas = s.areas + Area(id, name.trim(), en.trim())) }
+    }
 
     override suspend fun saveTable(id: String, areaId: String, seats: String, isNew: Boolean): Result<Unit> {
         val n = ManageRules.seats(seats).getOrElse { return fail(it.message!!) }
-        return storeOp(check = { s ->
+        val key = if (isNew) id.trim().uppercase() else id
+        return storeOp(event = config(if (isNew) "TableConfigCreated" else "TableConfigUpdated", "table") { key }, check = { s ->
             when {
                 s.areas.none { it.id == areaId } -> "请选择区域"
                 isNew -> ManageRules.tableId(id, s.tables.map { it.id })
@@ -236,19 +317,24 @@ class LocalWorkspace(
         }
     }
 
-    override suspend fun addCategory(name: String, en: String) = storeOp(
+    override suspend fun addCategory(name: String, en: String): Result<Unit> {
+        val id = newId("c")
+        return storeOp(event = config("CategoryCreated", "category") { id },
         check = { s -> ManageRules.required(name, "分类名称") ?: ManageRules.unique(name, s.categories.map { it.name }, "分类") },
-    ) { s -> s.copy(categories = s.categories + Category(newId("c"), name.trim(), en.trim())) }
+    ) { s -> s.copy(categories = s.categories + Category(id, name.trim(), en.trim())) }
+    }
 
     override suspend fun addSpecGroup(name: String, en: String, options: String): Result<Unit> {
         val opts = ManageRules.options(options).getOrElse { return fail(it.message!!) }
         val gid = newId("g")
-        return storeOp(check = { s -> ManageRules.required(name, "规格组名称") ?: ManageRules.unique(name, s.specGroups.map { it.name }, "规格组") }) { s ->
+        return storeOp(event = config("SpecGroupCreated", "specGroup") { gid }, check = { s -> ManageRules.required(name, "规格组名称") ?: ManageRules.unique(name, s.specGroups.map { it.name }, "规格组") }) { s ->
             s.copy(specGroups = s.specGroups + SpecGroup(gid, name.trim(), en.trim(), opts.mapIndexed { i, (n, d) -> SpecOption("$gid-${i + 1}", n, d) }))
         }
     }
 
-    override suspend fun saveProduct(product: Product, menuIds: Set<String>) = storeOp(check = { s ->
+    override suspend fun saveProduct(product: Product, menuIds: Set<String>) = storeOp(event = EventSpec { b, a ->
+        Triple(if (b.products.any { it.id == product.id }) "ProductUpdated" else "ProductCreated", ManagementEventFactory.config("product", product.id, b, a), listOf(Aggregates.CATALOG))
+    }, check = { s ->
         MealRules.validate(product.mealGroups) ?: ManageRules.required(product.name, "商品名称") ?: ManageRules.required(product.en, "英文名称")
             ?: if (s.categories.none { it.id == product.categoryId }) "请选择分类" else null
                 ?: ManageRules.unique(product.name, s.products.filter { it.id != product.id }.map { it.name }, "商品")
@@ -261,8 +347,21 @@ class LocalWorkspace(
     override suspend fun adjustStock(productId: String, skuKey: String?, value: Int, reason: String): Result<Unit> {
         if (value < 0) return fail("库存应为非负整数")
         if (reason.isBlank()) return fail("请填写盘点原因")
-        return storeOp(check = { s -> if (s.product(productId) == null) "商品不存在" else null }) { s ->
-            s.copy(products = s.products.map { p ->
+        val actor = state.value.user ?: DemoCatalog.STAFF
+        return storeOp(event = EventSpec { b, a -> Triple("StockAdjusted", ManagementEventFactory.stock(b, a), listOf("stock:$productId")) }, check = { s ->
+            val p = s.product(productId)
+            when {
+                p == null -> "商品不存在"
+                skuKey != null && p.skus.none { it.key == skuKey } -> "规格不存在"
+                reason.length > 60 -> "原因最多 60 字"
+                else -> null
+            }
+        }) { s ->
+            val p = s.product(productId)!!
+            val before = if (skuKey == null) p.stock else p.skus.first { it.key == skuKey }.stock
+            val label = if (skuKey == null) p.name else "${p.name} · ${p.skus.first { it.key == skuKey }.label}"
+            val move = StockMovement(newId("SM"), productId, skuKey, label, before, value, before?.let { value - it }, reason.trim(), actor, clock())
+            s.copy(stockMovements = s.stockMovements + move, products = s.products.map { p ->
                 when {
                     p.id != productId -> p
                     skuKey == null -> p.copy(stock = value)
@@ -272,25 +371,29 @@ class LocalWorkspace(
         }
     }
 
-    override suspend fun saveMenu(id: String?, name: String, en: String, productIds: List<String>) = storeOp(check = { s ->
+    override suspend fun saveMenu(id: String?, name: String, en: String, productIds: List<String>): Result<Unit> {
+        val key = id ?: newId("m")
+        return storeOp(event = config(if (id == null) "MenuCreated" else "MenuUpdated", "menu") { key }, check = { s ->
         ManageRules.required(name, "餐牌名称") ?: ManageRules.unique(name, s.menus.filter { it.id != id }.map { it.name }, "餐牌")
             ?: if (productIds.isEmpty()) "餐牌至少包含一个商品" else null
     }) { s ->
-        if (id == null) s.copy(menus = s.menus + Menu(newId("m"), name.trim(), en.trim(), productIds.distinct(), published = false))
+        if (id == null) s.copy(menus = s.menus + Menu(key, name.trim(), en.trim(), productIds.distinct(), published = false))
         else s.copy(menus = s.menus.map { if (it.id == id) it.copy(name = name.trim(), en = en.trim(), productIds = productIds.distinct()) else it })
     }
+    }
 
-    override suspend fun setPublished(menuId: String, published: Boolean) = storeOp(check = { s ->
+    override suspend fun setPublished(menuId: String, published: Boolean) = storeOp(event = config(if (published) "MenuPublished" else "MenuUnpublished", "menu") { menuId }, check = { s ->
         val m = s.menus.firstOrNull { it.id == menuId } ?: return@storeOp "餐牌不存在"
         if (published) ManageRules.canPublish(m) else null
     }) { s -> s.copy(menus = s.menus.map { if (it.id == menuId) it.copy(published = published) else it }) }
 
-    override suspend fun saveSettings(settings: StoreSettings) = storeOp(check = { ManageRules.required(settings.shortName, "门店简称") }) { s ->
+    override suspend fun saveSettings(settings: StoreSettings) = storeOp(event = EventSpec { b, a -> Triple("StoreSettingsUpdated", ManagementEventFactory.config("settings", a.id, b, a), listOf(Aggregates.CATALOG)) },
+        check = { ManageRules.required(settings.shortName, "门店简称") }) { s ->
         s.copy(settings = settings.copy(shortName = settings.shortName.trim()))
     }
 
     // —— 桌台 ——
-    override suspend fun createReservation(tableId: String, name: String, phone: String, guests: Int, arrivesAt: Long, note: String) = storeOp(event = "ReservationCreated" to tableId, check = { s ->
+    override suspend fun createReservation(tableId: String, name: String, phone: String, guests: Int, arrivesAt: Long, note: String) = storeOp(event = page("ReservationCreated", tableId), check = { s ->
         ReservationRules.validate(s.table(tableId), s.reservations, name, phone, guests, arrivesAt, clock())
             ?: if (note.length > 200) "预订备注最多 200 字" else null
     }) { s ->
@@ -301,7 +404,7 @@ class LocalWorkspace(
 
     override suspend fun cancelReservation(id: String): Result<Unit> {
         val tableId = bookedTable(id) ?: return fail("预订已处理或不存在")
-        return storeOp(event = "ReservationCancelled" to tableId, check = { s ->
+        return storeOp(event = page("ReservationCancelled", tableId), check = { s ->
             if (s.reservations.none { it.id == id && it.tableId == tableId && it.status == ReservationStatus.Booked }) "预订已处理或不存在" else null
         }) { s -> cancelled(s, id) }
     }
@@ -317,7 +420,7 @@ class LocalWorkspace(
     /** 预订到店：开台与预订状态在同一事务，产生独立的 ReservationCheckedIn 事件（不借用 TableOpened）。 */
     override suspend fun checkInReservation(id: String): Result<Unit> {
         val tableId = bookedTable(id) ?: return fail("预订已处理或不存在")
-        return storeOp(event = "ReservationCheckedIn" to tableId, check = { s ->
+        return storeOp(event = page("ReservationCheckedIn", tableId), check = { s ->
             val r = s.reservations.firstOrNull { it.id == id && it.tableId == tableId && it.status == ReservationStatus.Booked }
                 ?: return@storeOp "预订已处理或不存在"
             openBlock(s, tableId, r.guests)
@@ -325,7 +428,7 @@ class LocalWorkspace(
     }
 
     override suspend fun openTable(tableId: String, guests: Int) =
-        storeOp(event = "TableOpened" to tableId, check = { s -> openBlock(s, tableId, guests) }) { s -> opened(s, tableId, guests) }
+        storeOp(event = page("TableOpened", tableId), check = { s -> openBlock(s, tableId, guests) }) { s -> opened(s, tableId, guests) }
 
     private fun openBlock(s: StoreData, tableId: String, guests: Int): String? {
         val t = s.table(tableId) ?: return "桌台不存在"
@@ -338,19 +441,21 @@ class LocalWorkspace(
 
     /** arrivedId 为空时（直接开台）该桌所有待到店预订视为到店；否则只标记指定预订。 */
     private fun opened(s: StoreData, tableId: String, guests: Int, arrivedId: String? = null) =
-        s.withTable(tableId) { it.copy(status = TableStatus.Dining, guests = guests, openedAt = clock(), reservation = "", paid = 0) }
-            .withOrder(tableId, TableOrder()).copy(currentTableId = tableId,
+        s.withTable(tableId) { it.copy(status = TableStatus.Dining, guests = guests, openedAt = clock(), reservation = "", paid = 0, sessionId = newId("TS")) }
+            .withOrder(tableId, TableOrder(orderId = newId("O"))).copy(currentTableId = tableId,
                 reservations = s.reservations.map {
                     val hit = if (arrivedId != null) it.id == arrivedId else it.tableId == tableId && it.status == ReservationStatus.Booked
                     if (hit) it.copy(status = ReservationStatus.Arrived, updatedAt = clock()) else it
                 })
 
-    override suspend fun settle(tableId: String, amount: Int, method: String, online: Boolean, received: Int): Result<Unit> {
+    override suspend fun settle(tableId: String, amount: Long, method: String, online: Boolean, received: Long): Result<Unit> {
         val pid = newId("P")
-        return storeOp(event = "PaymentRecorded" to tableId, check = { s ->
+        return storeOp(event = page("PaymentRecorded", tableId), check = { s ->
             val totals = OrderRules.totals(s.order(tableId))
             OrderRules.checkoutBlock(totals) ?: when {
                 amount != totals.due -> "账单已变化，请重新核对"
+                !Money.withinBill(amount) || !Money.withinBill(received) -> "金额超出上限"
+                s.settings.currency !in Money.SUPPORTED -> "不支持的币种：${s.settings.currency}"
                 method == "现金" && received < amount -> "实收不足，不能确认收款"
                 method !in listOf("现金", "银行卡", "扫码", "储值卡") -> "请选择收款方式"
                 !online && method == "扫码" -> "离线时该收款方式不可用"
@@ -358,7 +463,8 @@ class LocalWorkspace(
                 else -> null
             }
         }) { s ->
-            val pay = PaymentRecord(pid, tableId, amount, method, clock(), synced = online, received = if (method == "现金") received else amount, change = if (method == "现金") received - amount else 0)
+            val pay = PaymentRecord(pid, tableId, amount, method, clock(), synced = online, received = if (method == "现金") received else amount, change = if (method == "现金") received - amount else 0L,
+                orderId = s.order(tableId).orderId.ifBlank { null }, currency = s.settings.currency)
             val out = if (online) s.outbox else s.outbox + OutboxItem(pid, OutboxKind.Payment, tableId, "$tableId $method 收款 ${yuan(amount)}", clock())
             val receipt = PrintJob(newId("R"), PrintKind.Receipt, "$tableId 结账单", Receipts.bill("结账单", s, tableId, s.order(tableId), clock(), pay), clock())
             s.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
@@ -367,14 +473,14 @@ class LocalWorkspace(
     }
 
     override suspend fun startCleaning(tableId: String) = transition(tableId, TableStatus.Paid, "TableCleaningStarted") { it.copy(status = TableStatus.Cleaning) }
-    override suspend fun finishCleaning(tableId: String) = transition(tableId, TableStatus.Cleaning, "TableCleaningFinished") { it.copy(status = TableStatus.Idle, guests = 0, openedAt = 0, paid = 0) }
+    override suspend fun finishCleaning(tableId: String) = transition(tableId, TableStatus.Cleaning, "TableCleaningFinished") { it.copy(status = TableStatus.Idle, guests = 0, openedAt = 0, paid = 0, sessionId = "") }
 
-    private suspend fun transition(tableId: String, from: TableStatus, type: String, f: (DiningTable) -> DiningTable) = storeOp(event = type to tableId, check = { s ->
+    private suspend fun transition(tableId: String, from: TableStatus, type: String, f: (DiningTable) -> DiningTable) = storeOp(event = page(type, tableId), check = { s ->
         val t = s.table(tableId) ?: return@storeOp "桌台不存在"
         if (t.status != from) "$tableId 当前为${t.status.label}" else null
     }) { it.withTable(tableId, f) }
 
-    override suspend fun setPosition(tableId: String, x: Int, y: Int) = storeOp(event = "TablePositionChanged" to tableId, check = { s ->
+    override suspend fun setPosition(tableId: String, x: Int, y: Int) = storeOp(event = page("TablePositionChanged", tableId), check = { s ->
         when {
             s.table(tableId) == null -> "桌台不存在"
             x !in 0..TableRules.MAX_X || y !in 0..TableRules.MAX_Y -> "坐标范围：X 0–${TableRules.MAX_X}，Y 0–${TableRules.MAX_Y}"
@@ -382,19 +488,20 @@ class LocalWorkspace(
         }
     }) { it.withTable(tableId) { t -> t.copy(x = x, y = y) } }
 
-    override suspend fun changeTable(from: String, to: String) = storeOp(event = "TableChanged" to from, check = { s ->
+    override suspend fun changeTable(from: String, to: String) = storeOp(event = page("TableChanged", from), check = { s ->
         if (s.reservations.any { it.tableId == to && it.status == ReservationStatus.Booked }) return@storeOp "目标桌台已有预订"
         val a = s.table(from); val b = s.table(to)
         if (a == null || b == null) "桌台不存在" else TableRules.canChange(a, b)
     }) { s ->
         val a = s.table(from)!!
-        s.withTable(to) { it.copy(status = TableStatus.Dining, guests = a.guests, openedAt = a.openedAt, reservation = "") }
+        // 换桌：订单ID保留，目标桌开新的桌台会话
+        s.withTable(to) { it.copy(status = TableStatus.Dining, guests = a.guests, openedAt = a.openedAt, reservation = "", sessionId = newId("TS")) }
             .withTable(from) { it.copy(status = TableStatus.Cleaning, guests = 0, openedAt = 0) }
             .withOrder(to, s.order(from)).withOrder(from, TableOrder())
             .copy(currentTableId = to)
     }
 
-    override suspend fun mergeTable(from: String, into: String) = storeOp(event = "TableMerged" to from, check = { s ->
+    override suspend fun mergeTable(from: String, into: String) = storeOp(event = page("TableMerged", from), check = { s ->
         val a = s.table(from); val b = s.table(into)
         if (a == null || b == null) "桌台不存在" else TableRules.canMerge(a, b) ?: TableRules.compatible(s.order(from), s.order(into))
     }) { s ->
@@ -405,7 +512,7 @@ class LocalWorkspace(
             .copy(currentTableId = into)
     }
 
-    override suspend fun splitLines(from: String, uids: Set<Long>, to: String, guests: Int) = storeOp(event = "OrderSplit" to from, check = { s ->
+    override suspend fun splitLines(from: String, uids: Set<Long>, to: String, guests: Int) = storeOp(event = page("OrderSplit", from), check = { s ->
         if (s.reservations.any { it.tableId == to && it.status == ReservationStatus.Booked }) return@storeOp "目标桌台已有预订"
         val b = s.table(to)
         when {
@@ -417,9 +524,15 @@ class LocalWorkspace(
     }) { s ->
         val (rest, moved) = TableRules.split(s.order(from), uids)
         val b = s.table(to)!!
-        val opened = if (b.status == TableStatus.Dining) s else s.withTable(to) { it.copy(status = TableStatus.Dining, guests = guests, openedAt = clock(), reservation = "") }
+        val opened = if (b.status == TableStatus.Dining) s else s.withTable(to) { it.copy(status = TableStatus.Dining, guests = guests, openedAt = clock(), reservation = "", sessionId = newId("TS")) }
         val target = opened.order(to)
-        opened.withOrder(from, rest).withOrder(to, TableRules.merge(s.order(from).copy(lines = moved), target))
+        val source = s.order(from)
+        // 拆单：目标沿用已有订单或生成新订单；记录来源订单，不当作并台
+        val merged = TableRules.merge(source.copy(lines = moved), target).copy(
+            orderId = target.orderId.ifBlank { newId("O") }, mergedOrderIds = target.mergedOrderIds,
+            splitFromOrderIds = (target.splitFromOrderIds + source.orderId).filter { it.isNotBlank() }.distinct(),
+        )
+        opened.withOrder(from, rest).withOrder(to, merged)
     }
 
     // —— 打印 ——
@@ -432,19 +545,25 @@ class LocalWorkspace(
 
     override suspend fun preBill(tableId: String) = storeOp(check = { s ->
         if (s.order(tableId).lines.isEmpty()) "$tableId 没有菜品" else null
-    }) { s -> s.copy(printJobs = s.printJobs + PrintJob(newId("B"), PrintKind.PreBill, "$tableId 预结单", Receipts.bill("预结单", s, tableId, s.order(tableId), clock()), clock())) }
+    }) { s ->
+        val job = PrintJob(newId("B"), PrintKind.PreBill, "$tableId 预结单", Receipts.bill("预结单", s, tableId, s.order(tableId), clock()), clock())
+        s.copy(printJobs = s.printJobs + job).log(TaskLogKind.PrintRequested, job.id, "queued", "local", tableId)
+    }
 
     override suspend fun reprint(jobId: String) = storeOp(check = { s -> if (s.printJobs.none { it.id == jobId }) "打印任务不存在" else null }) { s ->
         val j = s.printJobs.first { it.id == jobId }
-        s.copy(printJobs = s.printJobs + j.copy(id = newId("RP"), title = "${j.title}（补打）", body = listOf("** 补打 **") + j.body, createdAt = clock(), state = PrintState.Pending, attempts = 0, reprint = true, error = ""))
+        val copy = j.copy(id = newId("RP"), title = "${j.title}（补打）", body = listOf("** 补打 **") + j.body, createdAt = clock(), state = PrintState.Pending, attempts = 0, reprint = true, error = "")
+        s.copy(printJobs = s.printJobs + copy).log(TaskLogKind.PrintReprinted, copy.id, "queued", "local", "原任务 ${j.id}")
     }
 
     override suspend fun process(kitchenOk: Boolean): Int {
+        if (blockedState.value != null) return 0
         var failed = 0
         val s = currentStore() ?: return 0
         if (s.printJobs.none { it.state != PrintState.Printed }) return 0
         storeOp { st ->
-            st.copy(printJobs = st.printJobs.map { j ->
+            var logged = st
+            val jobs = st.printJobs.map { j ->
                 when {
                     j.state == PrintState.Printed -> j
                     j.kind.printer == "厨房" && !kitchenOk -> {
@@ -452,8 +571,9 @@ class LocalWorkspace(
                         j.copy(state = PrintState.Failed, attempts = j.attempts + if (j.state == PrintState.Pending) 1 else 0, error = "厨房打印机缺纸")
                     }
                     else -> j.copy(state = PrintState.Printed, attempts = j.attempts + 1, error = "")
-                }
-            })
+                }.also { n -> if (n != j && n.state != j.state) logged = logged.log(TaskLogKind.PrintAttempt, j.id, n.state.name, "simulation", n.error) }
+            }
+            logged.copy(printJobs = jobs)
         }.getOrThrow()
         return failed
     }
@@ -464,9 +584,9 @@ class LocalWorkspace(
     }
 
     // —— 交班 ——
-    override suspend fun closeShift(counted: Int, staff: String): Result<ShiftRecord> = persistenceResult {
-        transaction { v ->
-            if (counted < 0) return@transaction v to Result.failure(IllegalArgumentException("实盘金额应为非负"))
+    override suspend fun closeShift(counted: Long, staff: String): Result<ShiftRecord> = persistenceResult {
+        transaction(EventSpec { b, a -> Triple("ShiftClosed", ManagementEventFactory.shift(b, a), listOf(Aggregates.SHIFT)) }) { v ->
+            if (!Money.withinBill(counted)) return@transaction v to Result.failure(IllegalArgumentException("实盘金额应为非负且不超过上限"))
             val s = v.store ?: return@transaction v to Result.failure(IllegalStateException("请先选择门店"))
             val sum = ShiftRules.summary(s.payments, s.shift, s.adjustments)
             val start = if (s.shift.start > 0) s.shift.start else s.payments.minOfOrNull { it.at } ?: clock()
@@ -480,7 +600,7 @@ class LocalWorkspace(
     }
 
     // —— 订单 ——
-    private suspend fun mutate(tableId: String, event: Pair<String, String>? = null, rule: (StoreData, TableOrder) -> OrderResult): OrderResult = try {
+    private suspend fun mutate(tableId: String, event: EventSpec? = null, rule: (StoreData, TableOrder) -> OrderResult): OrderResult = try {
         transaction(event) { v ->
             val s = v.store ?: return@transaction v to OrderResult.Rejected("请先选择门店")
             if (s.table(tableId)?.status != TableStatus.Dining) return@transaction v to OrderResult.Rejected("$tableId 未开台，请先在桌台开台")
@@ -491,9 +611,9 @@ class LocalWorkspace(
     } catch (e: WorkspaceWriteException) { OrderResult.Rejected(requireNotNull(e.message)) }
 
     override suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String, mealChoiceIds: List<String>) =
-        mutate(tableId, "DishAdded" to tableId) { s, o -> OrderRules.add(o, product, sku, qty, s.seq, note, mealChoiceIds) }
+        mutate(tableId, page("DishAdded", tableId)) { s, o -> OrderRules.add(o, product, sku, qty, s.seq, note, mealChoiceIds) }
 
-    override suspend fun setBenefits(tableId: String, coupon: Boolean, activity: Boolean) = storeOp(event = "OrderBenefitsChanged" to tableId, check = { s ->
+    override suspend fun setBenefits(tableId: String, coupon: Boolean, activity: Boolean) = storeOp(event = page("OrderBenefitsChanged", tableId), check = { s ->
         val sub = OrderRules.totals(s.order(tableId)).sub
         when {
             s.table(tableId)?.status != TableStatus.Dining -> "请先开台"
@@ -509,7 +629,7 @@ class LocalWorkspace(
             AdjustmentKind.Gift -> "DishGifted"
             AdjustmentKind.Discount -> "OrderDiscounted"
         }
-        commit(type to tableId) { v ->
+        commit(page(type, tableId)) { v ->
             val account = v.accounts.firstOrNull { it.supervisor && it.email.equals(email.trim(), true) }
             val demo = v.user == "体验账号" && email.trim() == "manager@demo.local" && password == "demo12345"
             require(demo || (account != null && ManageRules.hash(password, account.salt) == account.hash)) { "主管账号或密码不正确" }
@@ -536,14 +656,14 @@ class LocalWorkspace(
         Unit
     }
 
-    override suspend fun setLineNote(tableId: String, uid: Long, note: String) = mutate(tableId, "DishNoteChanged" to tableId) { _, o -> OrderRules.setNote(o, uid, note) }
+    override suspend fun setLineNote(tableId: String, uid: Long, note: String) = mutate(tableId, page("DishNoteChanged", tableId)) { _, o -> OrderRules.setNote(o, uid, note) }
 
-    override suspend fun setOrderNote(tableId: String, note: String) = storeOp(event = "OrderNoteChanged" to tableId, check = { s ->
+    override suspend fun setOrderNote(tableId: String, note: String) = storeOp(event = page("OrderNoteChanged", tableId), check = { s ->
         if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else if (note.length > 60) "整单备注最多 60 字" else null
     }) { it.withOrder(tableId, it.order(tableId).copy(note = note.trim())) }
 
     override suspend fun hold(tableId: String): Result<Int> = persistenceResult {
-        transaction("OrderHeld" to tableId) { v ->
+        transaction(page("OrderHeld", tableId)) { v ->
             val s = v.store ?: return@transaction v to Result.failure(IllegalStateException("请先选择门店"))
             val draft = s.order(tableId).pending
             if (draft.isEmpty()) return@transaction v to Result.failure(IllegalStateException("没有可挂起的新加菜品"))
@@ -553,7 +673,7 @@ class LocalWorkspace(
         }
     }
 
-    override suspend fun retrieve(ticketId: String, tableId: String) = storeOp(event = "OrderRetrieved" to tableId, check = { s ->
+    override suspend fun retrieve(ticketId: String, tableId: String) = storeOp(event = page("OrderRetrieved", tableId), check = { s ->
         when {
             s.held.none { it.id == ticketId } -> "挂单不存在或已取回"
             s.table(tableId)?.status != TableStatus.Dining -> "$tableId 未在用餐，请先开台"
@@ -568,19 +688,19 @@ class LocalWorkspace(
         s.withOrder(tableId, o.copy(lines = o.lines.take(at) + lines + o.lines.drop(at))).copy(held = s.held - t, seq = seq)
     }
 
-    override suspend fun changeQty(tableId: String, uid: Long, delta: Int) = mutate(tableId, "DishQuantityChanged" to tableId) { s, o ->
+    override suspend fun changeQty(tableId: String, uid: Long, delta: Int) = mutate(tableId, page("DishQuantityChanged", tableId)) { s, o ->
         val line = o.lines.firstOrNull { it.uid == uid } ?: return@mutate OrderResult.Rejected("菜品已不在账单中")
         val p = s.product(line.dishId) ?: return@mutate OrderResult.Rejected("${line.name}已下架")
         OrderRules.changeQty(o, uid, delta, p)
     }
 
     override suspend fun clearNew(tableId: String) {
-        storeOp(event = "OrderDraftCleared" to tableId, check = { s -> if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else null }) {
+        storeOp(event = page("OrderDraftCleared", tableId), check = { s -> if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else null }) {
             it.withOrder(tableId, OrderRules.clearNew(it.order(tableId)))
         }.orReject()
     }
 
-    override suspend fun sendToKitchen(tableId: String, online: Boolean): SendResult = transaction("KitchenSubmitted" to tableId) { v ->
+    override suspend fun sendToKitchen(tableId: String, online: Boolean): SendResult = transaction(page("KitchenSubmitted", tableId)) { v ->
         val s = v.store ?: return@transaction v to SendResult(0, false)
         val n = s.order(tableId).pending.sumOf { it.qty }
         if (n == 0) return@transaction v to SendResult(0, false)
@@ -594,12 +714,12 @@ class LocalWorkspace(
 
     override suspend fun advance(tableId: String, uid: Long, to: LineStatus) {
         val type = if (to == LineStatus.Rushing) "DishRushed" else "DishServed"
-        storeOp(event = type to tableId, check = { s -> if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else null }) {
+        storeOp(event = page(type, tableId), check = { s -> if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else null }) {
             it.withOrder(tableId, OrderRules.advance(it.order(tableId), uid, to))
         }.orReject()
     }
     override suspend fun setMember(tableId: String, member: Boolean) {
-        storeOp(event = "OrderMemberChanged" to tableId, check = { s -> if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else null }) {
+        storeOp(event = page("OrderMemberChanged", tableId), check = { s -> if (s.table(tableId)?.status != TableStatus.Dining) "$tableId 未在用餐" else null }) {
             it.withOrder(tableId, it.order(tableId).copy(member = member))
         }.orReject()
     }
@@ -610,6 +730,7 @@ class LocalWorkspace(
      * 幂等：只处理 Pending；送厨只把该批次的待同步行改为已下单，重复补发不会重复出单。
      */
     override suspend fun syncNow(): Int {
+        if (blockedState.value != null) return 0
         var done = 0
         commit { v ->
             v.copy(stores = v.stores.mapValues { (_, s) ->
@@ -624,6 +745,7 @@ class LocalWorkspace(
                         OutboxKind.Payment -> st.copy(payments = st.payments.map { if (it.id == item.id) it.copy(synced = true) else it })
                     }
                     st = st.copy(outbox = st.outbox.map { if (it.id == item.id) it.copy(state = OutboxState.Done, attempts = it.attempts + 1, doneAt = clock()) else it })
+                        .log(TaskLogKind.SyncAttempt, item.id, "Done", "simulation", item.kind.name)
                     done++
                 }
                 st

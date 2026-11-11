@@ -18,6 +18,7 @@ class WorkspaceDurabilityTest {
         var gate: CompletableDeferred<Unit>? = null
         var fail = false
         override suspend fun load() = value
+        override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt { save(source); return testReceipt(command) }
         override suspend fun save(json: String) {
             gate?.await()
             if (fail) throw IOException("disk full")

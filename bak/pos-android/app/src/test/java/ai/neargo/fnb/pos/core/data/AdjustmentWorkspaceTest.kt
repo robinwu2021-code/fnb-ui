@@ -13,6 +13,7 @@ class AdjustmentWorkspaceTest {
     private class Disk : SnapshotStore {
         var data: String? = null
         override suspend fun load() = data
+        override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt { save(source); return testReceipt(command) }
         override suspend fun save(json: String) { data = json }
     }
     @Test fun authorizationWritesAuditAndVoidSlipAndSurvivesRestore() = runTest(UnconfinedTestDispatcher()) {
@@ -51,7 +52,16 @@ class AdjustmentWorkspaceTest {
         disk.data = kotlinx.serialization.json.Json.encodeToString(Vault.serializer(), Vault(stores = old, user = "体验账号", storeId = "s-main"))
         val w = LocalWorkspace(disk, backgroundScope) { 1000000L }; w.restore(); yield()
         assertTrue(ProductSearch.matches(w.current.value!!.products.first { it.id == "1" }, "gbjd"))
-        assertEquals(old.getValue("s-main").orders, w.current.value!!.orders)
+        // 菜品不丢；活动订单补发稳定ID并记录映射，空闲桌不分配
+        assertEquals(old.getValue("s-main").orders.mapValues { it.value.lines }, w.current.value!!.orders.mapValues { it.value.lines })
+        val store = w.current.value!!
+        val dining = store.tables.filter { it.status == ai.neargo.fnb.pos.core.model.TableStatus.Dining }
+        assertTrue(dining.all { it.sessionId.isNotBlank() && store.orders.getValue(it.id).orderId.isNotBlank() })
+        assertTrue(store.idMappings.filter { it.source == "legacy-v3" }.map { it.tableId }.containsAll(dining.map { it.id }))
+        assertTrue(store.tables.filter { it.status == ai.neargo.fnb.pos.core.model.TableStatus.Idle }.all { it.sessionId.isEmpty() })
+        assertTrue(store.payments.all { it.orderId == null }) // 历史收款关联未知
+        val vault = VaultCodec.decode(disk.data!!)
+        assertTrue(vault.deviceId.startsWith("dev-"))
         assertTrue(disk.data!!.contains("\"version\":3"))
     }
 

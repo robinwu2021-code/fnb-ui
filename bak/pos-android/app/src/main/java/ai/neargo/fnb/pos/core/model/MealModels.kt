@@ -2,10 +2,10 @@ package ai.neargo.fnb.pos.core.model
 
 import kotlinx.serialization.Serializable
 
-@Serializable data class MealChoice(val id: String, val name: String, val delta: Int = 0)
+@Serializable data class MealChoice(val id: String, val name: String, val delta: Long = 0)
 @Serializable data class MealGroup(val id: String, val name: String, val choices: List<MealChoice>)
 /** Immutable order snapshot: later catalog edits cannot change an ordered meal. */
-@Serializable data class MealSelection(val groupId: String, val groupName: String, val choiceId: String, val choiceName: String, val delta: Int) {
+@Serializable data class MealSelection(val groupId: String, val groupName: String, val choiceId: String, val choiceName: String, val delta: Long) {
     val label get() = "$groupName：$choiceName"
 }
 
@@ -32,5 +32,5 @@ object MealRules {
         }
     }
 
-    fun price(base: Int, selections: List<MealSelection>): Int = Math.addExact(base, selections.sumOf { it.delta })
+    fun price(base: Long, selections: List<MealSelection>): Long = Money.sum(listOf(base) + selections.map { it.delta })
 }

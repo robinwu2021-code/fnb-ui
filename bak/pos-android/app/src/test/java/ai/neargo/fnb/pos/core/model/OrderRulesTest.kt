@@ -27,7 +27,7 @@ class OrderRulesTest {
         val large = chicken.skus.first { it.label == "大份" }
         var o = ok(OrderRules.add(TableOrder(), chicken, small, 1, 1))
         o = ok(OrderRules.add(o, chicken, large, 1, 2))
-        assertEquals(listOf(4800, 5800), o.lines.map { it.unit })
+        assertEquals(listOf(4800L, 5800L), o.lines.map { it.unit })
         assertTrue(OrderRules.add(TableOrder(), chicken, null, 1, 3) is OrderResult.Rejected) // 规格菜必须选 SKU
     }
 
@@ -76,7 +76,7 @@ class OrderRulesTest {
     }
 
     @Test fun totalsMatchPrototypeA03() {
-        val lines = listOf(4800 to 1, 300 to 4, 7800 to 1, 3800 to 1, 6800 to 1).mapIndexed { i, (u, q) ->
+        val lines = listOf(4800L to 1, 300L to 4, 7800L to 1, 3800L to 1, 6800L to 1).mapIndexed { i, (u, q) ->
             OrderLine(i.toLong(), "$i", "x", OrderRules.DEFAULT_SPEC, u, q, if (i < 2) LineStatus.New else LineStatus.Sent)
         }
         val t = OrderRules.totals(TableOrder(lines))

@@ -25,9 +25,10 @@ class OrderTableEventsTest {
         var failNext = false
         override suspend fun load() = json
         override suspend fun save(json: String) { this.json = json }
-        override suspend fun saveCommand(source: String, command: JournalCommand) {
+        override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt {
             if (failNext) { failNext = false; error("disk") }
             json = source; commands += command
+            return testReceipt(command)
         }
     }
 

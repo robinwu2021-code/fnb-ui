@@ -56,14 +56,15 @@ fun SpecDialog(dish: Product, groups: List<SpecGroup>, onDismiss: () -> Unit, on
     val meal = ai.neargo.fnb.pos.core.model.MealRules.resolve(dish, mealPicks.toList()).getOrNull()
     val stock = if (dish.hasSpec) sku?.stock ?: 0 else dish.stock ?: Int.MAX_VALUE
     val soldOut = stock == 0 || (dish.hasSpec && sku == null) || meal == null
-    val unitPrice = (sku?.price ?: dish.price).toLong() + (meal?.sumOf { it.delta.toLong() } ?: 0)
-    val affordable = unitPrice * qty <= Int.MAX_VALUE
+    val unitPrice = runCatching { ai.neargo.fnb.pos.core.model.Money.sum(listOf(sku?.price ?: dish.price) + (meal?.map { it.delta } ?: emptyList())) }.getOrDefault(Long.MAX_VALUE)
+    val lineTotal = runCatching { ai.neargo.fnb.pos.core.model.Money.line(unitPrice, qty) }.getOrNull()
+    val affordable = lineTotal != null && lineTotal <= ai.neargo.fnb.pos.core.model.Money.MAX_BILL
 
     PosDialog(
         dish.name, onDismiss, subtitle = "${dish.en} · ${if (soldOut) "组合不可售" else if (stock == Int.MAX_VALUE) "不限量" else "余 $stock 份"}",
         footer = {
-            Text(if (soldOut || !affordable) "—" else yuan((unitPrice * qty).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), style = t.amountM.num(), color = c.ink, modifier = Modifier.weight(1f))
-            QuantityStepper(qty, { qty = (qty + it).coerceIn(1, stock.coerceIn(1, 999)) }, min = 1, max = stock.coerceIn(1, 999))
+            Text(if (soldOut || !affordable) "—" else yuan(lineTotal!!), style = t.amountM.num(), color = c.ink, modifier = Modifier.weight(1f))
+            QuantityStepper(qty, { qty = (qty + it).coerceIn(1, stock.coerceIn(1, ai.neargo.fnb.pos.core.model.Money.MAX_QTY)) }, min = 1, max = stock.coerceIn(1, ai.neargo.fnb.pos.core.model.Money.MAX_QTY))
             PosButton("加入账单", { onConfirm(sku, qty, mealPicks.toList()) }, variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !soldOut && affordable)
         },
     ) {

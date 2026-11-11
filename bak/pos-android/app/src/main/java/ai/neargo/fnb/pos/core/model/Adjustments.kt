@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable enum class AdjustmentKind(val label: String) { Void("退菜"), Gift("赠送"), Discount("整单折扣") }
 @Serializable data class AdjustmentAudit(
     val id: String, val tableId: String, val kind: AdjustmentKind, val operator: String,
-    val supervisor: String, val reason: String, val amount: Int, val qty: Int, val at: Long,
+    val supervisor: String, val reason: String, val amount: Long, val qty: Int, val at: Long,
     val lineName: String = "", val detail: String = "",
 )
 data class AdjustmentRequest(val kind: AdjustmentKind, val uid: Long? = null, val quantity: Int = 1, val percent: Int = 100, val reason: String = "")
@@ -34,15 +34,12 @@ object AdjustmentRules {
 
 /** 现金输入只保留有效金额，金额一律整数分。 */
 object CashRules {
-    fun amount(text: String): Int? = if (Regex("^\\d{1,5}(\\.\\d{1,2})?$").matches(text)) {
-        val p = text.split('.')
-        p[0].toInt() * 100 + p.getOrNull(1).orEmpty().padEnd(2, '0').toInt()
-    } else null
+    fun amount(text: String): Long? = Money.parse(text)
     fun key(value: String, key: String): String = when (key) {
         "清空" -> ""
         "⌫" -> value.dropLast(1)
         "." -> if ('.' in value) value else if (value.isEmpty()) "0." else "$value."
-        else -> (value + key).let { if (Regex("^\\d{0,5}(\\.\\d{0,2})?$").matches(it)) it else value }
+        else -> (value + key).let { if (Regex("^\\d{0,8}(\\.\\d{0,2})?$").matches(it)) it else value }
     }
-    fun change(received: String, due: Int): Int? = amount(received)?.takeIf { it >= due }?.minus(due)
+    fun change(received: String, due: Long): Long? = amount(received)?.takeIf { it >= due }?.minus(due)
 }

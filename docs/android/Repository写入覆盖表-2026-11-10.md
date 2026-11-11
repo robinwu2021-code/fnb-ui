@@ -1,6 +1,6 @@
 # Repository 写入覆盖表
 
-核对日期：2026-11-10；N1-02 更新于 2026-11-11。覆盖当前Repositories.kt及仓库外入口。已有事件仅指本地页面命令流，不代表真实同步或设备回执。待补项本轮不实施。
+核对日期：2026-11-10；N1-02、N1-03 更新于 2026-11-11；N2 起事件按聚合划分（订单/桌台/预订/目录/库存/交班），信封见[命令协议与恢复实施记录](命令协议与恢复实施记录-2026-11-11.md)。覆盖当前Repositories.kt及仓库外入口。已有事件仅指本地页面命令流，不代表真实同步或设备回执。待补项本轮不实施。
 
 ## SessionRepository
 
@@ -17,15 +17,15 @@
 
 | 入口 | 当前分类 | 事件或后续归属 |
 | --- | --- | --- |
-| `addArea` | 待营业事件 | N1-03配置库存交班 |
-| `saveTable` | 待营业事件 | N1-03配置库存交班 |
-| `addCategory` | 待营业事件 | N1-03配置库存交班 |
-| `addSpecGroup` | 待营业事件 | N1-03配置库存交班 |
-| `saveProduct` | 待营业事件 | N1-03配置库存交班 |
-| `adjustStock` | 待营业事件 | N1-03配置库存交班 |
-| `saveMenu` | 待营业事件 | N1-03配置库存交班 |
-| `setPublished` | 待营业事件 | N1-03配置库存交班 |
-| `saveSettings` | 待营业事件 | N1-03配置库存交班 |
+| `addArea` | 已有事件 | AreaCreated |
+| `saveTable` | 已有事件 | TableConfigCreated / TableConfigUpdated |
+| `addCategory` | 已有事件 | CategoryCreated |
+| `addSpecGroup` | 已有事件 | SpecGroupCreated |
+| `saveProduct` | 已有事件 | ProductCreated / ProductUpdated（含餐牌关联变化） |
+| `adjustStock` | 已有事件 | StockAdjusted + 库存流水 |
+| `saveMenu` | 已有事件 | MenuCreated / MenuUpdated |
+| `setPublished` | 已有事件 | MenuPublished / MenuUnpublished |
+| `saveSettings` | 已有事件 | StoreSettingsUpdated |
 
 ## FloorRepository
 
@@ -64,22 +64,22 @@
 
 | 入口 | 当前分类 | 事件或后续归属 |
 | --- | --- | --- |
-| `syncNow` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
+| `syncNow` | 设备任务日志 | SyncAttempt（simulation）；不进营业事件，N3/N6/N8接真实回执 |
 
 ## PrintRepository
 
 | 入口 | 当前分类 | 事件或后续归属 |
 | --- | --- | --- |
-| `preBill` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
-| `reprint` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
-| `process` | 设备/同步日志待补 | N3状态、N6设备、N8同步；当前执行仍模拟 |
+| `preBill` | 设备任务日志 | PrintRequested（local）；不进营业事件，N3/N6/N8接真实回执 |
+| `reprint` | 设备任务日志 | PrintReprinted（local，记原任务）；不进营业事件，N3/N6/N8接真实回执 |
+| `process` | 设备任务日志 | PrintAttempt（simulation）；不进营业事件，N3/N6/N8接真实回执 |
 | `billPreview` | 只读 | 仅文本预览，不入队 |
 
 ## ShiftRepository
 
 | 入口 | 当前分类 | 事件或后续归属 |
 | --- | --- | --- |
-| `closeShift` | 待营业事件 | N1-03配置库存交班 |
+| `closeShift` | 已有事件 | ShiftClosed（固化记录与账本范围） |
 
 ## PreferencesRepository
 
@@ -104,10 +104,10 @@
 
 - `checkInReservation`已改为单事务产生独立的ReservationCheckedIn，只标记该条预订到店；直接开台仍用TableOpened，并把该桌待到店预订标为到店。
 - `setPosition`是门店桌台布局，后续应同步配置，不等同于个人字体/布局偏好。
-- `adjustStock`缺库存调整前后数量、差量、原因和人员流水；`saveProduct`需记录SKU及餐牌关联。
-- `closeShift`已保存快照与打印任务，但缺ShiftClosed事件和账本范围契约。
-- `preBill/reprint`创建任务不代表出纸；需原任务/尝试关联和执行日志。
-- `process/syncNow`为模拟执行，会修改任务、订单/支付状态；不能把其成功标志升级为真实回执，也不确认command_events。
+- `adjustStock`已写库存流水（前后数量、差量、原因、人员）；`saveProduct`事件含商品与餐牌关联的前后内容。
+- `closeShift`产生ShiftClosed：固化交班记录、本班收款/调整ID、交班单任务、未同步项。
+- `preBill/reprint`只写本机任务日志（补打记原任务ID）；创建任务不代表出纸。
+- `process/syncNow`为模拟执行，每次状态变化写入来源为simulation的任务日志；不能把其成功标志升级为真实回执，也不确认command_events。
 - `advance`是本地催菜/上菜事件，不是KDS接单；`setMember/setBenefits`已有事件，但仍为本机演示，不代表资产已核验。
 - 当前账号/密码哈希、设备密钥及个人显示偏好不得混入营业事件。
 

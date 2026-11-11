@@ -40,12 +40,12 @@ data class CheckoutUiState(
     val online: Boolean = true,
     val processing: Boolean = false,
     /** 收款成功的金额；非空时显示结果页。 */
-    val paid: Int? = null,
+    val paid: Long? = null,
     /** 本桌今日已结账记录（不计入本次应收）。 */
     val history: List<PaymentRecord> = emptyList(),
     val cash: String = "",
     val audits: List<ai.neargo.fnb.pos.core.model.AdjustmentAudit> = emptyList(),
-    val wallet: Int = 50000,
+    val wallet: Long = 50000,
 ) {
     /** 不能结账核对的原因（新加 / 待同步 / 空单）；null 表示可以。 */
     val block get() = OrderRules.checkoutBlock(totals) ?: when {
@@ -90,7 +90,7 @@ class CheckoutViewModel(
     private val tableId = saved.toRoute<CheckoutRoute>().tableId
     /** 小票预览文本（当前账单）。 */
     fun preview(): List<String> = print.billPreview(tableId)
-    private data class Local(val method: PayMethod = PayMethod.Cash, val processing: Boolean = false, val paid: Int? = null, val cash: String = "")
+    private data class Local(val method: PayMethod = PayMethod.Cash, val processing: Boolean = false, val paid: Long? = null, val cash: String = "")
     private val local = MutableStateFlow(Local(cash = saved["cash"] ?: ""))
     private val effects = Channel<CheckoutEffect>(Channel.BUFFERED)
     val effect = effects.receiveAsFlow()

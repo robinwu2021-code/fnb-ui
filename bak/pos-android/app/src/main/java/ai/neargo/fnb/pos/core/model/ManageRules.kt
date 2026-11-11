@@ -7,7 +7,7 @@ import java.security.MessageDigest
  */
 object ManageRules {
     const val MAX_SKUS = 100
-    private const val MAX_PRICE_FEN = 99_999_00
+
 
     fun required(v: String, label: String): String? = if (v.isBlank()) "请填写$label" else null
 
@@ -26,27 +26,27 @@ object ManageRules {
         ?: Result.failure(IllegalArgumentException("座位数应为 1–30 的整数"))
 
     /** 金额（元）→ 分：非负、最多两位小数、上限 99999。 */
-    fun price(v: String, label: String = "售价"): Result<Int> {
+    fun price(v: String, label: String = "售价"): Result<Long> {
         val s = v.trim()
         if (!Regex("^\\d+(\\.\\d{1,2})?$").matches(s)) return Result.failure(IllegalArgumentException("$label 应为非负金额，最多两位小数"))
-        val fen = s.toBigDecimal().movePointRight(2).toInt()
-        return if (fen > MAX_PRICE_FEN) Result.failure(IllegalArgumentException("$label 不能超过 99999")) else Result.success(fen)
+        val fen = Money.parse(s, Money.MAX_UNIT) ?: return Result.failure(IllegalArgumentException("$label 不能超过 99999"))
+        return Result.success(fen)
     }
 
     fun stock(v: String, label: String = "库存"): Result<Int> = v.trim().toIntOrNull()?.takeIf { it >= 0 }?.let { Result.success(it) }
         ?: Result.failure(IllegalArgumentException("$label 应为非负整数"))
 
     /** 规格选项：`名称:加价,名称:加价`，同组名称不重复，加价非负、最多两位小数。返回（名称，加价分）。 */
-    fun options(v: String): Result<List<Pair<String, Int>>> {
+    fun options(v: String): Result<List<Pair<String, Long>>> {
         val parts = v.split(',', '，').map { it.trim() }.filter { it.isNotEmpty() }
         if (parts.isEmpty()) return Result.failure(IllegalArgumentException("请至少填写一个选项，格式：标准:0,大份:20"))
-        val out = mutableListOf<Pair<String, Int>>()
+        val out = mutableListOf<Pair<String, Long>>()
         for (p in parts) {
             val kv = p.split(':', '：')
             val name = kv[0].trim()
             if (name.isEmpty()) return Result.failure(IllegalArgumentException("选项名称不能为空"))
             if (out.any { it.first == name }) return Result.failure(IllegalArgumentException("选项「$name」重复"))
-            val delta = if (kv.size > 1) price(kv[1], "「$name」加价").getOrElse { return Result.failure(it) } else 0
+            val delta = if (kv.size > 1) price(kv[1], "「$name」加价").getOrElse { return Result.failure(it) } else 0L
             out += name to delta
         }
         return Result.success(out)
@@ -56,7 +56,7 @@ object ManageRules {
      * 生成 SKU：所选规格组按 ID 排序后做笛卡尔组合，最多 100 个。
      * 仍存在的组合保留手动价格与库存；未手动调价的随基础价重算；新组合库存默认取 defaultStock。
      */
-    fun skus(groups: List<SpecGroup>, basePrice: Int, defaultStock: Int, old: List<Sku>): Result<List<Sku>> {
+    fun skus(groups: List<SpecGroup>, basePrice: Long, defaultStock: Int, old: List<Sku>): Result<List<Sku>> {
         val sorted = groups.filter { it.options.isNotEmpty() }.sortedBy { it.id }
         if (sorted.isEmpty()) return Result.success(emptyList())
         val count = sorted.fold(1L) { acc, g -> acc * g.options.size }

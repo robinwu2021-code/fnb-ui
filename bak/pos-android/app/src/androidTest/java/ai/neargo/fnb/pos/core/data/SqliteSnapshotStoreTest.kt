@@ -62,6 +62,7 @@ class SqliteSnapshotStoreTest {
             var source = encode(source())
             override suspend fun load() = source
             override suspend fun save(json: String) { source = json }
+            override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt = throw UnsupportedOperationException()
         }
         try {
             val original = old.source

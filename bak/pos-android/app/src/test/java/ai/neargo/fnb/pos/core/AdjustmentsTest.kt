@@ -24,7 +24,7 @@ class AdjustmentsTest {
     }
     @Test fun cashRejectsInsufficientAndFractionalPrecision() {
         assertNull(CashRules.change("19.99", 2000))
-        assertEquals(3000, CashRules.change("50", 2000))
+        assertEquals(3000L, CashRules.change("50", 2000))
         assertNull(CashRules.amount("1.234"))
         assertEquals("1.23", CashRules.key("1.23", "4"))
         assertEquals("0.", CashRules.key("", "."))

@@ -16,6 +16,6 @@ internal class MigratingSnapshotStore(
         primary.save(source)
         source
     }
-    override suspend fun saveCommand(source: String, command: JournalCommand) = lock.withLock { primary.saveCommand(source, command) }
+    override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt = lock.withLock { primary.saveCommand(source, command) }
     override suspend fun save(json: String) = lock.withLock { primary.save(json) }
 }

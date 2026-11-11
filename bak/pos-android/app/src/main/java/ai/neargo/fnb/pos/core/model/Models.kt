@@ -12,7 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class Category(val id: String, val name: String, val en: String = "")
 
 /** 规格选项：delta 为加价（分）。 */
-@Serializable data class SpecOption(val id: String, val name: String, val delta: Int = 0)
+@Serializable data class SpecOption(val id: String, val name: String, val delta: Long = 0)
 
 /** 规格组：单选。 */
 @Serializable data class SpecGroup(val id: String, val name: String, val en: String = "", val options: List<SpecOption>)
@@ -26,7 +26,7 @@ data class Sku(
     val key: String,
     val optionIds: List<String>,
     val label: String,
-    val price: Int,
+    val price: Long,
     val stock: Int,
     val manualPrice: Boolean = false,
     val manualStock: Boolean = false,
@@ -38,8 +38,8 @@ data class Product(
     val name: String,
     val en: String = "",
     val categoryId: String,
-    /** 基础售价。 */
-    val price: Int,
+    /** 基础售价（分）。 */
+    val price: Long,
     /** 无 SKU 时的可售份数；null 不限量；0 沽清。有 SKU 时以 SKU 库存为准。 */
     val stock: Int? = null,
     val specGroupIds: List<String> = emptyList(),
@@ -90,10 +90,12 @@ data class DiningTable(
     /** 开台时间（毫秒），用餐时长由当前时间计算。 */
     val openedAt: Long = 0,
     val reservation: String = "",
-    val paid: Int = 0,
+    val paid: Long = 0,
     /** 平面位置（画布单位 900×460，卡片 140×112）；-1 表示按区域内顺序自动排布。 */
     val x: Int = -1,
     val y: Int = -1,
+    /** 桌台会话（本次营业占用）稳定ID；空闲时为空。桌号只是位置。 */
+    val sessionId: String = "",
 ) {
     fun minutes(now: Long) = if (status == TableStatus.Dining && openedAt > 0) ((now - openedAt) / 60_000).toInt().coerceAtLeast(0) else 0
 }
@@ -112,7 +114,7 @@ data class OrderLine(
     val dishId: String,
     val name: String,
     val spec: String,
-    val unit: Int,
+    val unit: Long,
     val qty: Int,
     val status: LineStatus,
     val skuKey: String? = null,
@@ -124,18 +126,29 @@ data class OrderLine(
 )
 
 @Serializable
-data class TableOrder(val lines: List<OrderLine> = emptyList(), val member: Boolean = false, val note: String = "", val discountPercent: Int = 100, val coupon: Boolean = false, val activity: Boolean = false) {
+data class TableOrder(
+    val lines: List<OrderLine> = emptyList(), val member: Boolean = false, val note: String = "", val discountPercent: Int = 100, val coupon: Boolean = false, val activity: Boolean = false,
+    /** 订单稳定ID：开台生成，换桌保留；空表示无活动订单。 */
+    val orderId: String = "",
+    /** 并入本单的来源订单ID。 */
+    val mergedOrderIds: List<String> = emptyList(),
+    /** 拆出本单的来源订单ID。 */
+    val splitFromOrderIds: List<String> = emptyList(),
+) {
     val pending get() = lines.filter { it.status == LineStatus.New }
     val queued get() = lines.filter { it.status == LineStatus.Queued }
     val sent get() = lines.filter { it.status != LineStatus.New }
 }
 
 /** 金额：小计、服务费 5%（演示）、优惠、应收；items 份数；newItems 待送厨份数；queuedItems 待同步份数。 */
-data class Totals(val sub: Int, val service: Int, val discount: Int, val due: Int, val items: Int, val newItems: Int, val queuedItems: Int = 0)
+data class Totals(val sub: Long, val service: Long, val discount: Long, val due: Long, val items: Int, val newItems: Int, val queuedItems: Int = 0)
 
 /** 收款记录（本机落盘，联网后同步）。 */
 @Serializable
-data class PaymentRecord(val id: String, val tableId: String, val amount: Int, val method: String, val at: Long, val synced: Boolean = false, val received: Int = amount, val change: Int = 0)
+data class PaymentRecord(val id: String, val tableId: String, val amount: Long, val method: String, val at: Long, val synced: Boolean = false, val received: Long = amount, val change: Long = 0,
+    /** 所属订单；null 表示旧版本记录，关联未知（不按桌号推断）。 */
+    val orderId: String? = null,
+    val currency: String = Money.CURRENCY)
 
 @Serializable enum class OutboxKind(val label: String) { Kitchen("送厨"), Payment("收款") }
 @Serializable enum class OutboxState(val label: String) { Pending("待同步"), Done("已同步") }
@@ -154,7 +167,7 @@ data class OutboxItem(
 )
 
 @Serializable
-data class StoreSettings(val shortName: String, val receiptFooter: String = "谢谢惠顾，欢迎再来", val hours: String = "10:00–22:00")
+data class StoreSettings(val shortName: String, val receiptFooter: String = "谢谢惠顾，欢迎再来", val hours: String = "10:00–22:00", val currency: String = Money.CURRENCY)
 
 /** 一家门店的全部本地数据。 */
 @Serializable
@@ -181,8 +194,14 @@ data class StoreData(
     val printJobs: List<PrintJob> = emptyList(),
     val shift: ShiftState = ShiftState(),
     val adjustments: List<AdjustmentAudit> = emptyList(),
-    val walletBalance: Int = 50000,
+    val walletBalance: Long = 50000,
     val reservations: List<Reservation> = emptyList(),
+    /** 库存流水：每次盘点/调整保存前后数量与原因，不只覆盖余额。 */
+    val stockMovements: List<StockMovement> = emptyList(),
+    /** 本机设备任务日志（打印/同步尝试），不属于营业事件；仅保留最近 TASK_LOG_LIMIT 条。 */
+    val taskLog: List<TaskLogEntry> = emptyList(),
+    /** 升级时为活动订单补发的ID映射（旧数据无订单ID）。 */
+    val idMappings: List<IdMapping> = emptyList(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {
@@ -190,6 +209,26 @@ data class StoreData(
         return products.filter { it.id in ids }
     }
 }
+
+/** 库存流水。before 为 null 表示调整前不限量；skuKey 为 null 表示商品级库存。 */
+@Serializable data class StockMovement(
+    val id: String, val productId: String, val skuKey: String?, val productName: String,
+    val before: Int?, val after: Int, val delta: Int?, val reason: String, val actor: String, val at: Long,
+)
+
+/** 设备任务日志分类：请求/补打为本机操作；尝试类当前全部来自模拟引擎。 */
+@Serializable enum class TaskLogKind { PrintRequested, PrintReprinted, PrintAttempt, SyncAttempt }
+
+/** source：local=本机操作，simulation=模拟引擎结果（不可当作真实设备或云端回执）。 */
+@Serializable data class TaskLogEntry(
+    val id: String, val kind: TaskLogKind, val refId: String, val result: String,
+    val source: String, val at: Long, val detail: String = "",
+)
+
+const val TASK_LOG_LIMIT = 500
+
+/** 旧活动订单迁移映射：桌号 → 新订单ID / 桌台会话ID。 */
+@Serializable data class IdMapping(val tableId: String, val orderId: String, val sessionId: String, val at: Long, val source: String = "legacy-v3")
 
 /** 挂单票据：从某桌草稿暂存，取回时作为新加菜品并入目标桌。 */
 @Serializable data class HeldTicket(val id: String, val tableId: String, val lines: List<OrderLine>, val note: String, val at: Long)
@@ -220,20 +259,20 @@ data class ShiftRecord(
     val start: Long,
     val end: Long,
     val staff: String,
-    val total: Int,
+    val total: Long,
     val count: Int,
-    val byMethod: Map<String, Int>,
-    val float: Int,
-    val cashExpected: Int,
-    val cashCounted: Int,
-    val voidAmount: Int = 0,
+    val byMethod: Map<String, Long>,
+    val float: Long,
+    val cashExpected: Long,
+    val cashCounted: Long,
+    val voidAmount: Long = 0,
     val voidCount: Int = 0,
-    val giftAmount: Int = 0,
+    val giftAmount: Long = 0,
     val giftCount: Int = 0,
 )
 
 /** 当前班次：开班时间、备用金、历史交班。 */
-@Serializable data class ShiftState(val start: Long = 0, val float: Int = 50_000, val history: List<ShiftRecord> = emptyList())
+@Serializable data class ShiftState(val start: Long = 0, val float: Long = 50_000, val history: List<ShiftRecord> = emptyList())
 
 /** 本地账号：只存加盐哈希，不存明文密码。 */
 @Serializable data class Account(val email: String, val merchant: String, val salt: String, val hash: String, val supervisor: Boolean = true)

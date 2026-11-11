@@ -61,7 +61,7 @@ interface FloorRepository {
     suspend fun checkInReservation(id: String): Result<Unit>
     suspend fun openTable(tableId: String, guests: Int): Result<Unit>
     /** 结账：有新加或待同步行时拒绝；离线收款进入同步队列。 */
-    suspend fun settle(tableId: String, amount: Int, method: String, online: Boolean, received: Int = amount): Result<Unit>
+    suspend fun settle(tableId: String, amount: Long, method: String, online: Boolean, received: Long = amount): Result<Unit>
     suspend fun startCleaning(tableId: String): Result<Unit>
     suspend fun finishCleaning(tableId: String): Result<Unit>
     /** 平面位置（画布单位）。 */
@@ -119,7 +119,7 @@ interface PrintRepository {
 
 /** 交班：本班收款汇总、钱箱实盘、生成交班单并开启新班。 */
 interface ShiftRepository {
-    suspend fun closeShift(counted: Int, staff: String): Result<ShiftRecord>
+    suspend fun closeShift(counted: Long, staff: String): Result<ShiftRecord>
 }
 
 /** 显示偏好：本机持久化，即时生效。 */
