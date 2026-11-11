@@ -171,8 +171,10 @@ data class PaymentRecord(val id: String, val tableId: String, val amount: Long, 
     val source: String = "simulation",
     val attempts: Int = 0, val lastError: String = "", val createdAt: Long = 0, val updatedAt: Long = 0,
     val confirmedBy: String = "", val reason: String = "",
+    /** 已由补打任务接替（原记录不再阻止结账，由补打记录追踪）。 */
+    val supersededBy: String = "",
 ) {
-    val needsAction get() = state == DeliveryState.Failed || state == DeliveryState.Unknown
+    val needsAction get() = (state == DeliveryState.Failed || state == DeliveryState.Unknown) && supersededBy.isBlank()
 }
 
 @Serializable enum class OutboxKind(val label: String) { Kitchen("送厨"), Payment("收款") }
@@ -230,6 +232,10 @@ data class StoreData(
     /** 升级时为活动订单补发的ID映射（旧数据无订单ID）。 */
     val idMappings: List<IdMapping> = emptyList(),
     val kitchenDeliveries: List<KitchenDelivery> = emptyList(),
+    /** 门店打印机（仅主 POS/单机作为打印网关）。 */
+    val printers: List<PrinterConfig> = emptyList(),
+    /** 档口路由：厨房 / 前台 → 打印机 ID。 */
+    val printRoutes: Map<String, String> = emptyMap(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {
@@ -262,9 +268,21 @@ const val TASK_LOG_LIMIT = 500
 @Serializable data class HeldTicket(val id: String, val tableId: String, val lines: List<OrderLine>, val note: String, val at: Long)
 
 @Serializable enum class PrintKind(val label: String, val printer: String) {
-    Kitchen("厨房单", "厨房"), PreBill("预结单", "前台"), Receipt("结账单", "前台"), Shift("交班单", "前台"),
+    Kitchen("厨房单", "厨房"), PreBill("预结单", "前台"), Receipt("结账单", "前台"), Shift("交班单", "前台"), Test("测试页", "指定"),
 }
-@Serializable enum class PrintState(val label: String) { Pending("排队中"), Printed("已打印"), Failed("打印失败") }
+/**
+ * 打印状态（N6 分级）：Printed 仅用于模拟/历史与人工确认；真实打印机发出后为 Sent（已写入且状态正常，仍非出纸确认），
+ * Unknown 须人工核对、不得自动重打；Failed 表示确定未发出，可安全自动重试。
+ */
+@Serializable enum class PrintState(val label: String) {
+    Pending("排队中"), Printed("已打印"), Failed("打印失败"), Sending("发送中"), Sent("已发送"), Unknown("结果未知"),
+}
+
+/** 网口 ESC/POS 打印机（RAW 9100）。width：58mm=32 列、80mm=48 列。 */
+@Serializable data class PrinterConfig(
+    val id: String, val name: String, val host: String, val port: Int = 9100, val width: Int = 32,
+    val enabled: Boolean = true, val statusQuery: Boolean = true,
+)
 
 /** 打印任务：缺纸等失败保留在队列，打印机恢复后自动重试；补打单独标识，不重复收款。 */
 @Serializable
@@ -278,6 +296,15 @@ data class PrintJob(
     val attempts: Int = 0,
     val reprint: Boolean = false,
     val error: String = "",
+    /** 目标打印机（首次发送时确定；空=按档口路由，路由无打印机则为模拟打印）。 */
+    val printerId: String = "",
+    /** 补打关联的原任务。 */
+    val reprintOf: String = "",
+    /** 确定未发出后下次自动重试时间。 */
+    val nextAt: Long = 0,
+    /** 人工核对记录（人员：原因）。 */
+    val resolution: String = "",
+    val updatedAt: Long = 0,
 )
 
 /** 交班记录：按本班收款汇总，钱箱实盘与应有现金比较。 */

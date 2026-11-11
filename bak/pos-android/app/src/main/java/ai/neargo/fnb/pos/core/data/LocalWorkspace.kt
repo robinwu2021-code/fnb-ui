@@ -42,6 +42,7 @@ import ai.neargo.fnb.pos.core.model.TaskLogEntry
 import ai.neargo.fnb.pos.core.model.TASK_LOG_LIMIT
 import ai.neargo.fnb.pos.core.model.IdMapping
 import ai.neargo.fnb.pos.core.model.Money
+import ai.neargo.fnb.pos.core.model.PrinterConfig
 import ai.neargo.fnb.pos.core.identity.AuthContext
 import ai.neargo.fnb.pos.core.identity.AuthState
 import ai.neargo.fnb.pos.core.identity.AuthStatus
@@ -255,6 +256,8 @@ class LocalWorkspace(
      */
     private fun upgradeStates(s0: StoreData): StoreData {
         var s = ensureDeliveries(s0.copy(outbox = s0.outbox.map { if (it.state == OutboxState.Done && it.ackSource.isBlank()) it.copy(ackSource = "legacy") else it }), "legacy")
+        // 重启时仍在发送中：结果未知，须人工核对，不自动重打
+        s.printJobs.filter { it.state == PrintState.Sending }.forEach { j -> s = s.withJob(j.id) { it.copy(state = PrintState.Unknown, error = "应用重启时正在发送，结果未知") } }
         val printed = s.printJobs.map { it.id }.toSet()
         s.orders.forEach { (table, o) ->
             o.lines.filter { it.status == LineStatus.Queued }.mapNotNull { it.batchId }.distinct().filter { "P-$it" !in printed }.forEach { b -> s = s.kitchenJob(table, b) }
@@ -722,6 +725,112 @@ class LocalWorkspace(
             Receipts.kitchen(settings.shortName, tableId, lines, order(tableId).note, clock()), clock()))
     }
 
+    /** 打印状态 → 厨房送达状态：已发送视为送达打印机（非出纸确认），未知须人工核对。 */
+    private fun deliveryOf(s: PrintState, otherwise: DeliveryState) = when (s) {
+        PrintState.Printed, PrintState.Sent -> DeliveryState.Delivered
+        PrintState.Failed -> DeliveryState.Failed
+        PrintState.Unknown -> DeliveryState.Unknown
+        else -> otherwise
+    }
+
+    /** 任务的真实目标打印机：已确定的目标优先（未知结果不改投备机），否则按档口路由；无则模拟打印。 */
+    private fun StoreData.targetOf(j: PrintJob): PrinterConfig? {
+        val id = j.printerId.ifBlank { printRoutes[j.kind.printer].orEmpty() }
+        return printers.firstOrNull { it.id == id && it.enabled }
+    }
+
+    private fun StoreData.withJob(id: String, f: (PrintJob) -> PrintJob): StoreData {
+        val jobs = printJobs.map { if (it.id == id) f(it) else it }
+        val j = jobs.first { it.id == id }
+        return copy(printJobs = jobs, kitchenDeliveries = kitchenDeliveries.map { d ->
+            if (d.jobId != id || d.state == DeliveryState.ManualConfirmed) d
+            else d.copy(state = deliveryOf(j.state, d.state), attempts = j.attempts, lastError = j.error, updatedAt = clock(), source = if (j.printerId.isNotBlank()) "printer" else d.source)
+        })
+    }
+
+    // —— 网口打印网关（N6）：领取→锁外发送→回写；仅主 POS/单机 ——
+    /** 领取下一张待发的真实打印任务并持久化为发送中（崩溃后据此判为结果未知）。 */
+    suspend fun claimNextPrint(): Pair<PrintJob, PrinterConfig>? {
+        if (blockedState.value != null || state.value.lan.role == LanRole.Secondary) return null
+        return transaction { v ->
+            val s = v.store ?: return@transaction v to null
+            val now = clock()
+            val j = s.printJobs.sortedBy { it.createdAt }.firstOrNull { (it.state == PrintState.Pending || (it.state == PrintState.Failed && it.nextAt <= now)) && s.targetOf(it) != null }
+                ?: return@transaction v to null
+            val p = s.targetOf(j)!!
+            val next = s.withJob(j.id) { it.copy(state = PrintState.Sending, printerId = p.id, attempts = it.attempts + 1, updatedAt = now) }
+                .log(TaskLogKind.PrintAttempt, j.id, "Sending", "printer", "${p.name} ${p.host}:${p.port}")
+            v.copy(stores = v.stores + (s.id to next)) to (next.printJobs.first { it.id == j.id } to p)
+        }
+    }
+
+    /** 回写发送结果：未发出→失败并退避重试；已发出→已发送；中断/报错→结果未知（不自动重打）。 */
+    suspend fun finishPrint(jobId: String, outcome: ai.neargo.fnb.pos.core.print.SendOutcome) {
+        commit { v ->
+            val s = v.store ?: return@commit v
+            val j = s.printJobs.firstOrNull { it.id == jobId && it.state == PrintState.Sending } ?: return@commit v
+            val now = clock()
+            val (st, err) = when (outcome) {
+                is ai.neargo.fnb.pos.core.print.SendOutcome.NotSent -> PrintState.Failed to outcome.reason
+                is ai.neargo.fnb.pos.core.print.SendOutcome.Sent -> PrintState.Sent to (if (outcome.statusChecked) "" else "打印机未回报状态")
+                is ai.neargo.fnb.pos.core.print.SendOutcome.Unknown -> PrintState.Unknown to outcome.reason
+            }
+            val backoff = minOf(60_000L, 2_000L shl minOf(j.attempts, 5))
+            v.copy(stores = v.stores + (s.id to s.withJob(jobId) { it.copy(state = st, error = err, nextAt = if (st == PrintState.Failed) now + backoff else 0, updatedAt = now) }
+                .log(TaskLogKind.PrintAttempt, jobId, st.name, "printer", err)))
+        }
+    }
+
+    /** 人工核对结果未知的任务：已出纸 → 记为已打印；未出纸 → 原任务作废并生成关联补打。记录人员与原因。 */
+    override suspend fun resolveUnknown(jobId: String, printed: Boolean, reason: String) = storeOp(check = { s ->
+        val j = s.printJobs.firstOrNull { it.id == jobId }
+        when {
+            j == null -> "打印任务不存在"
+            j.state != PrintState.Unknown -> "只有结果未知的任务需要核对"
+            reason.isBlank() -> "请填写核对说明"
+            else -> null
+        }
+    }) { s ->
+        val actor = state.value.user ?: DemoCatalog.STAFF
+        val j = s.printJobs.first { it.id == jobId }
+        if (printed) s.withJob(jobId) { it.copy(state = PrintState.Printed, resolution = "$actor：已出纸 · ${reason.trim()}", updatedAt = clock()) }
+            .log(TaskLogKind.PrintAttempt, jobId, "ConfirmedPrinted", "manual", "$actor：${reason.trim()}")
+        else {
+            val copy = j.copy(id = newId("RP"), title = "${j.title}（补打）", body = listOf("** 补打 **") + j.body, createdAt = clock(), state = PrintState.Pending,
+                attempts = 0, reprint = true, error = "", reprintOf = j.id, resolution = "", nextAt = 0)
+            val base = s.withJob(jobId) { it.copy(state = PrintState.Failed, error = "人工确认未出纸，已补打", resolution = "$actor：未出纸 · ${reason.trim()}", nextAt = Long.MAX_VALUE, updatedAt = clock()) }
+            base.copy(printJobs = base.printJobs + copy, kitchenDeliveries = base.kitchenDeliveries.map { if (it.jobId == jobId) it.copy(supersededBy = copy.id) else it })
+                .log(TaskLogKind.PrintReprinted, copy.id, "queued", "manual", "原任务 $jobId 未出纸：$actor")
+        }
+    }
+
+    override suspend fun savePrinter(p: PrinterConfig) = storeOp(check = { s ->
+        when {
+            p.name.isBlank() -> "请填写打印机名称"
+            !Regex("^[A-Za-z0-9.-]{1,253}$").matches(p.host.trim()) -> "请填写打印机 IP 或主机名"
+            p.port !in 1..65535 -> "端口应为 1–65535"
+            p.width !in setOf(32, 48) -> "纸宽应为 58mm（32 列）或 80mm（48 列）"
+            s.printers.any { it.id != p.id && it.name == p.name.trim() } -> "打印机名称重复"
+            else -> null
+        }
+    }) { s -> val q = p.copy(name = p.name.trim(), host = p.host.trim()); s.copy(printers = s.printers.filterNot { it.id == q.id } + q) }
+
+    override suspend fun removePrinter(id: String) = storeOp(check = { s ->
+        if (s.printJobs.any { it.printerId == id && it.state in setOf(PrintState.Sending, PrintState.Unknown) }) "该打印机有发送中或结果未知的任务，请先核对" else null
+    }) { s -> s.copy(printers = s.printers.filterNot { it.id == id }, printRoutes = s.printRoutes.filterValues { it != id }) }
+
+    override suspend fun setRoute(station: String, printerId: String?) = storeOp(check = { s ->
+        if (printerId != null && s.printers.none { it.id == printerId }) "打印机不存在" else null
+    }) { s -> s.copy(printRoutes = if (printerId == null) s.printRoutes - station else s.printRoutes + (station to printerId)) }
+
+    override suspend fun testPrint(printerId: String) = storeOp(check = { s -> if (s.printers.none { it.id == printerId }) "打印机不存在" else null }) { s ->
+        val p = s.printers.first { it.id == printerId }
+        val w = p.width
+        val body = listOf("打印测试", "-".repeat(w), "打印机：${p.name}", "地址：${p.host}:${p.port}", "纸宽：${if (w == 32) "58mm" else "80mm"}", "中文：南山小馆 · 宫保鸡丁 ¥48.00", "-".repeat(w),
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(clock())))
+        s.copy(printJobs = s.printJobs + PrintJob(newId("T"), PrintKind.Test, "测试页 ${p.name}", body, clock(), printerId = p.id))
+    }
+
     /** 为缺少送达记录的厨房任务补记录；状态取自任务当前结果。 */
     private fun ensureDeliveries(s: StoreData, source: String): StoreData {
         val known = s.kitchenDeliveries.map { it.jobId }.toSet()
@@ -731,7 +840,7 @@ class LocalWorkspace(
             val table = j.title.substringBefore(' ')
             KitchenDelivery(
                 ticketId = j.id.removePrefix("P-"), jobId = j.id, tableId = table, orderId = s.orders[table]?.orderId.orEmpty(), label = j.title,
-                state = when (j.state) { PrintState.Printed -> DeliveryState.Delivered; PrintState.Failed -> DeliveryState.Failed; else -> DeliveryState.Pending },
+                state = deliveryOf(j.state, DeliveryState.Pending),
                 source = source, attempts = j.attempts, lastError = j.error, createdAt = j.createdAt, updatedAt = clock(),
             )
         })
@@ -765,7 +874,8 @@ class LocalWorkspace(
 
     override suspend fun reprint(jobId: String) = storeOp(check = { s -> if (s.printJobs.none { it.id == jobId }) "打印任务不存在" else null }) { s ->
         val j = s.printJobs.first { it.id == jobId }
-        val copy = j.copy(id = newId("RP"), title = "${j.title}（补打）", body = listOf("** 补打 **") + j.body, createdAt = clock(), state = PrintState.Pending, attempts = 0, reprint = true, error = "")
+        val copy = j.copy(id = newId("RP"), title = "${j.title}（补打）", body = listOf("** 补打 **") + j.body, createdAt = clock(), state = PrintState.Pending, attempts = 0, reprint = true, error = "",
+            reprintOf = j.id, resolution = "", nextAt = 0, printerId = "")
         s.copy(printJobs = s.printJobs + copy).log(TaskLogKind.PrintReprinted, copy.id, "queued", "local", "原任务 ${j.id}")
     }
 
@@ -773,11 +883,13 @@ class LocalWorkspace(
         if (blockedState.value != null || state.value.lan.role == LanRole.Secondary) return 0
         var failed = 0
         val s = currentStore() ?: return 0
-        if (s.printJobs.none { it.state != PrintState.Printed }) return 0
+        if (s.printJobs.none { (it.state == PrintState.Pending || it.state == PrintState.Failed) && s.targetOf(it) == null }) return 0
         storeOp { st ->
             var logged = st
             val jobs = st.printJobs.map { j ->
                 when {
+                    // 有真实打印机的任务由网关处理；已有结果的任务不再模拟
+                    st.targetOf(j) != null || j.state !in setOf(PrintState.Pending, PrintState.Failed) -> j
                     j.state == PrintState.Printed -> j
                     j.kind.printer == "厨房" && !kitchenOk -> {
                         if (j.state == PrintState.Pending) failed++
@@ -791,7 +903,7 @@ class LocalWorkspace(
                 val j = byJob[d.jobId]
                 if (j == null || d.state == DeliveryState.ManualConfirmed) d
                 else {
-                    val st = when (j.state) { PrintState.Printed -> DeliveryState.Delivered; PrintState.Failed -> DeliveryState.Failed; else -> d.state }
+                    val st = deliveryOf(j.state, d.state)
                     if (st == d.state && j.attempts == d.attempts) d else d.copy(state = st, attempts = j.attempts, lastError = j.error, updatedAt = clock(), source = "simulation")
                 }
             })

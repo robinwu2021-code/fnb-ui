@@ -295,7 +295,9 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
 @Composable
 private fun ColumnScope.DevicesSection(state: ManageUiState, vm: ManageViewModel) {
     val d = state.device
-    PageHeader("终端与打印", "演示终端，未连接真实打印机；打印状态来自显示设置的演示开关")
+    PageHeader("终端与打印", "网口 ESC/POS 打印机由主 POS 统一发送；未配置的档口为模拟打印（受显示设置的缺纸开关影响）")
+    Column(Modifier.verticalScroll(rememberScrollState())) { ai.neargo.fnb.pos.feature.print.PrintersPanel() }
+    PosDivider(Modifier.padding(vertical = 8.dp))
     val cols = listOf(Col("设备"), Col("用途", 1.4f), Col("状态", end = true))
     DataTable(cols, Modifier.weight(1f)) {
         item { TableRow(listOf({ Cell("POS 3.0 · 1号收银台") }, { Cell("本终端", sub = true) }, { Cell(if (d.online) "在线" else "离线") }), cols) }

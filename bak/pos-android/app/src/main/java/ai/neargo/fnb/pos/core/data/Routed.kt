@@ -96,6 +96,12 @@ class RoutedShift(private val ws: LocalWorkspace, private val link: LanLink) : S
 class RoutedPrint(private val ws: LocalWorkspace, private val link: LanLink) : PrintRepository by ws {
     override suspend fun preBill(tableId: String) = if (link.isSecondary) Result.failure(IllegalStateException("打印由主 POS 负责，请在主 POS 操作")) else ws.preBill(tableId)
     override suspend fun reprint(jobId: String) = if (link.isSecondary) Result.failure(IllegalStateException("打印由主 POS 负责，请在主 POS 操作")) else ws.reprint(jobId)
+    private fun hostOnly() = Result.failure<Unit>(IllegalStateException("打印由主 POS 负责，请在主 POS 操作"))
+    override suspend fun savePrinter(p: ai.neargo.fnb.pos.core.model.PrinterConfig) = if (link.isSecondary) hostOnly() else ws.savePrinter(p)
+    override suspend fun removePrinter(id: String) = if (link.isSecondary) hostOnly() else ws.removePrinter(id)
+    override suspend fun setRoute(station: String, printerId: String?) = if (link.isSecondary) hostOnly() else ws.setRoute(station, printerId)
+    override suspend fun testPrint(printerId: String) = if (link.isSecondary) hostOnly() else ws.testPrint(printerId)
+    override suspend fun resolveUnknown(jobId: String, printed: Boolean, reason: String) = if (link.isSecondary) hostOnly() else ws.resolveUnknown(jobId, printed, reason)
 }
 
 class RoutedSync(private val ws: LocalWorkspace, private val link: LanLink) : SyncRepository by ws {

@@ -84,6 +84,8 @@ class AppContainer(context: Context) {
         PrintEngine(device, print, messages, appScope).start()
         if (workspace.lanState.value.role == LanRole.Host) appScope.launch(Dispatchers.IO) { runCatching { lanHost.start() }.onFailure { messages.post("主 POS 服务启动失败：${it.message}") } }
         lanLink.start()
+        // 网口打印网关：仅主 POS/单机领取任务（副 POS 不打印）
+        ai.neargo.fnb.pos.core.print.PrintGateway(workspace).start(appScope)
         // 授权到期、会话过期随时间发生：定时重新评估
         appScope.launch { while (true) { workspace.refreshAuth(); kotlinx.coroutines.delay(30_000) } }
     }

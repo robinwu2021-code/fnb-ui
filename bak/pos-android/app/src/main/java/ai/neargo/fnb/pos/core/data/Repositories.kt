@@ -114,6 +114,13 @@ interface SyncRepository {
 
 /** 本机打印队列：厨房单 / 预结单 / 结账单 / 交班单；缺纸失败保留，恢复后重试；补打单独标识。 */
 interface PrintRepository {
+    /** 网口打印机配置与档口路由（N6，仅主 POS/单机）。 */
+    suspend fun savePrinter(p: ai.neargo.fnb.pos.core.model.PrinterConfig): Result<Unit>
+    suspend fun removePrinter(id: String): Result<Unit>
+    suspend fun setRoute(station: String, printerId: String?): Result<Unit>
+    suspend fun testPrint(printerId: String): Result<Unit>
+    /** 人工核对结果未知的任务：printed=已出纸；否则生成关联补打。 */
+    suspend fun resolveUnknown(jobId: String, printed: Boolean, reason: String): Result<Unit>
     val jobs: StateFlow<List<PrintJob>>
     suspend fun preBill(tableId: String): Result<Unit>
     suspend fun reprint(jobId: String): Result<Unit>
