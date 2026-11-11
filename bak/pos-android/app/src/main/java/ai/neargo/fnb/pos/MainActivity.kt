@@ -19,6 +19,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val light = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
         enableEdgeToEdge(statusBarStyle = light, navigationBarStyle = light)
+        // 双屏收银机：顾客面向的副屏显示客显画面
+        ai.neargo.fnb.pos.feature.customer.CustomerDisplayHost(this).attach()
         setContent {
             val shell = posViewModel { c, _ -> ShellViewModel(c.session, c.device, c.prefs, c.sync, c.messages, c.syncStatus) }
             val state by shell.state.collectAsStateWithLifecycle()

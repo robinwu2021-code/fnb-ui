@@ -721,7 +721,7 @@ class LocalWorkspace(
             val d = DayClose(newId("D"), start, now, staff, r.revenue, r.revenue, r.orders, r.guests, r.discount, r.byMethod, r.voidAmount, r.giftAmount, r.recharge, r.newMembers)
             val job = PrintJob(newId("DC"), PrintKind.Shift, "日结单 ${s.settings.shortName}", ReportRules.dayCloseReceipt(s.settings.shortName, d), now)
             // 新营业日从日结时刻的下一毫秒开始：与已日结区间 [start, now] 不重叠，避免同一毫秒的收款被重复统计
-            v.copy(stores = v.stores + (s.id to s.copy(dayStart = now + 1, dayCloses = s.dayCloses + d, printJobs = s.printJobs + job))) to Result.success(d)
+            v.copy(stores = v.stores + (s.id to s.copy(dayStart = now + 1, dayCloses = s.dayCloses + d, printJobs = s.printJobs + s.withCopies(job)))) to Result.success(d)
         }
     }
 
@@ -990,7 +990,7 @@ class LocalWorkspace(
                 if (pts > 0) txns = txns + MemberTxn(newId("MT"), member.id, MemberTxnKind.Points, 0, m2.balance, clock(), pid, actor, points = pts)
             } else if (method == "储值卡") wallet -= amount // 旧版演示余额
             s.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
-                .copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + receipt, walletBalance = wallet,
+                .copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + s.withCopies(receipt), walletBalance = wallet,
                     members = members, memberTxns = txns, settledOrders = s.settledOrders + snap)
         }
     }
@@ -1069,7 +1069,7 @@ class LocalWorkspace(
                 "$tableId 厨房单${if (multi) "·$station" else ""} ${lines.sumOf { it.qty }} 份",
                 Receipts.kitchen(settings.shortName, tableId, lines, order(tableId).note, clock(), if (multi) station else ""), clock(), station = station)
         }
-        return copy(printJobs = printJobs + jobs)
+        return copy(printJobs = printJobs + withCopies(jobs))
     }
 
     /** 打印状态 → 厨房送达状态：已发送视为送达打印机（非出纸确认），未知须人工核对。 */
@@ -1088,8 +1088,16 @@ class LocalWorkspace(
         val id = j.printerId.ifBlank { KdsRules.printRoute(printRoutes, kdsStations, j) }
         if (id.isBlank()) return null
         printers.firstOrNull { it.id == id && it.enabled }?.let { return it }
-        return if (j.state == PrintState.Pending || j.state == PrintState.Failed) backupOf(j)?.takeIf { it.id != id } else null
+        return if (j.copyOf.isBlank() && (j.state == PrintState.Pending || j.state == PrintState.Failed)) backupOf(j)?.takeIf { it.id != id } else null
     }
+
+    /** 主任务加上路由配置的副本（每台副本打印机一张，固定发往该机；停用的打印机不出副本）。 */
+    private fun StoreData.withCopies(jobs: List<PrintJob>): List<PrintJob> = jobs + jobs.flatMap { j ->
+        KdsRules.printCopies(printRoutes, printCopies, kdsStations, j).mapNotNull { id -> printers.firstOrNull { it.id == id && it.enabled } }.map { p ->
+            j.copy(id = "${j.id}~${p.id}", title = "${j.title}（副本·${p.name}）", body = listOf("** 副本 **") + j.body, printerId = p.id, copyOf = j.id)
+        }
+    }
+    private fun StoreData.withCopies(job: PrintJob) = withCopies(listOf(job))
 
     private fun StoreData.backupOf(j: PrintJob): PrinterConfig? {
         val id = KdsRules.printBackup(printRoutes, printBackups, kdsStations, j)
@@ -1141,7 +1149,7 @@ class LocalWorkspace(
             val backoff = minOf(60_000L, 2_000L shl minOf(j.attempts, 5))
             val firstFail = if (st == PrintState.Failed && j.firstFailAt == 0L) now else j.firstFailAt
             // 确定未发出且达到阈值：改投备用打印机（只改投一次；结果未知不改投，避免两台各出一张）
-            val backup = if (st == PrintState.Failed && j.failoverFrom.isBlank()) s.backupOf(j)?.takeIf { it.id != j.printerId } else null
+            val backup = if (st == PrintState.Failed && j.failoverFrom.isBlank() && j.copyOf.isBlank()) s.backupOf(j)?.takeIf { it.id != j.printerId } else null
             if (backup != null && (j.attempts >= KdsRules.FAILOVER_ATTEMPTS || now - firstFail >= KdsRules.FAILOVER_MS)) {
                 val from = s.printers.firstOrNull { it.id == j.printerId }?.name ?: j.printerId
                 return@commit v.copy(stores = v.stores + (s.id to s.withJob(jobId) {
@@ -1192,7 +1200,8 @@ class LocalWorkspace(
 
     override suspend fun removePrinter(id: String) = storeOp(check = { s ->
         need(Perm.Settings) ?: if (s.printJobs.any { it.printerId == id && it.state in setOf(PrintState.Sending, PrintState.Unknown) }) "该打印机有发送中或结果未知的任务，请先核对" else null
-    }) { s -> s.copy(printers = s.printers.filterNot { it.id == id }, printRoutes = s.printRoutes.filterValues { it != id }, printBackups = s.printBackups.filterValues { it != id }) }
+    }) { s -> s.copy(printers = s.printers.filterNot { it.id == id }, printRoutes = s.printRoutes.filterValues { it != id }, printBackups = s.printBackups.filterValues { it != id },
+        printCopies = s.printCopies.mapValues { (_, l) -> l - id }.filterValues { it.isNotEmpty() }) }
 
     override suspend fun setRoute(station: String, printerId: String?) = storeOp(check = { s ->
         need(Perm.Settings) ?: if (printerId != null && s.printers.none { it.id == printerId }) "打印机不存在" else null
@@ -1207,6 +1216,16 @@ class LocalWorkspace(
             else -> null
         }
     }) { s -> s.copy(printBackups = if (printerId == null) s.printBackups - station else s.printBackups + (station to printerId)) }
+
+    /** 路由的副本打印机（门店设置权限）：最多 3 台，不能含主打印机。 */
+    override suspend fun setCopies(station: String, printerIds: List<String>) = storeOp(check = { s ->
+        need(Perm.Settings) ?: when {
+            printerIds.size > KdsRules.MAX_COPIES -> "副本打印机最多 ${KdsRules.MAX_COPIES} 台"
+            printerIds.any { id -> s.printers.none { it.id == id } } -> "打印机不存在"
+            s.printRoutes[station] != null && s.printRoutes[station] in printerIds -> "副本打印机不能与主打印机相同"
+            else -> null
+        }
+    }) { s -> s.copy(printCopies = if (printerIds.isEmpty()) s.printCopies - station else s.printCopies + (station to printerIds.distinct())) }
 
     /** 手动改投：失败或排队中的任务改由指定打印机打印（结果未知须先核对）。 */
     override suspend fun redirectPrint(jobId: String, printerId: String) = storeOp(check = { s ->
@@ -1242,7 +1261,7 @@ class LocalWorkspace(
     /** 为缺少送达记录的厨房任务补记录；状态取自任务当前结果。 */
     private fun ensureDeliveries(s: StoreData, source: String): StoreData {
         val known = s.kitchenDeliveries.map { it.jobId }.toSet()
-        val missing = s.printJobs.filter { it.kind == PrintKind.Kitchen && it.id !in known }
+        val missing = s.printJobs.filter { it.kind == PrintKind.Kitchen && it.id !in known && it.copyOf.isBlank() }
         if (missing.isEmpty()) return s
         return s.copy(kitchenDeliveries = s.kitchenDeliveries + missing.map { j ->
             val table = j.title.substringBefore(' ')
@@ -1282,7 +1301,7 @@ class LocalWorkspace(
         if (s.order(tableId).lines.isEmpty()) "$tableId 没有菜品" else null
     }) { s ->
         val job = PrintJob(newId("B"), PrintKind.PreBill, "$tableId 预结单", Receipts.bill("预结单", s, tableId, s.order(tableId), clock()), clock())
-        s.copy(printJobs = s.printJobs + job).log(TaskLogKind.PrintRequested, job.id, "queued", "local", tableId)
+        s.copy(printJobs = s.printJobs + s.withCopies(job)).log(TaskLogKind.PrintRequested, job.id, "queued", "local", tableId)
     }
 
     override suspend fun reprint(jobId: String) = storeOp(check = { s -> if (s.printJobs.none { it.id == jobId }) "打印任务不存在" else null }) { s ->
@@ -1339,7 +1358,7 @@ class LocalWorkspace(
             val rec = ShiftRecord(newId("S"), start, clock(), staff, sum.total, sum.count, sum.byMethod, s.shift.float, sum.cashExpected, counted, sum.voidAmount, sum.voidCount, sum.giftAmount, sum.giftCount)
             val next = s.copy(
                 shift = ShiftState(start = clock(), float = s.shift.float, history = s.shift.history + rec),
-                printJobs = s.printJobs + PrintJob(newId("SH"), PrintKind.Shift, "交班单 $staff", Receipts.shift(rec), clock()),
+                printJobs = s.printJobs + s.withCopies(PrintJob(newId("SH"), PrintKind.Shift, "交班单 $staff", Receipts.shift(rec), clock())),
             )
             v.copy(stores = v.stores + (s.id to next)) to Result.success(rec)
         }
@@ -1405,8 +1424,8 @@ class LocalWorkspace(
             if (request.kind == AdjustmentKind.Void) {
                 val station = line?.let { KdsRules.stationFor(s, it.dishId) }.orEmpty()
                 val tag = if (s.kdsStations.size > 1 && station.isNotBlank()) "·$station" else ""
-                next = next.copy(printJobs = next.printJobs + PrintJob(newId("V"), PrintKind.Kitchen,
-                    "$tableId 退菜单$tag", listOf("【退菜单$tag】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock(), station = station))
+                next = next.copy(printJobs = next.printJobs + next.withCopies(PrintJob(newId("V"), PrintKind.Kitchen,
+                    "$tableId 退菜单$tag", listOf("【退菜单$tag】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock(), station = station)))
             }
             v.copy(stores = v.stores + (s.id to next))
         }

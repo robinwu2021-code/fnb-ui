@@ -70,6 +70,15 @@ fun PrintersPanel() {
             // 备用打印机：主打印机确定未发出（连续失败 ${KdsRules.FAILOVER_ATTEMPTS} 次或 ${KdsRules.FAILOVER_MS / 1000} 秒）时改投；结果未知不改投
             val primary = current ?: fallback
             if (current != null && s.printers.size > 1) {
+                // 副本：同一张单另打一份到这些打印机（如出菜口联）；副本失败只提示，不影响送达判定
+                val copies = s.printCopies[station].orEmpty()
+                KeyValue("　$station · 副本", copies.mapNotNull { id -> s.printers.firstOrNull { it.id == id }?.name }.joinToString("、").ifBlank { "不打副本" }) {
+                    s.printers.filter { it.id != primary }.forEach { p ->
+                        val on = p.id in copies
+                        PosButton(p.name, { run({ c.print.setCopies(station, if (on) copies - p.id else copies + p.id) }, if (on) "$station 不再给 ${p.name} 打副本" else "$station 副本 → ${p.name}") },
+                            size = BtnSize.Small, selected = on)
+                    }
+                }
                 val backup = s.printBackups[station]
                 KeyValue("　$station · 备用", s.printers.firstOrNull { it.id == backup }?.name ?: "不设备用") {
                     PosButton("不设", { run({ c.print.setBackup(station, null) }, "$station 不设备用打印机") }, size = BtnSize.Small, selected = backup == null)

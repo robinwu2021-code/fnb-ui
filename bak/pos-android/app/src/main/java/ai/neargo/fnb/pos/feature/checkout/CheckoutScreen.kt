@@ -41,6 +41,8 @@ import androidx.compose.material3.CardDefaults
 import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import ai.neargo.fnb.pos.app.appContainer
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -71,6 +73,19 @@ fun CheckoutRoute(onBack: () -> Unit, onDone: () -> Unit) {
     val vm = posViewModel { c, h -> CheckoutViewModel(c.floor, c.orders, c.config, c.print, c.device, c.messages, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(vm) { vm.effect.collect { onDone() } }
+    // 客显屏：结账中显示应收/收款方式/找零；收款成功显示致谢页
+    val c = appContainer()
+    val tid = state.table?.id
+    LaunchedEffect(tid, state.method, state.cash, state.paid) {
+        if (tid == null) return@LaunchedEffect
+        val paid = state.paid
+        c.customerStage.value = if (paid != null) {
+            val prev = c.customerStage.value as? ai.neargo.fnb.pos.core.model.CustomerStage.Paid
+            prev?.takeIf { it.tableId == tid && it.amount == paid } ?: ai.neargo.fnb.pos.core.model.CustomerStage.Paid(tid, paid,
+                if (state.method == PayMethod.Cash) ai.neargo.fnb.pos.core.model.CashRules.change(state.cash, paid) ?: 0 else 0, state.method.label, System.currentTimeMillis())
+        } else ai.neargo.fnb.pos.core.model.CustomerStage.Checkout(tid, state.method.label, if (state.method == PayMethod.Cash) ai.neargo.fnb.pos.core.model.CashRules.amount(state.cash) else null)
+    }
+    DisposableEffect(Unit) { onDispose { if (c.customerStage.value is ai.neargo.fnb.pos.core.model.CustomerStage.Checkout) c.customerStage.value = ai.neargo.fnb.pos.core.model.CustomerStage.Browse } }
     var preview by remember { mutableStateOf<List<String>?>(null) }
     CheckoutScreen(state, vm::onAction, onBack, onPreview = { preview = vm.preview() })
     preview?.let { ReceiptDialog("小票预览 · ${state.table?.id ?: ""}", it, { preview = null }) { PosButton("打印预结单", { vm.onAction(CheckoutAction.PreBill); preview = null }, variant = BtnVariant.Soft, size = BtnSize.Large) } }

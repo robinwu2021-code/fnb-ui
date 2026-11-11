@@ -124,6 +124,8 @@ interface PrintRepository {
     suspend fun setRoute(station: String, printerId: String?): Result<Unit>
     /** 路由的备用打印机（null=不设）。 */
     suspend fun setBackup(station: String, printerId: String?): Result<Unit>
+    /** 路由的副本打印机（空=不打副本）。 */
+    suspend fun setCopies(station: String, printerIds: List<String>): Result<Unit>
     /** 手动改投：失败或排队中的任务改由指定打印机打印。 */
     suspend fun redirectPrint(jobId: String, printerId: String): Result<Unit>
     suspend fun testPrint(printerId: String): Result<Unit>

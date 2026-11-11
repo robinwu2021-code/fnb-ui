@@ -58,6 +58,8 @@ class AppContainer(context: Context) {
     val kdsDevice get() = workspace.kdsDevice
     suspend fun setKdsStation(station: String) = workspace.setKdsStation(station)
     val kds: KdsRepository = workspace
+    /** 客显屏阶段（结账页写入；客显屏与设置预览读取）。 */
+    val customerStage = kotlinx.coroutines.flow.MutableStateFlow<ai.neargo.fnb.pos.core.model.CustomerStage>(ai.neargo.fnb.pos.core.model.CustomerStage.Browse)
     val session: SessionRepository = workspace
     // —— 主副 POS（N5）：副机写入经主机仲裁；主机执行器直接使用本机仓库 ——
     private val deviceKeys get() = identity.keys
@@ -184,6 +186,9 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
         val photos = booleanPreferencesKey("photos")
         val font = stringPreferencesKey("font")
         val lang = stringPreferencesKey("lang")
+        val cd = booleanPreferencesKey("customer_display")
+        val cdLines = booleanPreferencesKey("customer_lines")
+        val cdSlides = booleanPreferencesKey("customer_slides")
     }
 
     private inline fun <reified E : Enum<E>> Preferences.enum(key: Preferences.Key<String>, default: E): E =
@@ -196,6 +201,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             panelShape = p.enum(K.panel, d.panelShape), buttonShape = p.enum(K.button, d.buttonShape),
             layout = p.enum(K.layout, d.layout), photos = p[K.photos] ?: d.photos,
             font = p.enum(K.font, d.font), lang = p.enum(K.lang, d.lang),
+            customerDisplay = p[K.cd] ?: d.customerDisplay, customerLines = p[K.cdLines] ?: d.customerLines, customerSlides = p[K.cdSlides] ?: d.customerSlides,
         )
     }
 
@@ -205,6 +211,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             it[K.skin] = n.skin.name; it[K.density] = n.density.name; it[K.scale] = n.scale.name
             it[K.panel] = n.panelShape.name; it[K.button] = n.buttonShape.name; it[K.layout] = n.layout.name
             it[K.photos] = n.photos; it[K.font] = n.font.name; it[K.lang] = n.lang.name
+            it[K.cd] = n.customerDisplay; it[K.cdLines] = n.customerLines; it[K.cdSlides] = n.customerSlides
         }
     }
 }

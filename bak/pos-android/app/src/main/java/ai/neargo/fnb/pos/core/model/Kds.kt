@@ -49,6 +49,12 @@ object KdsRules {
     fun printBackup(routes: Map<String, String>, backups: Map<String, String>, stations: List<String>, j: PrintJob): String =
         routeKey(routes, stations, j)?.let { backups[it] }.orEmpty()
 
+    /** 该任务所在路由的副本打印机 id（不含主打印机）。 */
+    fun printCopies(routes: Map<String, String>, copies: Map<String, List<String>>, stations: List<String>, j: PrintJob): List<String> =
+        routeKey(routes, stations, j)?.let { k -> copies[k].orEmpty().filter { it != routes[k] }.distinct() }.orEmpty()
+
+    const val MAX_COPIES = 3
+
     /** 自动改投备用：确定未发出达到次数或持续时间。结果未知不改投。 */
     const val FAILOVER_ATTEMPTS = 2
     const val FAILOVER_MS = 30_000L

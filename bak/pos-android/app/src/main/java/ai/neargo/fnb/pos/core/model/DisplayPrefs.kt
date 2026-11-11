@@ -14,6 +14,10 @@ data class DisplayPrefs(
     val photos: Boolean = true,
     val font: FontChoice = FontChoice.Manrope,
     val lang: Lang = Lang.Zh,
+    /** 客显屏（本机副屏）：启用、显示订单明细、空闲时轮播。 */
+    val customerDisplay: Boolean = true,
+    val customerLines: Boolean = true,
+    val customerSlides: Boolean = true,
 )
 
 /** 字体随包提供，中文按字形回退系统 Noto Sans CJK。 */
