@@ -28,7 +28,9 @@ class CommandJournalTest {
         assertTrue(runCatching { db.journal.execute(command(payload = "different")) { error("must not execute") } }.isFailure)
         // 授权引用是传输凭据，不改变摘要
         assertEquals(original, db.journal.execute(command().copy(authorizationRef = "token-2")) { error("must not execute") })
-        val event = db.journal.pending("store").single()
+        assertTrue(db.journal.execute(command("auth").copy(authorizationRef = "grant-1", aggregates = listOf(AggregateVersion("order", 1))), reducer = ok).status == ReceiptStatus.Committed)
+        assertTrue(db.journal.pending("store").last().envelope.contains("\"authorizationRef\":\"grant-1\""))
+        val event = db.journal.pending("store").first()
         assertEquals("c1", event.causationId); assertTrue(event.envelope.contains("\"actorId\":\"staff\"")); assertTrue(event.acceptedAt > 0)
     }
 

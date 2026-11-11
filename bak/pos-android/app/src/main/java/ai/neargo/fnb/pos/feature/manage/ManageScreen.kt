@@ -92,6 +92,7 @@ fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Uni
                 Section.Payments -> PaymentsSection(state)
                 Section.Staff -> StaffSection()
                 Section.Gallery -> GallerySection()
+                Section.Auth -> SimplePage("授权中心", "设备身份与离线授权：到期、撤销、时钟异常时暂停新营业写入，账本保留") { ai.neargo.fnb.pos.feature.authcenter.AuthCenterPanel() }
                 Section.Data -> SimplePage("数据与恢复", "备份、恢复点与迁移记录；恢复会替换本机数据，恢复前自动保留副本") { ai.neargo.fnb.pos.feature.recovery.DataRecoveryPanel() }
                 Section.Display -> SimplePage("界面显示", "皮肤、密度、布局与字号为本机偏好，与门店业务配置分开保存") { PosButton("打开显示设置", onDisplay, variant = BtnVariant.Primary) }
                 Section.SwitchStore -> SimplePage("切换门店", "当前：${store.settings.shortName}。切店后桌台、商品、餐牌与账单均为该门店数据") { PosButton("选择门店", onSwitchStore, variant = BtnVariant.Primary) }

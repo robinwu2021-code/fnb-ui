@@ -151,3 +151,22 @@ interface MessageBus {
 fun StoreData.product(id: String): Product? = products.firstOrNull { it.id == id }
 fun StoreData.areaName(id: String): String = areas.firstOrNull { it.id == id }?.name ?: id
 fun StoreData.menusOf(productId: String): List<Menu> = menus.filter { productId in it.productIds }
+
+
+/** 身份与授权依赖（N4）。 */
+class IdentityContext(
+    val keys: ai.neargo.fnb.pos.core.identity.DeviceKeyStore,
+    val anchors: () -> List<ai.neargo.fnb.pos.core.identity.TrustAnchor>,
+    val devIssuer: ai.neargo.fnb.pos.core.identity.DevIssuer?,
+)
+
+/** 授权中心（N4）。 */
+interface AuthRepository {
+    val auth: StateFlow<ai.neargo.fnb.pos.core.identity.AuthStatus>
+    val devIssuerAvailable: Boolean
+    suspend fun refreshAuth()
+    suspend fun importGrant(token: String): Result<Unit>
+    suspend fun devIssue(kind: ai.neargo.fnb.pos.core.identity.GrantKind): Result<Unit>
+    suspend fun revokeCurrent(): Result<Unit>
+    suspend fun confirmClock(email: String, password: String): Result<Unit>
+}

@@ -43,11 +43,15 @@ class AppContainer(context: Context) {
 
     private val database = SqliteSnapshotStore(context.applicationContext)
     /** 恢复失败不崩溃也不回落演示：workspace 进入只读阻断，界面显示恢复页。 */
-    private val workspace = LocalWorkspace(MigratingSnapshotStore(database, DataStoreSnapshot(dataStore)), appScope).also {
+    private val trust = ai.neargo.fnb.pos.core.identity.TrustAnchors(context.applicationContext, ai.neargo.fnb.pos.BuildConfig.DEBUG)
+    private val identity = IdentityContext(ai.neargo.fnb.pos.core.identity.KeystoreDeviceKeys(), { trust.all }, trust.devIssuer)
+    private val workspace = LocalWorkspace(MigratingSnapshotStore(database, DataStoreSnapshot(dataStore)), appScope, identity = identity).also {
         runBlocking { runCatching { it.restore() }.onFailure { e -> android.util.Log.e("AppContainer", "本地数据恢复失败", e) } }
     }
     val recovery: RecoveryRepository = LocalRecovery(context.applicationContext, database, workspace)
     val syncStatus: SyncStatusRepository = LocalSyncStatus(database, workspace, appScope)
+    val auth: AuthRepository = workspace
+    fun deviceId() = workspace.deviceId()
     val session: SessionRepository = workspace
     val config: StoreConfigRepository = workspace
     val floor: FloorRepository = workspace
@@ -64,6 +68,8 @@ class AppContainer(context: Context) {
     init {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
+        // 授权到期、会话过期随时间发生：定时重新评估
+        appScope.launch { while (true) { workspace.refreshAuth(); kotlinx.coroutines.delay(30_000) } }
     }
 
     /** 显示设置里的「重置演示数据」：只重置当前门店。 */

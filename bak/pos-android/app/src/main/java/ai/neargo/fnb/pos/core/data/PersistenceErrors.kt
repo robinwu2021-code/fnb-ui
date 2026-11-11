@@ -14,7 +14,7 @@ class WorkspaceRejectedException(reason: String) : Exception(reason)
 internal fun Result<Unit>.orReject() = getOrElse { throw if (it is WorkspaceWriteException) it else WorkspaceRejectedException(it.message ?: "操作未完成") }
 
 internal suspend fun <T> persistenceResult(block: suspend () -> Result<T>): Result<T> =
-    try { block() } catch (e: WorkspaceWriteException) { Result.failure(e) }
+    try { block() } catch (e: WorkspaceWriteException) { Result.failure(e) } catch (e: WorkspaceRejectedException) { Result.failure(e) }
 
 /** Unit/计数接口无法返回 Result 时，停止后续成功提示并显示保存失败；取消保持传播。 */
 fun CoroutineScope.launchStorage(messages: MessageBus, block: suspend CoroutineScope.() -> Unit) = launch {

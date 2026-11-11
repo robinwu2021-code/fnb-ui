@@ -137,7 +137,8 @@ internal class CommandJournal(private val database: () -> SQLiteDatabase, privat
                         val sequence = db.insertOrThrow("command_events", null, ContentValues().apply {
                             put("event_id", eventId); put("store_id", command.storeId); put("aggregate_id", primary)
                             put("revision", revisions.getValue(primary)); put("type", change.eventType); put("payload", change.eventPayload); put("acked", 0)
-                            put("envelope", json.encodeToString(JournalCommand.serializer(), command.copy(payload = "", authorizationRef = null)))
+                            // 授权引用（授权编号，非密钥）随事件保存作审计证据；不参与幂等摘要
+                            put("envelope", json.encodeToString(JournalCommand.serializer(), command.copy(payload = "")))
                             put("accepted_at", now); put("causation_id", command.commandId); put("correlation_id", command.correlationId)
                         })
                         persistBusiness(db)

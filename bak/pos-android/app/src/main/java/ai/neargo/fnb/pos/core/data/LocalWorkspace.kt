@@ -42,6 +42,14 @@ import ai.neargo.fnb.pos.core.model.TaskLogEntry
 import ai.neargo.fnb.pos.core.model.TASK_LOG_LIMIT
 import ai.neargo.fnb.pos.core.model.IdMapping
 import ai.neargo.fnb.pos.core.model.Money
+import ai.neargo.fnb.pos.core.identity.AuthContext
+import ai.neargo.fnb.pos.core.identity.AuthState
+import ai.neargo.fnb.pos.core.identity.AuthStatus
+import ai.neargo.fnb.pos.core.identity.GrantKind
+import ai.neargo.fnb.pos.core.identity.GrantPolicy
+import ai.neargo.fnb.pos.core.identity.Grants
+import ai.neargo.fnb.pos.core.identity.OfflineAuthority
+import ai.neargo.fnb.pos.core.identity.thumbprint
 import ai.neargo.fnb.pos.core.model.KitchenDelivery
 import ai.neargo.fnb.pos.core.model.DeliveryState
 import ai.neargo.fnb.pos.core.model.DeliveryRules
@@ -85,6 +93,19 @@ data class Vault(
     val authorityEpoch: Long = 1,
     /** 每店各聚合的已提交版本（与命令日志 command_aggregates 同事务更新）。 */
     val aggregateRevisions: Map<String, Map<String, Long>> = emptyMap(),
+    // —— N4 身份与离线授权（不含账号密码；授权为签名凭证原文） ——
+    /** 数据绑定的设备公钥指纹：首次在本机落盘时绑定；与本机密钥不同即为复制来的数据。 */
+    val deviceKeyThumbprint: String = "",
+    val offlineGrant: String? = null,
+    /** 本机已知撤销的授权 jti（联网时下发的拒绝清单；演示可本机撤销）。 */
+    val revokedGrants: List<String> = emptyList(),
+    /** 已知最大授权版本：低于此版本的授权视为被撤销，防止回退到旧凭证。 */
+    val knownAuthEpoch: Long = 0,
+    /** 本机记录过的最大系统时间，用于检测明显的时钟回拨。 */
+    val lastSeenWall: Long = 0,
+    val sessionExpiresAt: Long = 0,
+    /** 授权相关操作记录（导入/签发/撤销/校时），不含凭证内容。 */
+    val authLog: List<String> = emptyList(),
 ) {
     val store get() = storeId?.let { stores[it] }
 }
@@ -110,13 +131,28 @@ class WorkspaceCommandException(val receipt: JournalReceipt) : Exception(receipt
 class LocalWorkspace(
     private val store: SnapshotStore,
     private val scope: CoroutineScope,
+    /** 身份与授权；为空时（单元测试）不做授权限制。 */
+    private val identity: IdentityContext? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
     private val state = MutableStateFlow(Vault(stores = DemoCatalog.stores(clock()).mapValues { assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "demo") }, deviceId = "dev-" + UUID.randomUUID()))
     private val writeLock = Mutex()
+
+    private val thumb: String by lazy { identity?.let { thumbprint(it.keys.publicKey()) } ?: "" }
+    private val authState = MutableStateFlow(AuthStatus(AuthState.Demo))
+    override val auth: StateFlow<AuthStatus> = authState
+    override val devIssuerAvailable: Boolean get() = identity?.devIssuer != null
+
+    private fun evaluate(v: Vault): AuthStatus = if (identity == null) AuthStatus(AuthState.Demo) else OfflineAuthority.evaluate(
+        AuthContext(v.user, v.user == "体验账号", v.storeId, v.offlineGrant, v.revokedGrants.toSet(), v.knownAuthEpoch, v.lastSeenWall, v.sessionExpiresAt, v.deviceKeyThumbprint),
+        clock(), thumb, identity.anchors(),
+    )
+
+    /** 时间流逝后重新评估（到期、会话过期）；由容器定时调用。 */
+    override suspend fun refreshAuth() { authState.value = evaluate(state.value) }
 
     private val blockedState = MutableStateFlow<String?>(null)
     /** 启动恢复失败原因；非空时拒绝所有写入，避免用演示数据覆盖原库。 */
@@ -147,11 +183,14 @@ class LocalWorkspace(
             }) else loaded
             val restored = migrated.copy(
                 deviceId = migrated.deviceId.ifBlank { state.value.deviceId },
+                // 旧数据（N4 前）首次由本机加载时绑定本机密钥
+                deviceKeyThumbprint = migrated.deviceKeyThumbprint.ifBlank { thumb },
                 stores = migrated.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
             )
             withContext(NonCancellable) {
                 store.save(json.encodeToString(Vault.serializer(), restored))
                 state.value = restored
+                authState.value = evaluate(restored)
             }
         }
     }
@@ -213,10 +252,14 @@ class LocalWorkspace(
     /** 校验和修改均在锁内执行；落盘完成才发布状态及返回成功。 */
     private suspend fun <T> transaction(event: EventSpec? = null, f: (Vault) -> Pair<Vault, T>): T = writeLock.withLock {
         blockedState.value?.let { throw WorkspaceWriteException(IllegalStateException(it)) }
+        // 营业写入（带事件）须有效授权；授权失效时保留账本，只拒绝新写入
+        val status = evaluate(state.value)
+        if (event != null && !status.writable) { authState.value = status; throw WorkspaceRejectedException(status.blockMessage) }
         val (candidate, result) = f(state.value)
         // 每张厨房票据都有送达记录（送厨、退菜、补打）；纯计算，无新增时不改变对象
         var next = candidate.storeId?.let { id -> candidate.stores[id]?.let { s0 -> ensureDeliveries(s0, "simulation").takeIf { it !== s0 }?.let { candidate.copy(stores = candidate.stores + (id to it)) } } } ?: candidate
         if (next != state.value) withContext(NonCancellable) {
+            next = next.copy(lastSeenWall = maxOf(next.lastSeenWall, clock()), deviceKeyThumbprint = next.deviceKeyThumbprint.ifBlank { thumb })
             if (event != null) {
                 val storeId = requireNotNull(next.storeId)
                 val (type, payload, aggregates) = event.resolve(state.value.stores.getValue(storeId), next.stores.getValue(storeId))
@@ -228,6 +271,7 @@ class LocalWorkspace(
                     storeId = storeId, deviceId = state.value.deviceId, commandId = commandId, type = type, payload = payload,
                     aggregates = versions, tenantId = state.value.tenantId, actorId = state.value.user ?: DemoCatalog.STAFF,
                     coordinatorId = state.value.deviceId, authorityEpoch = state.value.authorityEpoch, occurredAt = clock(),
+                    authorizationRef = status.grant?.jti, policyVersion = status.grant?.policyVersion,
                 )
                 val receipt = try { store.saveCommand(json.encodeToString(Vault.serializer(), next), command) }
                 catch (e: kotlinx.coroutines.CancellationException) { throw e }
@@ -235,6 +279,7 @@ class LocalWorkspace(
                 if (receipt.status != ReceiptStatus.Committed) throw WorkspaceWriteException(WorkspaceCommandException(receipt))
             } else saveSnapshot(store, json.encodeToString(Vault.serializer(), next))
             state.value = next
+            authState.value = evaluate(next)
         }
         result
     }
@@ -284,7 +329,7 @@ class LocalWorkspace(
         val acc = state.value.accounts.firstOrNull { it.email.equals(email.trim(), ignoreCase = true) } ?: return fail("该邮箱未在本机注册，请先注册或直接体验")
         if (ManageRules.hash(password, acc.salt) != acc.hash) return fail("密码不正确")
         return persistenceResult {
-            commit { it.copy(user = acc.email, storeId = null) }
+            commit { it.copy(user = acc.email, storeId = null, sessionExpiresAt = sessionEnd(it)) }
             Result.success(Unit)
         }
     }
@@ -300,13 +345,70 @@ class LocalWorkspace(
         return persistenceResult {
             transaction { v ->
                 if (v.accounts.any { it.email.equals(acc.email, true) }) v to fail("该邮箱已注册，请直接登录")
-                else v.copy(accounts = v.accounts + acc, user = acc.email, storeId = null) to Result.success(Unit)
+                else v.copy(accounts = v.accounts + acc, user = acc.email, storeId = null, sessionExpiresAt = sessionEnd(v)) to Result.success(Unit)
             }
         }
     }
 
-    override suspend fun enterDemo() { commit { it.copy(user = "体验账号", storeId = null) } }
-    override suspend fun logout() { commit { it.copy(user = null, storeId = null) } }
+    override suspend fun enterDemo() { commit { it.copy(user = "体验账号", storeId = null, sessionExpiresAt = sessionEnd(it)) } }
+    override suspend fun logout() { commit { it.copy(user = null, storeId = null, sessionExpiresAt = 0) } }
+
+    /** 本机会话截止：最长 12 小时，且不超过当前有效授权的到期时间（会话不能延长父授权）。 */
+    private fun sessionEnd(v: Vault): Long {
+        val st = evaluate(v)
+        return OfflineAuthority.sessionExpiry(clock(), st.grant?.takeIf { st.state == AuthState.Active }?.exp)
+    }
+
+    // —— 授权中心 ——
+    private fun authLogged(v: Vault, line: String) = v.copy(authLog = (v.authLog + "${clock()} ${v.user ?: "-"} $line").takeLast(200))
+
+    /** 导入激活包/授权：验签、设备绑定、版本不回退、未过期；成功后替换当前授权。 */
+    override suspend fun importGrant(token: String): Result<Unit> = persistenceResult {
+        val id = identity ?: return@persistenceResult fail("本机未启用离线授权")
+        transaction { v ->
+            val (g, _) = Grants.verify(token, id.anchors()).getOrElse { return@transaction v to fail(it.message ?: "授权无效") }
+            val now = clock()
+            val reason = when {
+                g.deviceKeyThumbprint != thumb -> "该授权属于其他设备，不能在本机使用"
+                g.jti in v.revokedGrants -> "该授权已被撤销"
+                g.authEpoch < v.knownAuthEpoch -> "授权版本低于本机已知版本，不能回退"
+                now + GrantPolicy.CLOCK_TOLERANCE_MS < g.iat -> "设备时间早于授权签发时间，请先校时"
+                now > g.exp -> "该授权已过期"
+                else -> null
+            }
+            if (reason != null) return@transaction v to fail(reason)
+            authLogged(v.copy(offlineGrant = token.trim(), knownAuthEpoch = maxOf(v.knownAuthEpoch, g.authEpoch),
+                sessionExpiresAt = if (v.user != null) minOf(maxOf(v.sessionExpiresAt, 0), g.exp).takeIf { it > 0 } ?: OfflineAuthority.sessionExpiry(now, g.exp) else 0),
+                "导入授权 ${g.kind.label} 至 ${g.exp}") to Result.success(Unit)
+        }
+    }
+
+    /** 调试版：开发测试签发器为本机签发（模拟云端/激活服务）。发行版不可用。 */
+    override suspend fun devIssue(kind: GrantKind): Result<Unit> {
+        val id = identity ?: return fail("本机未启用离线授权")
+        val issuer = id.devIssuer ?: return fail("发行版不提供开发签发，请导入正式激活包")
+        val v = state.value
+        val token = issuer.issue(thumb, v.deviceId, v.tenantId, v.stores.keys.toList(), kind, clock(), authEpoch = maxOf(1, v.knownAuthEpoch))
+        return importGrant(token)
+    }
+
+    /** 撤销当前授权（模拟收到云端撤销清单）：立即生效，账本保留。 */
+    override suspend fun revokeCurrent(): Result<Unit> = persistenceResult {
+        transaction { v ->
+            val g = v.offlineGrant?.let { Grants.peek(it) } ?: return@transaction v to fail("本机没有授权")
+            authLogged(v.copy(revokedGrants = (v.revokedGrants + g.jti).distinct()), "撤销授权 ${g.jti}") to Result.success(Unit)
+        }
+    }
+
+    /** 时钟异常：主管确认当前时间正确后重置本机时间锚点（记录人员）。 */
+    override suspend fun confirmClock(email: String, password: String): Result<Unit> = persistenceResult {
+        transaction { v ->
+            val acc = v.accounts.firstOrNull { it.supervisor && it.email.equals(email.trim(), true) }
+            val demo = v.user == "体验账号" && email.trim() == "manager@demo.local" && password == "demo12345"
+            if (!demo && (acc == null || ManageRules.hash(password, acc.salt) != acc.hash)) return@transaction v to fail("主管账号或密码不正确")
+            authLogged(v.copy(lastSeenWall = clock()), "主管 ${email.trim()} 确认校时") to Result.success(Unit)
+        }
+    }
     override suspend fun selectStore(storeId: String) { commit { if (storeId in it.stores) it.copy(storeId = storeId) else it } }
     override suspend fun selectTable(tableId: String) { storeOp { it.copy(currentTableId = tableId) }.getOrThrow() }
 
@@ -670,6 +772,7 @@ class LocalWorkspace(
             next to result
         }
     } catch (e: WorkspaceWriteException) { OrderResult.Rejected(requireNotNull(e.message)) }
+    catch (e: WorkspaceRejectedException) { OrderResult.Rejected(requireNotNull(e.message)) }
 
     override suspend fun addDish(tableId: String, product: Product, sku: Sku?, qty: Int, note: String, mealChoiceIds: List<String>) =
         mutate(tableId, page("DishAdded", tableId)) { s, o -> OrderRules.add(o, product, sku, qty, s.seq, note, mealChoiceIds) }

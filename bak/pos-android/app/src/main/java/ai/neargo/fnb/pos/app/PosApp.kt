@@ -177,6 +177,8 @@ fun PosApp(shell: ShellViewModel) {
                 val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
+                val authStatus by appContainer().auth.auth.collectAsStateWithLifecycle()
+                ai.neargo.fnb.pos.feature.authcenter.AuthBanner(authStatus, onOpen = { nav.goTop(ai.neargo.fnb.pos.navigation.AuthRoute) }, onRelogin = shell::logout)
                 Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
                 if (!layout.wide) Box(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(vertical = 2.dp), contentAlignment = Alignment.Center) { WorkNav(current, go, onManage) }
             }
@@ -196,6 +198,7 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<PrintRoute> { PrintScreenRoute() }
         composable<ManageRoute> { ManageScreenRoute(onDisplay, onSwitchStore) }
         composable<SyncRoute> { SyncScreenRoute() }
+        composable<ai.neargo.fnb.pos.navigation.AuthRoute> { ai.neargo.fnb.pos.feature.authcenter.AuthCenterRoute() }
     }
 }
 
