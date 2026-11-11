@@ -10,6 +10,7 @@ import ai.neargo.fnb.pos.core.model.OrderLine
 import ai.neargo.fnb.pos.core.model.Product
 import ai.neargo.fnb.pos.core.model.SpecGroup
 import ai.neargo.fnb.pos.core.model.SpecOption
+import ai.neargo.fnb.pos.core.model.BizType
 import ai.neargo.fnb.pos.core.model.StoreData
 import ai.neargo.fnb.pos.core.model.StoreSettings
 import ai.neargo.fnb.pos.core.model.TableOrder
@@ -75,7 +76,19 @@ internal object DemoCatalog {
         Menu("m2", "午市套餐", "Lunch sets", listOf("15"), published = false),
     )
 
-    fun stores(now: Long): Map<String, StoreData> = listOf(main(now), coast()).associateBy { it.id }
+    fun stores(now: Long): Map<String, StoreData> = listOf(main(now), coast(), mart(now)).associateBy { it.id }
+
+    /** 零售演示门店的 ID（旧数据升级时补上这一家） */
+    const val RETAIL_STORE_ID = "s-mart"
+
+    /** 零售演示门店：业态 = 零售，没有桌台；商品目录在 R2 补齐（原型 prototypes/pos-react/src/retail/data.ts）。 */
+    private fun mart(now: Long): StoreData = StoreData(
+        id = RETAIL_STORE_ID, name = "虹选便利 · 科技园店", code = "HX001", address = "深圳市南山区科技园中区 6 号",
+        settings = StoreSettings("虹选便利 · 科技园店", serviceBp = 0, payMethods = listOf("现金", "扫码", "银行卡", "储值卡")),
+        biz = BizType.Retail,
+        areas = emptyList(), tables = emptyList(), categories = categories, specGroups = specs, products = emptyList(), menus = emptyList(),
+        currentTableId = "", shift = ShiftState(start = now - 2 * 3_600_000L),
+    )
 
     private fun main(now: Long): StoreData {
         val areas = listOf(Area("hall", "一层大厅", "Hall"), Area("window", "窗边", "Window"), Area("private", "包间", "Private"), Area("upstairs", "二层", "Upstairs"))

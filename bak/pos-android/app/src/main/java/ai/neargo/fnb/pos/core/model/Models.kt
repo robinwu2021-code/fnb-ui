@@ -282,6 +282,8 @@ data class StoreData(
     val code: String,
     val address: String,
     val settings: StoreSettings,
+    /** 门店业态（默认餐饮，旧数据兼容） */
+    val biz: BizType = BizType.Dining,
     val areas: List<Area>,
     val tables: List<DiningTable>,
     val categories: List<Category>,
@@ -447,6 +449,8 @@ data class Session(
     val store: String,
     val staff: String,
     val currentTableId: String,
+    /** 当前门店业态 */
+    val biz: BizType = BizType.Dining,
 )
 
 /** 设备与网络：online = 系统网络可用且未强制离线。 */
@@ -459,7 +463,10 @@ data class DeviceStatus(
 }
 
 /** 门店卡片（选店页）。 */
-data class StoreSummary(val id: String, val name: String, val code: String, val address: String, val tables: Int, val dining: Int)
+data class StoreSummary(val id: String, val name: String, val code: String, val address: String, val tables: Int, val dining: Int, val biz: BizType = BizType.Dining)
+
+/** 门店业态：登录选店后按它进餐饮或零售工作台（同一个 App）。旧数据没有这个字段，读出为餐饮。 */
+@Serializable enum class BizType(val label: String, val en: String) { Dining("餐饮", "Dining"), Retail("零售", "Retail") }
 
 
 /** 默认活动（与旧版写死的券/活动一致，便于迁移）。 */

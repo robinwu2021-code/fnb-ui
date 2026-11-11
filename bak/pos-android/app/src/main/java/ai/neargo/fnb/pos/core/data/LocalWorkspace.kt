@@ -57,6 +57,7 @@ import ai.neargo.fnb.pos.core.model.DeliveryState
 import ai.neargo.fnb.pos.core.model.DeliveryRules
 import ai.neargo.fnb.pos.core.model.PaymentState
 import ai.neargo.fnb.pos.core.model.StoreSettings
+import ai.neargo.fnb.pos.core.model.BizType
 import ai.neargo.fnb.pos.core.model.StoreSummary
 import ai.neargo.fnb.pos.core.model.TableOrder
 import ai.neargo.fnb.pos.core.model.TableStatus
@@ -224,11 +225,13 @@ class LocalWorkspace(
                     p.copy(searchAliases = p.searchAliases.ifBlank { original?.searchAliases.orEmpty() }, mealGroups = p.mealGroups.ifEmpty { original?.mealGroups.orEmpty() })
                 })
             }) else loaded
-            val restored = migrated.copy(
-                deviceId = migrated.deviceId.ifBlank { state.value.deviceId },
+            // 零售演示门店：旧数据里没有就补上（只补这一家，用户删掉的其他门店不恢复）
+            val withRetail = if (DemoCatalog.RETAIL_STORE_ID !in migrated.stores && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
+            val restored = withRetail.copy(
+                deviceId = withRetail.deviceId.ifBlank { state.value.deviceId },
                 // 旧数据（N4 前）首次由本机加载时绑定本机密钥
-                deviceKeyThumbprint = migrated.deviceKeyThumbprint.ifBlank { thumb },
-                stores = migrated.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
+                deviceKeyThumbprint = withRetail.deviceKeyThumbprint.ifBlank { thumb },
+                stores = withRetail.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
             )
             withContext(NonCancellable) {
                 store.save(json.encodeToString(Vault.serializer(), restored))
@@ -283,10 +286,10 @@ class LocalWorkspace(
     override val session: StateFlow<Session> = derive { v ->
         val s = v.store
         Session(v.user, s?.id, s?.settings?.shortName ?: "未选择门店",
-            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) DemoCatalog.STAFF else "未上岗", s?.currentTableId ?: "")
+            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) DemoCatalog.STAFF else "未上岗", s?.currentTableId ?: "", s?.biz ?: BizType.Dining)
     }
     override val stores: StateFlow<List<StoreSummary>> = derive { v ->
-        v.stores.values.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }) }
+        v.stores.values.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }, s.biz) }
     }
     override val current: StateFlow<StoreData?> = derive { it.store }
     override val tables: StateFlow<List<DiningTable>> = derive { it.store?.tables.orEmpty() }

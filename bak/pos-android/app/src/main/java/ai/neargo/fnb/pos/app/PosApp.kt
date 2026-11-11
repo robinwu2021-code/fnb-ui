@@ -156,6 +156,9 @@ fun PosApp(shell: ShellViewModel) {
     val current = when {
         dest?.hasRoute<TablesRoute>() == true -> TopLevel.Tables
         dest?.hasRoute<ManageRoute>() == true -> TopLevel.Manage
+        dest?.hasRoute<ai.neargo.fnb.pos.navigation.RetailPosRoute>() == true -> TopLevel.RetailPos
+        dest?.hasRoute<ai.neargo.fnb.pos.navigation.RetailOrdersRoute>() == true -> TopLevel.RetailOrders
+        dest?.hasRoute<ai.neargo.fnb.pos.navigation.GoodsRoute>() == true -> TopLevel.Goods
         else -> TopLevel.Order
     }
     val blocked by appContainer().recovery.blocked.collectAsStateWithLifecycle()
@@ -186,15 +189,24 @@ fun PosApp(shell: ShellViewModel) {
         val denied = (dest?.hasRoute<ManageRoute>() == true && !manageAllowed) ||
             (dest?.hasRoute<ai.neargo.fnb.pos.navigation.ReportsRoute>() == true && ai.neargo.fnb.pos.core.model.Perm.Reports !in staffState.perms) ||
             (dest?.hasRoute<ShiftRoute>() == true && ai.neargo.fnb.pos.core.model.Perm.Shift !in staffState.perms)
-        if (denied) nav.goTop(TablesRoute)
+        if (denied) nav.goTop(if (session.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) ai.neargo.fnb.pos.navigation.RetailPosRoute else TablesRoute)
     }
-    val go: (TopLevel) -> Unit = { nav.goTop(when (it) { TopLevel.Tables -> TablesRoute; TopLevel.Order -> OrderRoute; TopLevel.Manage -> ManageRoute }) }
+    val go: (TopLevel) -> Unit = { nav.goTop(when (it) { TopLevel.Tables -> TablesRoute; TopLevel.Order -> OrderRoute; TopLevel.Manage -> ManageRoute
+        TopLevel.RetailPos -> ai.neargo.fnb.pos.navigation.RetailPosRoute; TopLevel.RetailOrders -> ai.neargo.fnb.pos.navigation.RetailOrdersRoute; TopLevel.Goods -> ai.neargo.fnb.pos.navigation.GoodsRoute }) }
+    // 按门店业态分流（同一个 App）：切到零售门店进收银，切回餐饮门店进点餐；当前页已属于该业态（或是共用页）就不动
+    val retail = session.biz == ai.neargo.fnb.pos.core.model.BizType.Retail
+    androidx.compose.runtime.LaunchedEffect(session.storeId, session.biz) {
+        val inRetail = current in setOf(TopLevel.RetailPos, TopLevel.RetailOrders, TopLevel.Goods)
+        val inDining = dest == null || current in setOf(TopLevel.Tables, TopLevel.Order)
+        if (retail && inDining) nav.goTop(ai.neargo.fnb.pos.navigation.RetailPosRoute)
+        if (!retail && inRetail) nav.goTop(OrderRoute)
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Pos.colors.canvas)) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
+                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, dining = session.biz != ai.neargo.fnb.pos.core.model.BizType.Retail, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
                     onLock = { lockScope.launch { container.staff.signOutStaff() } }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
@@ -202,7 +214,7 @@ fun PosApp(shell: ShellViewModel) {
                 ai.neargo.fnb.pos.feature.lan.LanBanner()
                 ai.neargo.fnb.pos.feature.authcenter.AuthBanner(authStatus, onOpen = { nav.goTop(ai.neargo.fnb.pos.navigation.AuthRoute) }, onRelogin = shell::logout)
                 Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
-                if (!layout.wide) Box(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(vertical = 2.dp), contentAlignment = Alignment.Center) { WorkNav(current, go, onManage) }
+                if (!layout.wide) Box(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(vertical = 2.dp), contentAlignment = Alignment.Center) { WorkNav(current, go, onManage, session.biz) }
             }
             ToastHost(shell.messages, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = if (layout.wide) 24.dp else 72.dp))
             if (displayOpen) DisplaySheetRoute(onDismiss = { displayOpen = false })
@@ -223,6 +235,9 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<ai.neargo.fnb.pos.navigation.AuthRoute> { ai.neargo.fnb.pos.feature.authcenter.AuthCenterRoute() }
         composable<ai.neargo.fnb.pos.navigation.ServeRoute> { ai.neargo.fnb.pos.feature.ops.ServeRoute() }
         composable<ai.neargo.fnb.pos.navigation.ReportsRoute> { ai.neargo.fnb.pos.feature.ops.ReportsRoute() }
+        composable<ai.neargo.fnb.pos.navigation.RetailPosRoute> { ai.neargo.fnb.pos.feature.retail.RetailPlaceholder(ai.neargo.fnb.pos.feature.retail.RetailPage.Pos) }
+        composable<ai.neargo.fnb.pos.navigation.RetailOrdersRoute> { ai.neargo.fnb.pos.feature.retail.RetailPlaceholder(ai.neargo.fnb.pos.feature.retail.RetailPage.Orders) }
+        composable<ai.neargo.fnb.pos.navigation.GoodsRoute> { ai.neargo.fnb.pos.feature.retail.RetailPlaceholder(ai.neargo.fnb.pos.feature.retail.RetailPage.Goods) }
     }
 }
 
@@ -241,9 +256,9 @@ private fun NavHostController.goTopInternal(route: Any) = navigate(route) {
 
 /** 工作台导航：桌台 · 点餐 · 系统管理（齿轮）。 */
 @Composable
-private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage: () -> Unit) {
+private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage: () -> Unit, biz: ai.neargo.fnb.pos.core.model.BizType = ai.neargo.fnb.pos.core.model.BizType.Dining) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        listOf(TopLevel.Tables, TopLevel.Order).forEach { r -> PosButton(r.label, { onNavigate(r) }, selected = current == r, textStyle = Pos.type.header) }
+        ai.neargo.fnb.pos.navigation.topTabs(biz).forEach { r -> PosButton(r.label, { onNavigate(r) }, selected = current == r, textStyle = Pos.type.header) }
         PosIconButton(Icons.Outlined.Settings, "系统管理", onManage, selected = current == TopLevel.Manage)
     }
 }
@@ -252,6 +267,8 @@ private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage:
 private class HeaderActions(
     val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit, val cloudPending: Int, val kitchenAction: Int,
     val onShift: () -> Unit, val onPrint: () -> Unit, val onServe: () -> Unit, val onReports: () -> Unit,
+    /** 出菜（厨房）只在餐饮门店有 */
+    val dining: Boolean = true,
     val perms: Set<ai.neargo.fnb.pos.core.model.Perm> = ai.neargo.fnb.pos.core.model.Perm.entries.toSet(), val staffMode: Boolean = false, val onLock: () -> Unit = {}, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
 )
 
@@ -268,11 +285,11 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
             Text(session.store, style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(session.staff, style = t.label, color = c.sub, maxLines = 1)
         }
-        WorkNav(current, onNavigate, onManage)
+        WorkNav(current, onNavigate, onManage, session.biz)
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusIcon(actions)
-            ToolIcon(Icons.Outlined.RoomService, "出菜", onClick = actions.onServe)
+            if (actions.dining) ToolIcon(Icons.Outlined.RoomService, "出菜", onClick = actions.onServe)
             if (ai.neargo.fnb.pos.core.model.Perm.Reports in actions.perms) ToolIcon(Icons.Outlined.Assessment, "报表与日结", onClick = actions.onReports)
             ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息：A06 预订 19:00 到店；厨房已出 A02 麻婆豆腐（演示）") }
             PrinterIcon(actions)
@@ -303,7 +320,7 @@ private fun CompactHeader(session: Session, actions: HeaderActions) {
                     DropdownMenuItem(text = { Text(label, style = Pos.type.body) }, leadingIcon = { Icon(icon, null) }, onClick = { more = false; act() })
                 }
                 item(Icons.Outlined.Print, if (actions.device.printerOk) "打印队列" else "打印队列（缺纸）", actions.onPrint)
-                item(Icons.Outlined.RoomService, "出菜", actions.onServe)
+                if (actions.dining) item(Icons.Outlined.RoomService, "出菜", actions.onServe)
                 item(Icons.Outlined.Assessment, "报表与日结", actions.onReports)
                 item(Icons.Outlined.SwapHoriz, "交班", actions.onShift)
                 item(Icons.Outlined.Translate, "语言：中文 / EN", actions.onLang)
