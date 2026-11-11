@@ -29,22 +29,26 @@ import { CashPad, PayHead, WaitBlock, payLabel } from '@/components/pos/pay';
 import { toast } from 'sonner';
 import { CART, HELD, ITEMS, RCATS, SKU, UNKNOWN_CODE, item, lineAmt, lineMember, lineName, linePromo, lineUnit, nextKey, rTotals, type Item, type RCat, type RLine } from './data';
 import { rt, useRT } from './dict';
+import { openReturn } from './sales';
 import * as cart from '@/domain/cart';
 import * as catalog from '@/domain/catalog';
 import * as payment from '@/domain/payment';
-import { emit } from '@/domain/events';
+import { emit, on } from '@/domain/events';
+import { exchangeSettle } from '@/domain/aftersale';
 import { BIZ } from '@/biz';
 
 /* ---------- 状态 ---------- */
-export type Screen = 'empty' | 'cart' | 'unknown' | 'peek' | 'weigh' | 'sku' | 'held' | 'clear' | 'pay' | 'done';
+export type Screen = 'empty' | 'cart' | 'unknown' | 'peek' | 'weigh' | 'sku' | 'held' | 'clear' | 'pay' | 'done' | 'xcart' | 'xrefund';
+/** 换货抵扣：退回部分折成的金额，从订单页换货带过来（事件 exchange.credit） */
+export interface Credit { no: string; amt: number; pcs: number; method: string }
 interface RS {
   screen: Screen; lines: RLine[]; member: boolean; mode: 'scan' | 'pay'; ov: '' | 'weigh' | 'sku' | 'held' | 'clear' | 'done'; banner: '' | 'unknown';
   last: number | null; open: number | null; cat: RCat; qty: number; weighId: string; w: number; sku: [number, number] | null; skuId: string;
-  peek: boolean; peekId: string | null; pay: string; ent: string; set: (p: Partial<RS>) => void;
+  peek: boolean; peekId: string | null; pay: string; ent: string; credit: Credit | null; set: (p: Partial<RS>) => void;
 }
 const clone = (l: RLine[]) => l.map((x) => ({ ...x }));
 function preset(s: Screen): Partial<RS> {
-  const base: Partial<RS> = { screen: s, lines: clone(CART), member: true, mode: 'scan', ov: '', banner: '', last: 8, open: null, cat: 'common', qty: 1, weighId: 'apple', w: 1.236, sku: null, skuId: 'tee', peek: false, peekId: null, pay: '', ent: '' };
+  const base: Partial<RS> = { screen: s, lines: clone(CART), member: true, mode: 'scan', ov: '', banner: '', last: 8, open: null, cat: 'common', qty: 1, weighId: 'apple', w: 1.236, sku: null, skuId: 'tee', peek: false, peekId: null, pay: '', ent: '', credit: null };
   switch (s) {
     case 'empty': return { ...base, lines: [], member: false, last: null };
     case 'unknown': return { ...base, banner: 'unknown' };
@@ -55,6 +59,8 @@ function preset(s: Screen): Partial<RS> {
     case 'clear': return { ...base, ov: 'clear' };
     case 'pay': return { ...base, mode: 'pay', pay: 'cash', ent: '200' };
     case 'done': return { ...base, mode: 'pay', pay: 'cash', ent: '200', ov: 'done' };
+    case 'xcart': return { ...base, lines: [{ key: 9, id: 'tee', q: 1, sku: ['黑 / L', 'Black / L'] }], last: 9, member: false, cat: 'apparel', credit: { no: '#R0155', amt: 53.1, pcs: 1, method: 'cash' } };
+    case 'xrefund': return { ...base, lines: [{ key: 9, id: 'socks', q: 1, sku: ['灰', 'Grey'] }], last: 9, member: false, cat: 'apparel', credit: { no: '#R0155', amt: 53.1, pcs: 1, method: 'cash' } };
     default: return base;
   }
 }
@@ -90,6 +96,10 @@ export function scanCode(raw: string) {
 const SIM_CODES = { std: '6901939621271', weighCode: '200100200431006180', sku: '2300101', unknown: UNKNOWN_CODE, loose: 'PLU 1010', payCode: '134567890123456789' } as const;
 export function scanSim(kind: keyof typeof SIM_CODES) { scanCode(SIM_CODES[kind]); }
 function useTot() { const lines = useR((s) => s.lines), member = useR((s) => s.member); return rTotals(lines, member); }
+/** 应收：有换货抵扣时按 domain/aftersale.exchangeSettle 算补收 / 退差价 */
+function usePay() { const tot = useTot(), credit = useR((s) => s.credit); const st = credit ? exchangeSettle(tot.due, credit.amt) : null; return { tot, credit, st, due: st ? st.pay : tot.due }; }
+/* 订单页换货确认后：开一张新购物车，带抵扣（订阅事件，不直接互相调用） */
+on('exchange.credit', (e) => useR.getState().set({ ...preset('empty'), credit: { no: e.orderNo, amt: e.amt, pcs: e.pcs, method: e.method } }));
 const useEn = () => useStore((s) => s.lang) === 'en';
 
 /* ---------- 购物车行（LineRow）---------- */
@@ -125,6 +135,8 @@ function MoreMenu() {
     <Menu>
       <MenuTrigger asChild><Button variant="muted" size="icon-sm" aria-label={t('q.more')}><Ico name="ellipsis" size={16} /></Button></MenuTrigger>
       <MenuContent>
+        <MenuItem onSelect={() => openReturn(null, 1)}>{t('more.return')}</MenuItem>
+        <MenuSep />
         <MenuItem onSelect={() => toast(t('more.note'))}>{t('more.note')}</MenuItem><MenuItem onSelect={() => toast(t('more.reprint'))}>{t('more.reprint')}</MenuItem>
         <MenuItem hint={t('more.needAuth')} onSelect={openDrawer}>{t('more.drawer')}</MenuItem>
         <MenuSep />
@@ -134,7 +146,7 @@ function MoreMenu() {
   );
 }
 function CartPanel() {
-  const t = useRT(); const r = useR(), tot = useTot(); const pay = r.mode === 'pay', empty = !r.lines.length;
+  const t = useRT(); const r = useR(), { tot, credit, st, due } = usePay(); const pay = r.mode === 'pay', empty = !r.lines.length;
   const QDEF: QuickItem[] = [
     { key: 'member', label: t('q.member'), icon: 'scan-line', onClick: () => r.set({ member: !r.member }), on: r.member },
     { key: 'hold', label: t('q.hold'), icon: 'pause', onClick: () => toast(t('q.hold')), disabled: empty },
@@ -154,19 +166,23 @@ function CartPanel() {
     </>
   );
   const foot = (
-    <DueFoot label={empty ? '' : t('due')} amt={money(tot.due)} note={t('due.note', { n: tot.pcs, m: money(tot.save) })}>
-      {pay ? <Acts><Button variant="muted" block onClick={() => r.set({ mode: 'scan', pay: '', ent: '' })}><Ico name="plus" />{t('more')}</Button></Acts> : <>
+    <DueFoot label={credit && st ? (st.refund ? t('ex.refund') : st.even ? t('ex.even') : t('ex.pay')) : empty ? '' : t('due')} amt={money(st ? st.refund || st.pay : tot.due)}
+      note={credit ? t('ex.note', { a: money(tot.due), b: money(credit.amt) }) : t('due.note', { n: tot.pcs, m: money(tot.save) })}>
+      {pay ? <Acts><Button variant="muted" block onClick={() => r.set({ mode: 'scan', pay: '', ent: '' })}><Ico name="plus" />{t('more')}</Button></Acts>
+      : st && (st.refund || st.even) ? <Acts><Button size="lg" block disabled={empty} onClick={() => r.set({ pay: credit!.method, ent: '', ov: 'done', open: null })}>{st.refund ? t('ex.refundBtn', { m: money(st.refund) }) : t('ex.evenBtn')}</Button></Acts> : <>
         {!empty && <div className="flex gap-gap [&>button]:flex-1">
-          <Button variant="muted" size="sm" onClick={() => r.set({ mode: 'pay', pay: 'cash', ent: String(tot.due), ov: 'done', open: null })}><Ico name="banknote" />{t('fast.cash')} <b className="num">{money(tot.due)}</b></Button>
+          <Button variant="muted" size="sm" onClick={() => r.set({ mode: 'pay', pay: 'cash', ent: String(due), ov: 'done', open: null })}><Ico name="banknote" />{t('fast.cash')} <b className="num">{money(due)}</b></Button>
           <Button variant="muted" size="sm" onClick={() => r.set({ mode: 'pay', pay: 'wx', ent: '', open: null })}><Ico name="qr-code" />{t('fast.qr')}</Button>
         </div>}
-        <Acts><Button variant="muted" disabled={empty} onClick={() => toast(t('q.hold'))}>{t('q.hold')}</Button><Button size="lg" block disabled={empty} onClick={() => r.set({ mode: 'pay', pay: '', ent: '', open: null })}>{t('pay')}{!empty && <b className="num ml-1">{money(tot.due)}</b>}</Button></Acts>
+        <Acts><Button variant="muted" disabled={empty} onClick={() => toast(t('q.hold'))}>{t('q.hold')}</Button><Button size="lg" block disabled={empty} onClick={() => r.set({ mode: 'pay', pay: '', ent: '', open: null })}>{t('pay')}{!empty && <b className="num ml-1">{money(due)}</b>}</Button></Acts>
       </>}
     </DueFoot>
   );
   return (
     <Panel area="detail" ledger head={head} foot={foot} bodyClass={empty ? 'justify-center' : undefined}>
-      {empty ? <Empty icon={<Ico name="scan-barcode" size={44} className="text-sub" />} title={t('cart.empty')} desc={<>{t('cart.emptyDesc')}<br /><Button variant="link" size="sm" className="hit text-sm mt-1" onClick={() => r.set({ member: true })}>{t('member.add')}</Button></>} />
+      {credit && <Block title={t('ex.block')} className="mb-3"><FeeRow icon="arrow-left-right" name={t('ex.line', { no: credit.no, n: credit.pcs })} amt={'−' + money(credit.amt)} neg /></Block>}
+      {empty && credit ? <Empty icon={<Ico name="scan-barcode" size={44} className="text-sub" />} title={t('ex.scanNew')} desc={t('ex.scanNewHint', { m: money(credit.amt) })} />
+      : empty ? <Empty icon={<Ico name="scan-barcode" size={44} className="text-sub" />} title={t('cart.empty')} desc={<>{t('cart.emptyDesc')}<br /><Button variant="link" size="sm" className="hit text-sm mt-1" onClick={() => r.set({ member: true })}>{t('member.add')}</Button></>} />
         : <>
           <div>{r.lines.map((l) => <CartLine key={l.key} l={l} />)}</div>
           <Block title={t('fees')} right={<span>{t('fees.order')}</span>} className="mt-3">
@@ -266,7 +282,7 @@ function ScanPane() {
 /* ---------- 右 · 收款态（PayHead / CashPad / WaitBlock 与餐饮结账共用）---------- */
 function PayPane() {
   const t = useRT(), tc = useT(); const r = useR(), tot = useTot();
-  const due = tot.due, got = r.ent ? Number(r.ent) : 0, done = r.ov === 'done';
+  const { due } = usePay(), got = r.ent ? Number(r.ent) : 0, done = r.ov === 'done';
   const key = (k: string) => r.set({ ent: payment.keyInput(r.ent, k) });
   let body: ReactNode, foot: ReactNode = null;
   if (!r.pay) body = <Empty fill icon={<Ico name="hand-coins" size={44} className="text-success-text" />} title={tc('co.pickMethod')} desc={tc('co.pickMethodHint')} />;
@@ -356,20 +372,22 @@ function ClearDialog() {
   );
 }
 function DoneDialog() {
-  const t = useRT(), lang = useStore((s) => s.lang); const r = useR(), tot = useTot(); const got = r.ent ? Number(r.ent) : tot.due;
+  const t = useRT(), lang = useStore((s) => s.lang); const r = useR(), { tot, credit, st, due } = usePay(); const got = r.ent ? Number(r.ent) : due;
+  const big = st?.refund ? st.refund : round2(Math.max(0, got - due));
   return (
     <Dialog open={r.ov === 'done'} onClose={() => r.set({ ov: '' })} ariaLabel={t('done.title')}>
-      <Result title={t('done.title')}>
-        <span className="help">{t('done.change')}</span>
-        <b className="text-48px font-700 tracking-[-.03em] num leading-none">{money(round2(Math.max(0, got - tot.due)))}</b>
+      <Result title={credit ? t('ex.doneTitle') : t('done.title')}>
+        <span className="help">{st?.refund ? t('ex.refunded', { m: payLabel(credit!.method, lang) }) : t('done.change')}</span>
+        <b className="text-48px font-700 tracking-[-.03em] num leading-none">{money(big)}</b>
       </Result>
       <Cells className="mt-2">
-        <Cell k={t('due')} v={money(tot.due)} num /><Cell k={t('done.got')} v={money(got)} num />
-        <Cell k={t('done.method')} v={payLabel(r.pay || 'cash', lang)} /><Cell k={t('done.save')}><span className="num text-saving font-600">−{money(tot.save)}</span></Cell>
+        {credit && <><Cell k={t('ex.newItems')} v={money(tot.due)} num /><Cell k={t('ex.line', { no: credit.no, n: credit.pcs })}><span className="num text-saving font-600">−{money(credit.amt)}</span></Cell></>}
+        {!st?.refund && !st?.even && <><Cell k={credit ? t('ex.paidMore') : t('due')} v={money(due)} num /><Cell k={t('done.got')} v={money(got)} num /></>}
+        <Cell k={st?.refund ? t('rt.method') : t('done.method')} v={payLabel(r.pay || 'cash', lang)} />{tot.save > 0 && <Cell k={t('done.save')}><span className="num text-saving font-600">−{money(tot.save)}</span></Cell>}
         {r.member && <Cell k={t('done.points')} v="+150" num />}
       </Cells>
-      <Note>{t('done.auto')}</Note>
-      <DialogActs><Button variant="muted" onClick={() => toast(t('done.reprint'))}><Ico name="printer" />{t('done.reprint')}</Button><Button onClick={() => { emit({ type: 'order.paid', biz: 'retail', orderNo: '#R0158', due: tot.due, methods: [r.pay || 'cash'] }); goScreen('empty'); }}>{t('done.next')}</Button></DialogActs>
+      {!st?.refund && <Note>{t('done.auto')}</Note>}
+      <DialogActs><Button variant="muted" onClick={() => toast(t('done.reprint'))}><Ico name="printer" />{t('done.reprint')}</Button><Button onClick={() => { emit({ type: 'order.paid', biz: 'retail', orderNo: '#R0158', due, methods: [r.pay || 'cash'] }); goScreen('empty'); }}>{t('done.next')}</Button></DialogActs>
     </Dialog>
   );
 }

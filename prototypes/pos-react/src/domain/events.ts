@@ -3,7 +3,9 @@
 export type DomainEvent =
   | { type: 'order.paid'; biz: 'fnb' | 'retail'; orderNo: string; due: number; table?: string; methods: string[] }
   | { type: 'order.held'; biz: 'fnb' | 'retail'; orderNo: string }
-  | { type: 'stock.changed'; ids: string[] };
+  | { type: 'stock.changed'; ids: string[] }
+  /** 换货：退回部分已记到原单，抵扣额带到收银（零售收银订阅后在购物车里出抵扣行） */
+  | { type: 'exchange.credit'; orderNo: string; amt: number; pcs: number; method: string };
 type Of<T extends DomainEvent['type']> = Extract<DomainEvent, { type: T }>;
 const subs: Record<string, ((e: DomainEvent) => void)[]> = {};
 /** 订阅；返回取消函数 */

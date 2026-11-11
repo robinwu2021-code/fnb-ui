@@ -102,6 +102,13 @@ const net = aftersale.allocate(sold, 10); eq(r2(net.a + net.b + net.c), 90.01, '
 eq(aftersale.refundAmount(sold, 10, { a: 1 }), r2(net.a / 2), '退 1 件按分摊后单件实付'); eq(aftersale.refundAmount([{ key: 'x', q: 3, amt: 30, returned: 2 }], 0, { x: 5 }), 10, '超过可退数量按可退算');
 eq(aftersale.refundableQty({ key: 'w', q: 1, amt: 5, weighed: true, returned: 1 }), 0, '称重行退过就不能再退'); eq(aftersale.restockByDefault('quality'), false, '质量问题默认不回库存');
 
+const sold2 = [{ key: 'a', q: 3, amt: 30 }, { key: 'w', q: 1, amt: 15.82, weighed: true }];
+const after = aftersale.applyReturn(sold2, { a: 5, w: 1 }); eq(after.map((l) => l.returned), [3, 1], '退货记数不超过可退');
+eq([aftersale.saleStatus(sold2), aftersale.saleStatus(aftersale.applyReturn(sold2, { a: 1 })), aftersale.saleStatus(after)], ['paid', 'partial_return', 'returned'], '原单退货状态');
+eq([aftersale.channelBlock('platform'), aftersale.channelBlock('store')], ['platform', null], '平台单不能在门店退'); eq(aftersale.pickedPieces(sold2, { a: 2, w: 1 }), 3, '选中件数');
+
+eq([aftersale.exchangeSettle(59, 53.1), aftersale.exchangeSettle(29, 53.1), aftersale.exchangeSettle(53.1, 53.1)], [{ pay: 5.9, refund: 0, even: false }, { pay: 0, refund: 24.1, even: false }, { pay: 0, refund: 0, even: true }], '换货：补收 / 退差价 / 等价');
+
 eq(shift.drawerTotal([15, 3, 4, 3, 1, 5]), 1770, '钱箱实盘'); eq(shift.expectedCash({ float: 500, cashIn: 1280 }), 1780, '应有现金');
 eq(shift.variance(1780, 1770), { diff: -10, st: 'short' }, '盘亏 ¥10'); eq(shift.variance(1780, 1781, 2).st, 'ok', '容差内平账');
 

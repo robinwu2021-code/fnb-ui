@@ -33,3 +33,23 @@ export type ReturnReason = 'quality' | 'unwanted' | 'wrong' | 'other';
 export const restockByDefault = (why: ReturnReason) => why !== 'quality';
 /** 无单退货：需授权，只能退现金或储值 */
 export const NO_RECEIPT = { needsAuth: true, methods: ['cash', 'sv'] as const };
+/** 退货后把件数记到原单行（不超过可退数量） */
+export function applyReturn<T extends SoldLine>(lines: T[], pick: Record<string, number>): T[] {
+  return lines.map((l) => { const n = Math.min(pick[l.key] || 0, refundableQty(l)); return n ? { ...l, returned: (l.returned || 0) + (l.weighed ? 1 : n) } : l; });
+}
+/** 原单状态：没退过 paid · 退了一部分 partial_return · 全退完 returned */
+export function saleStatus(lines: SoldLine[]): 'paid' | 'partial_return' | 'returned' {
+  const any = lines.some((l) => (l.returned || 0) > 0), all = lines.every((l) => refundableQty(l) === 0);
+  return all ? 'returned' : any ? 'partial_return' : 'paid';
+}
+/** 渠道限制：即时零售平台单要在平台发起退款，门店不能直接退 */
+export const channelBlock = (ch: string) => (ch === 'platform' ? 'platform' : null);
+/** 选了几件 */
+export const pickedPieces = (lines: SoldLine[], pick: Record<string, number>) => lines.reduce((a, l) => a + Math.min(pick[l.key] || 0, refundableQty(l)), 0);
+
+/* ---------- 换货（零售方案 §4.3）：退回的商品折成抵扣额，带到收银；新商品应收减抵扣 ---------- */
+/** 补收 pay（新商品更贵）或退差价 refund（新商品更便宜），两者至多一个非 0 */
+export function exchangeSettle(newDue: number, credit: number) {
+  const d = round2(newDue - credit);
+  return { pay: Math.max(0, d), refund: Math.max(0, -d), even: d === 0 };
+}
