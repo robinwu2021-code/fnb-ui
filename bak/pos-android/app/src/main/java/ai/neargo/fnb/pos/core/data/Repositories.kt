@@ -104,6 +104,10 @@ interface SyncRepository {
     val deliveries: StateFlow<List<KitchenDelivery>>
     /** 人工确认送达（失败/未知/待出单），记录人员与原因。 */
     suspend fun confirmDelivery(ticketId: String, reason: String): Result<Unit>
+    /** 按任务（ticketId）汇总的送达状态，按档口出单方式判定是否需处理。 */
+    val deliveryGroups: StateFlow<List<ai.neargo.fnb.pos.core.model.TicketDelivery>>
+    /** 厨房屏未收到时改打纸单。 */
+    suspend fun printForScreen(ticketId: String): Result<Unit>
     /** 当前门店的队列（含已同步记录）。 */
     val outbox: StateFlow<List<OutboxItem>>
     /** 所有门店待同步数量。 */
@@ -215,7 +219,12 @@ interface KdsRepository {
     suspend fun kdsAdvance(ticketId: String, expectedRev: Int, to: ai.neargo.fnb.pos.core.model.KdsState): Result<Unit>
     /** 档口配置：档口列表（第一个为默认）与分类映射。 */
     suspend fun saveKdsStations(stations: List<String>, mapping: Map<String, String>): Result<Unit>
+    /** 档口出单方式（仅纸单/仅厨房屏/任一/两者）。 */
+    suspend fun saveDeliveryModes(modes: Map<String, ai.neargo.fnb.pos.core.model.DeliveryMode>): Result<Unit>
 }
 
 @kotlinx.serialization.Serializable
 internal data class KitchenStationsPayload(val stations: List<String>, val stationOf: Map<String, String>)
+
+@kotlinx.serialization.Serializable
+internal data class KitchenDeliveryPolicyPayload(val modes: Map<String, ai.neargo.fnb.pos.core.model.DeliveryMode>)

@@ -131,7 +131,7 @@ data class ShellUiState(
 /** 应用壳 ViewModel：会话、设备状态、显示偏好（主题）。 */
 class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, private val prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus,
     status: ai.neargo.fnb.pos.core.data.SyncStatusRepository) : ViewModel() {
-    private val endpoints = combine(status.stats, sync.deliveries) { st, dl -> st.unackedEvents to dl.count { it.needsAction } }
+    private val endpoints = combine(status.stats, sync.deliveryGroups) { st, dl -> st.unackedEvents to dl.count { it.needsAction } }
     val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, combine(session.stores, endpoints) { a, b -> a to b }) { s, d, p, n, (st, e) ->
         ShellUiState(s, d, p, n, st, e.first, e.second)
     }

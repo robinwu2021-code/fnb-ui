@@ -227,8 +227,20 @@ data class PaymentRecord(val id: String, val tableId: String, val amount: Long, 
     val confirmedBy: String = "", val reason: String = "",
     /** 已由补打任务接替（原记录不再阻止结账，由补打记录追踪）。 */
     val supersededBy: String = "",
+    /** 渠道：paper=纸质厨房单，screen=厨房屏。旧记录均为纸单。 */
+    val channel: String = "paper",
+    /** 所属档口（空=旧数据/默认档口）。 */
+    val station: String = "",
+    /** 替代的渠道：screen=厨房屏未收到时改打的纸单，送达后视为厨房屏已满足。 */
+    val covers: String = "",
 ) {
     val needsAction get() = (state == DeliveryState.Failed || state == DeliveryState.Unknown) && supersededBy.isBlank()
+}
+
+/** 档口出单方式：决定哪些渠道必须送达（见方案文档 A）。 */
+@Serializable enum class DeliveryMode(val label: String, val desc: String) {
+    Paper("仅纸单", "纸单送达即可"), Screen("仅厨房屏", "厨房屏收到即可"),
+    Either("纸单或厨房屏", "任一送达即可"), Both("纸单和厨房屏", "两路都要送达"),
 }
 
 @Serializable enum class OutboxKind(val label: String) { Kitchen("送厨"), Payment("收款") }
@@ -316,6 +328,8 @@ data class StoreData(
     /** 厨房档口（第一个为默认档口）与菜品分类 → 档口映射。 */
     val kdsStations: List<String> = listOf("厨房"),
     val stationOf: Map<String, String> = emptyMap(),
+    /** 档口出单方式；未配置的档口为「仅纸单」。 */
+    val stationDelivery: Map<String, DeliveryMode> = emptyMap(),
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {

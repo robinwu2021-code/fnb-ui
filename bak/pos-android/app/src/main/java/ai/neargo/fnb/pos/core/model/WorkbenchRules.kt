@@ -126,11 +126,72 @@ object ShiftRules {
 
 
 /** 结账与厨房送达（N3-02）：任一厨房票据失败或结果未知时须先处理。待出单不阻止。 */
+/**
+ * 一张厨房任务（同一 ticketId）的送达汇总：纸单、厨房屏、屏未收到时改打的纸单。
+ * needsAction：按档口出单方式，必需渠道失败/未知/超时且未满足，拦结账。
+ */
+data class TicketDelivery(
+    val ticketId: String, val tableId: String, val orderId: String, val station: String, val mode: DeliveryMode, val label: String,
+    val paper: KitchenDelivery?, val screen: KitchenDelivery?, val fallback: KitchenDelivery?,
+    val cancelled: Boolean, val needsAction: Boolean, val issue: String, val updatedAt: Long, val createdAt: Long,
+) {
+    /** 厨房屏未收到、可改打纸单（尚未改打或改打已失败）。 */
+    val canFallback get() = needsAction && screen?.state == DeliveryState.Failed && (fallback == null || fallback.state == DeliveryState.Failed)
+    val records get() = listOfNotNull(paper, screen, fallback)
+}
+
 object DeliveryRules {
-    fun pendingAction(s: StoreData, tableId: String): List<KitchenDelivery> {
+    /** 厨房屏未收到的等待时限。 */
+    const val SCREEN_TIMEOUT_MS = 60_000L
+
+    private fun ok(d: KitchenDelivery?) = d != null && (d.state == DeliveryState.Delivered || d.state == DeliveryState.ManualConfirmed)
+    private fun bad(d: KitchenDelivery?) = d != null && (d.state == DeliveryState.Failed || d.state == DeliveryState.Unknown)
+
+    fun modeOf(s: StoreData, station: String) = s.stationDelivery[station.ifBlank { s.kdsStations.firstOrNull().orEmpty() }] ?: DeliveryMode.Paper
+
+    fun groups(s: StoreData): List<TicketDelivery> {
+        val cancelled = s.kdsTickets.filter { it.state == KdsState.Cancelled }.map { it.id }.toSet()
+        return s.kitchenDeliveries.groupBy { it.ticketId }.map { (id, rs) ->
+            val live = rs.filter { it.supersededBy.isBlank() }.sortedBy { it.createdAt }
+            // 已被补打接替的纸单不再参与判定（旧版补打记录另成一组，由补打自身追踪）
+            val paper = live.lastOrNull { it.channel == "paper" && it.covers.isBlank() }
+            val screen = rs.lastOrNull { it.channel == "screen" }
+            val fallback = live.lastOrNull { it.covers == "screen" }
+            val first = rs.minBy { it.createdAt }
+            val station = (screen ?: paper ?: first).station
+            if (live.isEmpty()) return@map TicketDelivery(id, first.tableId, first.orderId, station, if (screen == null) DeliveryMode.Paper else modeOf(s, station), first.label, null, null, null,
+                id in cancelled, false, "", rs.maxOf { it.updatedAt }, first.createdAt)
+            // 送厨时没有生成厨房屏记录 = 当时为「仅纸单」（或旧数据），按发出时的方式判定
+            val mode = if (screen == null) DeliveryMode.Paper else modeOf(s, station)
+            // 非「仅纸单」时，模拟打印出的纸单不算真实送达（没有真打印机）
+            val realPaper = paper?.takeUnless { mode != DeliveryMode.Paper && it.source == "simulation" && it.state == DeliveryState.Delivered }
+            val paperOk = ok(realPaper); val paperBad = bad(realPaper)
+            val screenOk = ok(screen) || ok(fallback)
+            val screenBad = screen != null && !screenOk && (screen.state == DeliveryState.Failed)
+            val isCancelled = id in cancelled
+            val needs = !isCancelled && when (mode) {
+                DeliveryMode.Paper -> paperBad
+                DeliveryMode.Screen -> screenBad
+                DeliveryMode.Both -> paperBad || screenBad
+                DeliveryMode.Either -> (realPaper != null || screen != null) && !paperOk && !screenOk &&
+                    (realPaper == null || paperBad) && (screen == null || screenBad)
+            }
+            val issue = buildList {
+                if (paperBad) add("纸单${realPaper!!.state.label}")
+                if (screenBad) add(if (fallback != null && !ok(fallback)) "厨房屏未收到，改打纸单${fallback.state.label}" else "厨房屏未收到")
+            }.joinToString("，").let { if (it.isNotBlank() && !needs) "仅提示：$it" else it }
+            TicketDelivery(id, first.tableId, first.orderId, station, mode, (paper ?: screen ?: first).label, paper, screen, fallback, isCancelled, needs, issue,
+                rs.maxOf { it.updatedAt }, first.createdAt)
+        }.sortedByDescending { it.createdAt }
+    }
+
+    fun pendingAction(s: StoreData, tableId: String): List<TicketDelivery> {
         val orderId = s.orders[tableId]?.orderId.orEmpty()
-        return s.kitchenDeliveries.filter { it.needsAction && (if (orderId.isNotBlank()) it.orderId == orderId else it.tableId == tableId) }
+        return groups(s).filter { it.needsAction && (if (orderId.isNotBlank()) it.orderId == orderId else it.tableId == tableId) }
     }
     fun checkoutBlock(s: StoreData, tableId: String): String? =
-        pendingAction(s, tableId).takeIf { it.isNotEmpty() }?.let { "有 ${it.size} 张厨房单未确认送达，请在同步中心处理后再结账" }
+        pendingAction(s, tableId).takeIf { it.isNotEmpty() }?.let { g ->
+            val first = g.first()
+            "有 ${g.size} 张厨房单未确认送达（${listOf(first.tableId, first.station).filter { it.isNotBlank() }.joinToString(" ")}：${first.issue}），请在同步中心处理后再结账"
+        }
 }

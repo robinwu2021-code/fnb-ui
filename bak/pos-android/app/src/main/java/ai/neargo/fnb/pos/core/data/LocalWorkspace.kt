@@ -458,8 +458,61 @@ class LocalWorkspace(
             v.copy(stores = v.stores + (s.id to s.copy(kdsTickets = s.kdsTickets.map { t ->
                 val r = map[t.id] ?: 0
                 if (r > t.deliveredRev) t.copy(deliveredRev = r, deliveredAt = if (t.deliveredAt == 0L) now else t.deliveredAt) else t
+            }, kitchenDeliveries = s.kitchenDeliveries.map { d ->
+                // 厨房屏迟到收到也自动解除「未收到」
+                if (d.channel == "screen" && (map[d.ticketId] ?: 0) > 0 && d.state != DeliveryState.Delivered && d.state != DeliveryState.ManualConfirmed)
+                    d.copy(state = DeliveryState.Delivered, lastError = "", updatedAt = now) else d
             })))
         }
+    }
+
+    /** 厨房屏超过时限仍未收到：送达记录记为失败（主机/单机执行；迟到回执会自动解除）。返回本次标记数。 */
+    suspend fun expireScreenDeliveries(): Int {
+        if (blockedState.value != null || state.value.lan.role == LanRole.Secondary) return 0
+        var n = 0
+        commit { v ->
+            val s = v.store ?: return@commit v
+            val now = clock()
+            val delivered = s.kdsTickets.filter { it.deliveredRev > 0 || it.state == KdsState.Cancelled }.map { it.id }.toSet()
+            val due = s.kitchenDeliveries.filter { it.channel == "screen" && it.state == DeliveryState.Pending && now - it.createdAt >= DeliveryRules.SCREEN_TIMEOUT_MS }
+            if (due.isEmpty()) return@commit v
+            v.copy(stores = v.stores + (s.id to s.copy(kitchenDeliveries = s.kitchenDeliveries.map { d ->
+                if (d !in due) d
+                else if (d.ticketId in delivered) d.copy(state = DeliveryState.Delivered, updatedAt = now)
+                else { n++; d.copy(state = DeliveryState.Failed, lastError = "${DeliveryRules.SCREEN_TIMEOUT_MS / 1000} 秒内没有${d.station}厨房屏收到", updatedAt = now) }
+            })))
+        }
+        return n
+    }
+
+    /** 档口出单方式（门店设置权限），只影响之后送厨的单。 */
+    override suspend fun saveDeliveryModes(modes: Map<String, DeliveryMode>) = storeOp(event = EventSpec { _, a ->
+        Triple("KitchenDeliveryPolicySaved", kotlinx.serialization.json.Json.encodeToString(KitchenDeliveryPolicyPayload.serializer(), KitchenDeliveryPolicyPayload(a.stationDelivery)), listOf(Aggregates.CATALOG))
+    }, check = { s -> if (modes.keys.any { it !in s.kdsStations }) "档口不存在" else null }) { s ->
+        s.copy(stationDelivery = modes.filterValues { it != DeliveryMode.Paper })
+    }
+
+    /** 厨房屏未收到：改打一张纸单补上，送达后视为厨房屏已满足。 */
+    override suspend fun printForScreen(ticketId: String) = storeOp(check = { s ->
+        val g = DeliveryRules.groups(s).firstOrNull { it.ticketId == ticketId }
+        when {
+            need(Perm.Checkout) != null -> need(Perm.Checkout)
+            g == null -> "送达记录不存在"
+            !g.canFallback -> "该单不需要改打纸单"
+            s.kdsTickets.none { it.id == ticketId } -> "任务卡不存在"
+            else -> null
+        }
+    }) { s ->
+        val g = DeliveryRules.groups(s).first { it.ticketId == ticketId }
+        val t = s.kdsTickets.first { it.id == ticketId }
+        val lines = s.order(t.tableId).lines.filter { l -> t.lines.any { it.uid == l.uid && it.active > 0 } }
+            .map { l -> l.copy(qty = t.lines.first { it.uid == l.uid }.active) }
+        val job = PrintJob(newId("FB"), PrintKind.Kitchen, "${t.tableId} 厨房单·${t.station}（屏未收到改打）",
+            listOf("** 厨房屏未收到，改打纸单 **") + Receipts.kitchen(s.settings.shortName, t.tableId, lines, t.note, clock(), t.station), clock(), station = t.station)
+        val d = KitchenDelivery(ticketId, job.id, t.tableId, t.orderId, job.title, target = "${t.station}打印机", createdAt = clock(), updatedAt = clock(),
+            station = t.station, covers = "screen")
+        s.copy(printJobs = s.printJobs + job, kitchenDeliveries = s.kitchenDeliveries.map { if (it.jobId == g.fallback?.jobId) it.copy(supersededBy = job.id) else it } + d)
+            .log(TaskLogKind.PrintRequested, job.id, "queued", "manual", "厨房屏未收到改打 $ticketId")
     }
 
     /** 厨房档口配置（门店设置权限）。 */
@@ -1134,8 +1187,11 @@ class LocalWorkspace(
         if (missing.isEmpty()) return s
         return s.copy(kitchenDeliveries = s.kitchenDeliveries + missing.map { j ->
             val table = j.title.substringBefore(' ')
+            // 补打沿用原单所属的任务（ticketId）与替代关系，汇总时归到同一张卡
+            val origin = s.kitchenDeliveries.firstOrNull { it.jobId == j.reprintOf && j.reprintOf.isNotBlank() }
             KitchenDelivery(
-                ticketId = j.id.removePrefix("P-"), jobId = j.id, tableId = table, orderId = s.orders[table]?.orderId.orEmpty(), label = j.title,
+                ticketId = origin?.ticketId ?: j.id.removePrefix("P-"), jobId = j.id, tableId = table, orderId = origin?.orderId ?: s.orders[table]?.orderId.orEmpty(), label = j.title,
+                station = j.station, covers = origin?.covers.orEmpty(),
                 target = if (j.station.isNotBlank() && s.kdsStations.size > 1) "${j.station}打印机" else "厨房打印机",
                 state = deliveryOf(j.state, DeliveryState.Pending),
                 source = source, attempts = j.attempts, lastError = j.error, createdAt = j.createdAt, updatedAt = clock(),
@@ -1144,13 +1200,14 @@ class LocalWorkspace(
     }
 
     override val deliveries: StateFlow<List<KitchenDelivery>> = derive { it.store?.kitchenDeliveries.orEmpty().sortedByDescending { d -> d.createdAt } }
+    override val deliveryGroups: StateFlow<List<TicketDelivery>> = derive { v -> v.store?.let { DeliveryRules.groups(it) }.orEmpty() }
 
     /** 人工确认送达：只用于失败/未知/待出单，必须填写原因，记录人员。 */
     override suspend fun confirmDelivery(ticketId: String, reason: String) = storeOp(check = { s ->
-        val d = s.kitchenDeliveries.firstOrNull { it.ticketId == ticketId }
+        val open = s.kitchenDeliveries.filter { it.ticketId == ticketId && it.supersededBy.isBlank() && it.state != DeliveryState.Delivered && it.state != DeliveryState.ManualConfirmed }
         when {
-            d == null -> "送达记录不存在"
-            d.state == DeliveryState.Delivered || d.state == DeliveryState.ManualConfirmed -> "已送达，无需确认"
+            s.kitchenDeliveries.none { it.ticketId == ticketId } -> "送达记录不存在"
+            open.isEmpty() -> "已送达，无需确认"
             reason.isBlank() -> "请填写确认原因"
             reason.length > 60 -> "原因最多 60 字"
             else -> null
@@ -1158,7 +1215,7 @@ class LocalWorkspace(
     }) { s ->
         val actor = actorName(state.value)
         s.copy(kitchenDeliveries = s.kitchenDeliveries.map {
-            if (it.ticketId == ticketId) it.copy(state = DeliveryState.ManualConfirmed, source = "manual", confirmedBy = actor, reason = reason.trim(), updatedAt = clock()) else it
+            if (it.ticketId == ticketId && it.supersededBy.isBlank() && it.state != DeliveryState.Delivered && it.state != DeliveryState.ManualConfirmed) it.copy(state = DeliveryState.ManualConfirmed, source = "manual", confirmedBy = actor, reason = reason.trim(), updatedAt = clock()) else it
         }).log(TaskLogKind.PrintAttempt, ticketId, "ManualConfirmed", "manual", "${actor}：${reason.trim()}")
     }
 
@@ -1356,7 +1413,13 @@ class LocalWorkspace(
             KdsTicket(if (groups.size == 1) batch else "$batch@$station", tableId, sent.orderId, station, ls.map { KdsLine(it.uid, it.name, it.spec, it.note, it.qty) },
                 clock(), seq = ++seq, updatedAt = clock(), note = sent.note)
         }
-        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1, kdsTickets = s.kdsTickets + tickets, kdsSeq = seq).kitchenJob(tableId, batch)
+        // 出单方式含厨房屏的档口：同时生成厨房屏送达记录（回执即送达，超时未收到为失败）
+        val screens = tickets.filter { DeliveryRules.modeOf(s, it.station) != DeliveryMode.Paper }.map { t ->
+            KitchenDelivery(t.id, "S-${t.id}", tableId, sent.orderId, "$tableId 厨房屏·${t.station} ${t.lines.sumOf { it.qty }} 份", target = "${t.station}厨房屏",
+                source = "screen", createdAt = clock(), updatedAt = clock(), channel = "screen", station = t.station)
+        }
+        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1, kdsTickets = s.kdsTickets + tickets, kdsSeq = seq,
+            kitchenDeliveries = s.kitchenDeliveries + screens).kitchenJob(tableId, batch)
         v.copy(stores = v.stores + (s.id to next)) to SendResult(n, !online)
     }
 

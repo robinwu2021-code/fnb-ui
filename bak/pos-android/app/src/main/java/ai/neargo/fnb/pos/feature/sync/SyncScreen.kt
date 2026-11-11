@@ -23,6 +23,7 @@ import ai.neargo.fnb.pos.core.model.CheckoutPolicy
 import ai.neargo.fnb.pos.core.model.DeliveryState
 import ai.neargo.fnb.pos.core.model.DeviceStatus
 import ai.neargo.fnb.pos.core.model.KitchenDelivery
+import ai.neargo.fnb.pos.core.model.TicketDelivery
 import ai.neargo.fnb.pos.core.model.OutboxItem
 import ai.neargo.fnb.pos.core.model.OutboxState
 import ai.neargo.fnb.pos.core.model.PaymentRecord
@@ -68,17 +69,17 @@ enum class SyncTab(val label: String) { Kitchen("厨房任务"), Cloud("云事�
 
 data class SyncUiState(
     val items: List<OutboxItem> = emptyList(), val pending: Int = 0, val device: DeviceStatus = DeviceStatus(),
-    val deliveries: List<KitchenDelivery> = emptyList(), val payments: List<PaymentRecord> = emptyList(), val stats: CommandStats = CommandStats(),
+    val deliveries: List<TicketDelivery> = emptyList(), val payments: List<PaymentRecord> = emptyList(), val stats: CommandStats = CommandStats(),
 ) {
     val kitchenAction get() = deliveries.count { it.needsAction }
-    val kitchenPending get() = deliveries.count { it.state == DeliveryState.Pending }
+    val kitchenPending get() = deliveries.count { g -> !g.needsAction && !g.cancelled && g.records.any { it.state == DeliveryState.Pending && it.supersededBy.isBlank() } }
 }
 
 class SyncViewModel(
     private val sync: SyncRepository, private val device: DeviceRepository, config: StoreConfigRepository,
     private val status: SyncStatusRepository, private val messages: MessageBus,
 ) : ViewModel() {
-    val state = combine(sync.outbox, sync.pendingCount, device.status, sync.deliveries, combine(config.current, status.stats) { s, st -> s to st }) { o, p, d, dl, (s, st) ->
+    val state = combine(sync.outbox, sync.pendingCount, device.status, sync.deliveryGroups, combine(config.current, status.stats) { s, st -> s to st }) { o, p, d, dl, (s, st) ->
         SyncUiState(o, p, d, dl, s?.payments.orEmpty().sortedByDescending { it.at }, st)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SyncUiState())
 
@@ -96,13 +97,17 @@ class SyncViewModel(
         done(r.exceptionOrNull()?.message)
         if (r.isSuccess) messages.post("已记录人工确认送达")
     }
+
+    fun printForScreen(ticketId: String) = viewModelScope.launchStorage(messages) {
+        sync.printForScreen(ticketId).onSuccess { messages.post("已加入改打纸单，送达后视为厨房已收到") }.onFailure { messages.post(it.message ?: "改打失败") }
+    }
 }
 
 @Composable
 fun SyncRoute() {
     val vm = posViewModel { c, _ -> SyncViewModel(c.sync, c.device, c.config, c.syncStatus, c.messages) }
     val state by vm.state.collectAsStateWithLifecycle()
-    SyncScreen(state, vm::syncNow, vm::confirm)
+    SyncScreen(state, vm::syncNow, vm::confirm, vm::printForScreen)
 }
 
 private val fmt get() = SimpleDateFormat("MM-dd HH:mm:ss", Locale.CHINA)
@@ -113,9 +118,9 @@ private fun time(ms: Long) = if (ms > 0) fmt.format(Date(ms)) else "—"
  * 「有网」不等于已同步；模拟结果明确标注；未得远端持久回执不清队列。
  */
 @Composable
-fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, String, (String?) -> Unit) -> Unit) {
+fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, String, (String?) -> Unit) -> Unit, onPrintForScreen: (String) -> Unit = {}) {
     var tab by rememberSaveable { mutableStateOf(SyncTab.Kitchen) }
-    var confirming by remember { mutableStateOf<KitchenDelivery?>(null) }
+    var confirming by remember { mutableStateOf<TicketDelivery?>(null) }
     val c = Pos.colors
     Panel(Modifier.fillMaxSize().padding(Pos.metrics.gap)) {
         Column(Modifier.padding(Pos.metrics.pad), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -124,14 +129,14 @@ fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, Strin
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Endpoint("本机命令", "${state.stats.committed} 已提交", if (state.stats.conflicts + state.stats.rejected > 0) "冲突 ${state.stats.conflicts} · 拒绝 ${state.stats.rejected}" else "最近 ${time(state.stats.lastAcceptedAt)}", ok = state.stats.conflicts + state.stats.rejected == 0, Modifier.weight(1f)) { tab = SyncTab.Commands }
                 Endpoint("主机回执", if (state.stats.singleDevice) "单机 · 本机即主机" else "—", "未决发送 ${state.stats.openCommands}", ok = state.stats.openCommands == 0, Modifier.weight(1f)) { tab = SyncTab.Commands }
-                Endpoint("厨房任务", if (state.kitchenAction > 0) "${state.kitchenAction} 张待处理" else "无异常", "待出单 ${state.kitchenPending} · 模拟打印", ok = state.kitchenAction == 0, Modifier.weight(1f)) { tab = SyncTab.Kitchen }
+                Endpoint("厨房任务", if (state.kitchenAction > 0) "${state.kitchenAction} 张待处理" else "无异常", "等待送达 ${state.kitchenPending} 张 · 按档口出单方式判定", ok = state.kitchenAction == 0, Modifier.weight(1f)) { tab = SyncTab.Kitchen }
                 Endpoint("云事件", if (CloudLink.CONNECTED) "已连接" else "未接入云端", "待上传 ${state.stats.unackedEvents} 条", ok = false, Modifier.weight(1f)) { tab = SyncTab.Cloud }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SyncTab.entries.forEach { t -> PosButton(t.label, { tab = t }, size = BtnSize.Small, selected = tab == t) }
             }
             when (tab) {
-                SyncTab.Kitchen -> KitchenTab(state.deliveries, Modifier.weight(1f)) { confirming = it }
+                SyncTab.Kitchen -> KitchenTab(state.deliveries, Modifier.weight(1f), onPrintForScreen) { confirming = it }
                 SyncTab.Cloud -> CloudTab(state, onSync, Modifier.weight(1f))
                 SyncTab.Commands -> CommandsTab(state.stats)
                 SyncTab.Payments -> PaymentsTab(state.payments, Modifier.weight(1f))
@@ -145,6 +150,7 @@ fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, Strin
             PosButton("取消", { confirming = null }, size = BtnSize.Large)
             PosButton("确认送达", { onConfirm(d.ticketId, reason) { e -> error = e; if (e == null) confirming = null } }, variant = BtnVariant.Primary, size = BtnSize.Large)
         }) {
+            if (d.issue.isNotBlank()) Text("当前问题：${d.issue}", style = Pos.type.body, color = c.warning, modifier = Modifier.padding(bottom = 4.dp))
             Text("仅在已核实厨房收到该单（如口头或手写传递）时确认，将记录确认人和原因。不会重新出单。", style = Pos.type.body, color = c.sub, modifier = Modifier.padding(bottom = 8.dp))
             PosTextField(reason, { reason = it }, "确认原因", error = error, hint = "例如：已手写单交给厨房")
         }
@@ -171,17 +177,34 @@ private fun stateTag(state: DeliveryState) = when (state) {
 
 private fun sourceLabel(s: String) = when (s) { "simulation" -> "模拟"; "legacy" -> "历史待核实"; "manual" -> "人工"; "local" -> "本机"; "" -> "历史"; else -> s }
 
+private fun channelText(d: KitchenDelivery?, name: String) = d?.let { "$name ${it.state.label}${if (it.source == "simulation" && it.channel == "paper") "（模拟）" else ""}" }
+
 @Composable
-private fun KitchenTab(items: List<KitchenDelivery>, modifier: Modifier, onConfirm: (KitchenDelivery) -> Unit) {
-    val cols = listOf(Col("票据", 2f), Col("目标", 1f), Col("状态", 1f), Col("来源", 0.8f), Col("说明", 1.6f), Col("更新时间", 1f), Col("操作", 1f, end = true))
+private fun KitchenTab(items: List<TicketDelivery>, modifier: Modifier, onPrintForScreen: (String) -> Unit, onConfirm: (TicketDelivery) -> Unit) {
+    val cols = listOf(Col("票据", 2f), Col("出单方式", 1f), Col("纸单 / 厨房屏", 1.8f), Col("状态", 0.9f), Col("说明", 1.6f), Col("更新时间", 1f), Col("操作", 1.4f, end = true))
     DataTable(cols, modifier, empty = "暂无厨房任务") {
         items(items.size) { i ->
-            val d = items[i]
+            val g = items[i]
+            val channels = listOfNotNull(channelText(g.paper, "纸单"), channelText(g.screen, "屏"), channelText(g.fallback, "改打")).joinToString(" · ")
+            val manual = g.records.firstOrNull { it.state == DeliveryState.ManualConfirmed }
             TableRow(listOf(
-                { Cell(d.label) }, { Cell(d.target, sub = true) }, { stateTag(d.state) }, { Cell(sourceLabel(d.source), sub = true) },
-                { Cell(when { d.state == DeliveryState.ManualConfirmed -> "${d.confirmedBy}：${d.reason}"; d.lastError.isNotBlank() -> "${d.lastError}（换纸后自动重试）"; else -> "—" }, sub = true) },
-                { Cell(time(d.updatedAt), sub = true) },
-                { if (d.state != DeliveryState.Delivered && d.state != DeliveryState.ManualConfirmed) PosButton("人工确认", { onConfirm(d) }, size = BtnSize.Small) else Cell("—", sub = true) },
+                { Cell(g.label) }, { Cell(g.mode.label, sub = true) }, { Cell(channels.ifBlank { "—" }, sub = true) },
+                {
+                    when {
+                        g.cancelled -> Tag("已取消")
+                        g.needsAction -> Tag("需处理", bg = Pos.colors.dangerBg, fg = Pos.colors.danger)
+                        g.records.any { it.state == DeliveryState.Pending && it.supersededBy.isBlank() } -> Tag("等待送达")
+                        else -> Tag("已满足", bg = Pos.colors.tint, fg = Pos.colors.primary)
+                    }
+                },
+                { Cell(when { g.issue.isNotBlank() -> g.issue; g.fallback?.let { it.state == DeliveryState.Delivered || it.state == DeliveryState.ManualConfirmed } == true && g.screen?.state == DeliveryState.Failed -> "厨房屏未收到，已改打纸单"; manual != null -> "${manual.confirmedBy}：${manual.reason}"; else -> g.records.firstOrNull { it.lastError.isNotBlank() }?.lastError ?: "—" }, sub = true) },
+                { Cell(time(g.updatedAt), sub = true) },
+                {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (g.canFallback) PosButton("改打纸单", { onPrintForScreen(g.ticketId) }, size = BtnSize.Small)
+                        if (g.needsAction) PosButton("人工确认", { onConfirm(g) }, size = BtnSize.Small) else if (!g.canFallback) Cell("—", sub = true)
+                    }
+                },
             ), cols)
         }
     }

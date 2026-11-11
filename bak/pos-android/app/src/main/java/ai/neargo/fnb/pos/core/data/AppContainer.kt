@@ -95,6 +95,8 @@ class AppContainer(context: Context) {
         ai.neargo.fnb.pos.core.print.PrintGateway(workspace).start(appScope)
         // 授权到期、会话过期随时间发生：定时重新评估
         appScope.launch { while (true) { workspace.refreshAuth(); kotlinx.coroutines.delay(30_000) } }
+        // 厨房屏送达超时：定时检查（仅主机/单机生效）
+        appScope.launch { while (true) { kotlinx.coroutines.delay(10_000); runCatching { workspace.expireScreenDeliveries() } } }
     }
 
     /** 显示设置里的「重置演示数据」：只重置当前门店。 */

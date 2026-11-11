@@ -11,6 +11,8 @@ import ai.neargo.fnb.pos.core.designsystem.component.PosTextField
 import ai.neargo.fnb.pos.core.designsystem.component.Tag
 import ai.neargo.fnb.pos.core.designsystem.component.Text
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
+import ai.neargo.fnb.pos.core.model.DeliveryMode
+import ai.neargo.fnb.pos.core.model.DeliveryRules
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +40,7 @@ fun StationsPanel() {
     val scope = rememberCoroutineScope()
     var stations by remember(s.kdsStations) { mutableStateOf(s.kdsStations) }
     var mapping by remember(s.stationOf) { mutableStateOf(s.stationOf) }
+    var modes by remember(s.stationDelivery) { mutableStateOf(s.stationDelivery) }
     var adding by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -59,11 +62,22 @@ fun StationsPanel() {
                 stations.forEach { st -> PosButton(st, { mapping = mapping + (cat.id to st) }, size = BtnSize.Small, selected = cur == st) }
             }
         }
+        GroupTitle("出单方式（决定哪一路必须送达，未满足时拦结账）")
+        stations.forEach { st ->
+            val cur = modes[st] ?: DeliveryMode.Paper
+            KeyValue(st, cur.desc) {
+                DeliveryMode.entries.forEach { m -> PosButton(m.label, { modes = modes + (st to m) }, size = BtnSize.Small, selected = cur == m) }
+            }
+        }
         if (error != null) Text(error!!, style = Pos.type.label, color = Pos.colors.danger)
         PosButton("保存档口配置", {
-            scope.launch { val r = c.kds.saveKdsStations(stations, mapping); error = r.exceptionOrNull()?.message; if (r.isSuccess) c.messages.post("已保存档口配置，之后的送厨按档口拆单") }
+            scope.launch {
+                val r = c.kds.saveKdsStations(stations, mapping).mapCatching { c.kds.saveDeliveryModes(modes.filterKeys { it in stations }).getOrThrow() }
+                error = r.exceptionOrNull()?.message
+                if (r.isSuccess) c.messages.post("已保存档口配置，之后的送厨按档口拆单")
+            }
         }, variant = BtnVariant.Primary, size = BtnSize.Large)
-        Text("每台厨房屏选择一个档口，只接收该档口的任务卡；修改只影响之后送厨的菜品。", style = Pos.type.label, color = Pos.colors.sub)
+        Text("每台厨房屏选择一个档口，只接收该档口的任务卡；修改只影响之后送厨的菜品。含厨房屏的出单方式：${DeliveryRules.SCREEN_TIMEOUT_MS / 1000} 秒内没有厨房屏收到即为未送达，可改打纸单或人工确认。", style = Pos.type.label, color = Pos.colors.sub)
     }
 }
 

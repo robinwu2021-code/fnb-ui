@@ -107,6 +107,8 @@ class RoutedPrint(private val ws: LocalWorkspace, private val link: LanLink) : P
 class RoutedSync(private val ws: LocalWorkspace, private val link: LanLink) : SyncRepository by ws {
     override suspend fun confirmDelivery(ticketId: String, reason: String) =
         if (link.isSecondary) Result.failure(IllegalStateException(HOST_ONLY)) else ws.confirmDelivery(ticketId, reason)
+    override suspend fun printForScreen(ticketId: String) =
+        if (link.isSecondary) Result.failure(IllegalStateException(HOST_ONLY)) else ws.printForScreen(ticketId)
 }
 
 
