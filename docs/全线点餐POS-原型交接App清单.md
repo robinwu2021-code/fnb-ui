@@ -1,7 +1,7 @@
 # 全线点餐 POS · 原型 → App 交接清单
 
 > 状态：v1 · 2026-11-11
-> 决定：原型 `prototypes/pos-react` 收尾后冻结；App 用 **Kotlin + Jetpack Compose** 开发；之后新画面直接在 App 里做原型，不再用 React。
+> 决定：原型 `prototypes/pos-react` 已冻结。餐饮和零售是同一个 App（现有餐饮 Android App `bak/pos-android`，分支 `android-ui-v3`），按登录门店的业态分流；零售在分支 `android-retail` 上接入（方案：该分支 `docs/android/零售业态接入方案-2026-11-11.md`）。本清单第一、二节的技术映射与模块拆分按「新建工程」写，接入现有 App 时以现有工程的分层和约定为准，第四、五节的规则和画面清单照用。之后如需原型只做静态 UI。
 > 原型代码：分支 `pos-react-retail`，合并请求 robinwu2021-code/fnb-ui#1。任务排期见《[任务清单](全线点餐POS-任务清单.md)》。
 > 规格文档：《[设计规范（布局·形状·色系）](全线点餐POS-设计规范（布局·形状·色系）.md)》《[业务状态](全线点餐POS-业务状态.md)》《[功能菜单](全线点餐POS-功能菜单.md)》《[零售 POS 设计方案](全线点餐POS-零售POS设计方案.md)》《[端架构](全线点餐POS-端架构.md)》《[设备发现·外送平台·可拖布局·桌台2D3D方案](全线点餐POS-设备发现·外送平台·可拖布局·桌台2D3D方案.md)》
 
