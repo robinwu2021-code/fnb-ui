@@ -87,6 +87,11 @@ eq(['6954767423579', '200000101234500123000', '2000001', 'PLU1001', 'M10086', '1
 eq(catalog.parseWeighCode('210010001582012367'), { plu: '100100', amount: 15.82, weight: 1.236 }, '称重码解析：苹果 1.236 kg ¥15.82');
 eq(catalog.findByCode(ITEMS, '6954 7674 23579')?.id, 'cola', '按条码找商品（忽略空格）'); eq([catalog.stockState(0), catalog.stockState(3), catalog.stockState(null)], ['out', 'low', null], '库存状态');
 
+eq(catalog.ean13Check('695476742357'), '9', 'EAN-13 校验位'); eq(catalog.toEan13('2000001'), '2000020000019', '店内码转 EAN-13：2 + 补零到 11 位 + 校验位');
+eq(catalog.toEan13('6954767423579'), '6954767423579', '13 位原样'); eq(catalog.ean13Bars('6954767423579').length, 95, 'EAN-13 共 95 个模块');
+eq(catalog.ean13Bars('4006381333931'), '101' + '0001101' + '0100111' + '0101111' + '0111101' + '0001001' + '0110011' + '01010' + '1000010' + '1000010' + '1000010' + '1110100' + '1000010' + '1100110' + '101', 'EAN-13 编码：首位 4 → 奇偶 LGLLGG，右半 R 码（4006381333931）');
+eq(catalog.labelUnit(12.8, 'kg'), { per: '500g', price: 6.4 }, '称重商品价签按 500g'); eq(catalog.labelUnit(3.5), null, '按件商品不标单位价');
+{ const it = item('milk'), p0 = it.p; it.p = 35.5; eq(rTotals([{ key: 1, id: 'milk', q: 1 }], true).memberSave, 0, '会员价高于售价时不生效'); it.p = p0; }
 eq(table.canTableTransit('to_clear', 'free'), true, '待清台 → 空闲'); eq(table.canTableTransit('free', 'to_clear'), false, '空闲不能直接待清台');
 
 /* ---------- 会员营销 · 售后 · 班次 · 库存 · 事件 ---------- */

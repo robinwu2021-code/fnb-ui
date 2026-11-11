@@ -80,6 +80,21 @@ const D: Record<string, [string, string]> = {
   'sk.pendingNote': ['盘点结果要主管审批后才改账面库存', 'Counts change book stock only after approval'], 'sk.readonly': ['已过账的单据只读', 'Posted documents are read-only'],
   'sk.transferTodo': ['调拨只在多门店时出现；本版本尚未对接', 'Transfers appear for multi-store setups; not built yet'],
   'sk.f.all': ['全部', 'All'], 'sk.f.open': ['未完成', 'Open'], 'sk.f.done': ['已完成', 'Done'],
+  /* 商品工作台（方案 §5.1） */
+  'gd.items': ['商品资料', 'Products'], 'gd.stock': ['库存', 'Stock'], 'gd.labels': ['价签', 'Shelf labels'],
+  'gd.search': ['搜索名称 / 条码', 'Search name / barcode'], 'gd.th.item': ['商品', 'Product'], 'gd.th.code': ['条码', 'Barcode'], 'gd.th.price': ['售价', 'Price'], 'gd.th.mp': ['会员价', 'Member'], 'gd.th.stock': ['库存', 'Stock'], 'gd.th.st': ['状态', 'Status'],
+  'gd.th.safety': ['安全库存', 'Safety'], 'gd.th.expiry': ['到期', 'Expiry'], 'gd.th.value': ['库存金额', 'Stock value'],
+  'gd.cat': ['分类', 'Category'], 'gd.cost': ['进价', 'Cost'], 'gd.margin': ['毛利率', 'Margin'], 'gd.weigh': ['称重 · 按 kg', 'By weight · per kg'], 'gd.sku': ['多规格', 'Variants'],
+  'gd.price': ['售价', 'Price'], 'gd.savePrice': ['保存改价', 'Save price'], 'gd.priced': ['{n} 改价为 {p}，已加入待打价签', '{n} repriced to {p}; added to labels'], 'gd.priceHint': ['改价后收银立即按新价，价签自动进待打列表', 'Checkout uses the new price at once; a label is queued'],
+  'gd.toLabels': ['去打价签', 'Go to labels'], 'gd.mpOff': ['不低于售价，不生效', 'not below price, ignored'], 'gd.queueLabel': ['加入待打', 'Queue label'],
+  'gd.sf.all': ['全部', 'All'], 'gd.sf.low': ['低库存', 'Low'], 'gd.sf.out': ['缺货', 'Out'], 'gd.sf.near': ['临期', 'Near expiry'],
+  'gd.moves': ['最近变动', 'Recent movements'], 'gd.noMoves': ['今天还没有变动', 'No movements today'], 'gd.mv.receive': ['入库', 'Received'], 'gd.mv.count': ['盘点调整', 'Count adjustment'], 'gd.mv.loss': ['报损', 'Write-off'], 'gd.mv.sale': ['销售', 'Sale'], 'gd.mv.return': ['退货回库', 'Return'], 'gd.mv.init': ['期初', 'Opening'],
+  'gd.doReceive': ['入库', 'Receive'], 'gd.doAdjust': ['盘点调整', 'Adjust by count'], 'gd.opened': ['已在库存作业里新建 {no}', 'Created {no} in Stock tasks'],
+  'lb.queue': ['待打价签 · {n}', 'Labels to print · {n}'], 'lb.why.price': ['改价 {a} → {b}', 'Price {a} → {b}'], 'lb.why.new': ['新品', 'New'], 'lb.why.manual': ['手动加入', 'Added manually'],
+  'lb.tpl': ['模板', 'Template'], 'lb.tpl.60x40': ['60 × 40', '60 × 40'], 'lb.tpl.40x30': ['40 × 30', '40 × 30'], 'lb.tpl.shelf': ['货架条', 'Shelf strip'],
+  'lb.all': ['全选', 'Select all'], 'lb.none': ['清空', 'Clear'], 'lb.add': ['搜商品加入待打', 'Search to add a label'], 'lb.empty': ['没有待打的价签', 'No labels waiting'], 'lb.emptyHint': ['改价、新品上架后会自动出现在这里', 'Price changes and new items show up here'],
+  'lb.preview': ['预览', 'Preview'], 'lb.print': ['打印 {n} 张', 'Print {n}'], 'lb.printed': ['已发送 {n} 张到标签打印机', 'Sent {n} labels to the label printer'], 'lb.printer': ['标签打印机 · 已连接', 'Label printer · connected'],
+  'lb.member': ['会员价', 'Member'], 'lb.per': ['每 {u} {p}', '{p} per {u}'], 'lb.origin': ['产地 本地', 'Origin: local'], 'lb.updated': ['11-11 更新', 'Updated 11-11'], 'lb.unitPcs': ['件', 'pc'],
   'proto': ['原型只画了收银工作台', 'Only the checkout workbench is drawn in this prototype'],
 };
 function tr(lang: string, key: string, params?: Record<string, string | number>) {

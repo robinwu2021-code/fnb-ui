@@ -35,15 +35,28 @@ const INITIAL_DOCS: StockDoc[] = [
   { no: 'BS1110-01', kind: 'loss', st: 'done', time: '昨天 20:45', who: '张伟', lines: [{ id: 'baguette', q: 2, why: 'damaged' }] },
 ];
 
+/** 库存流水：每次过账、卖出、退货一条（商品库存页的「最近变动」） */
+export interface Move { time: string; id: string; delta: number; kind: 'receive' | 'count' | 'loss' | 'sale' | 'return' | 'init'; ref: string }
+const INITIAL_MOVES: Move[] = [
+  { time: '08:40', id: 'cola', delta: 48, kind: 'receive', ref: 'RK1111-02' }, { time: '08:40', id: 'water', delta: 72, kind: 'receive', ref: 'RK1111-02' }, { time: '08:40', id: 'tea', delta: 24, kind: 'receive', ref: 'RK1111-02' },
+  { time: '09:40', id: 'chips', delta: -2, kind: 'sale', ref: '#R0152' }, { time: '09:58', id: 'chips', delta: 1, kind: 'return', ref: '#R0152' }, { time: '10:21', id: 'milk', delta: -1, kind: 'sale', ref: '#R0157' }, { time: '10:21', id: 'cola', delta: -2, kind: 'sale', ref: '#R0157' },
+  { time: '昨天 20:45', id: 'baguette', delta: -2, kind: 'loss', ref: 'BS1110-01' },
+];
 interface SS {
+  moves: Move[];
   book: StockMap; docs: StockDoc[]; kind: DocKind; sel: string; filter: string;
   set: (p: Partial<SS>) => void;
 }
-export const useStock = create<SS>((set) => ({ book: { ...INITIAL_BOOK }, docs: INITIAL_DOCS.map((d) => ({ ...d, lines: d.lines.map((l) => ({ ...l })) })), kind: 'receive', sel: 'RK1111-03', filter: 'all', set: (p) => set(p) }));
+export const useStock = create<SS>((set) => ({ moves: INITIAL_MOVES.slice(), book: { ...INITIAL_BOOK }, docs: INITIAL_DOCS.map((d) => ({ ...d, lines: d.lines.map((l) => ({ ...l })) })), kind: 'receive', sel: 'RK1111-03', filter: 'all', set: (p) => set(p) }));
 export const docOf = (no: string) => useStock.getState().docs.find((d) => d.no === no);
 const patch = (no: string, p: Partial<StockDoc>) => { const s = useStock.getState(); s.set({ docs: s.docs.map((d) => (d.no === no ? { ...d, ...p } : d)) }); };
 const seq: Record<string, number> = { receive: 4, count: 2, loss: 2 };
 const PREFIX: Record<DocKind, string> = { receive: 'RK1111-', count: 'PD1111-', loss: 'BS1111-', transfer: 'DB1111-' };
+
+/** 记流水（最新在前） */
+function log(items: { id: string; delta: number }[], kind: Move['kind'], ref: string) { const s = useStock.getState(); s.set({ moves: [...items.map((x) => ({ time: '10:30', id: x.id, delta: x.delta, kind, ref })), ...s.moves] }); }
+/** 某商品的流水 */
+export const movesOf = (moves: Move[], id: string) => moves.filter((m) => m.id === id);
 
 /* ---------- 单据动作 ---------- */
 export function newDoc(kind: DocKind) {
@@ -72,11 +85,12 @@ export function docDiff(d: StockDoc, live: StockMap) {
 /** 确认入库 / 报损：过账；盘点：先提交审批，主管通过后过账 */
 export function postDoc(no: string) {
   const s = useStock.getState(), d = docOf(no); if (!d) return;
-  if (d.kind === 'receive') { s.set({ book: receive(s.book, d.lines) }); patch(no, { st: 'done' }); }
-  else if (d.kind === 'loss') { if (d.st === 'draft') s.set({ book: writeOff(s.book, d.lines) }); patch(no, { st: 'done' }); }
+  if (d.kind === 'receive') { s.set({ book: receive(s.book, d.lines) }); log(d.lines.map((l) => ({ id: l.id, delta: l.q })), 'receive', no); patch(no, { st: 'done' }); }
+  else if (d.kind === 'loss') { if (d.st === 'draft') { s.set({ book: writeOff(s.book, d.lines) }); log(d.lines.map((l) => ({ id: l.id, delta: -l.q })), 'loss', no); } patch(no, { st: 'done' }); }
   else if (d.kind === 'count' && d.st === 'counting') { const df = docDiff(d, s.book); patch(no, { st: 'pending', diff: { gain: df.gain, loss: df.loss }, snap: Object.fromEntries(d.lines.map((l) => [l.id, s.book[l.id] ?? 0])) }); }
   else if (d.kind === 'count' && d.st === 'pending') {
     const counted = Object.fromEntries(d.lines.map((l) => [l.id, l.q]));
+    log(d.lines.map((l) => ({ id: l.id, delta: Math.round((l.q - (s.book[l.id] ?? 0)) * 1000) / 1000 })).filter((x) => x.delta), 'count', no);
     s.set({ book: applyCount(s.book, counted) }); patch(no, { st: d.diff && (d.diff.gain || d.diff.loss) ? 'variance' : 'done' });
   }
 }
@@ -91,5 +105,5 @@ on('stock.changed', (e) => {
     s.set({ docs: [{ no, kind: 'loss', st: 'done', time: '10:30', who: '系统', ref: e.ref, lines: e.ids.map((id) => ({ id, q: e.delta?.[id] ?? 1, why: 'return' as const })) }, ...s.docs] });
     return;
   }
-  if (e.delta) s.set({ book: applyDelta(s.book, e.delta) });
+  if (e.delta) { s.set({ book: applyDelta(s.book, e.delta) }); log(Object.keys(e.delta).map((id) => ({ id, delta: e.delta![id] })), e.reason === 'return' ? 'return' : 'sale', e.ref || ''); }
 });

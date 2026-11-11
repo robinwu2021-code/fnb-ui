@@ -4,6 +4,7 @@ import { Seg } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { goReturn, type RetScreen } from './sales';
 import { useStock } from './stock';
+import { useGoods } from './goods';
 import { useBiz } from '@/biz/store';
 import { goScreen, scanSim, useR, type Screen } from './RetailPos';
 
@@ -32,6 +33,9 @@ export function RetailBar() {
   const en = useStore((s) => s.lang) === 'en'; const screen = useR((s) => s.screen);
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-sub w-72px flex-none">{en ? 'Products' : '商品画面'}</span>
+        <Seg value={''} onChange={(v) => { const [sub, sel] = v.split(':'); useBiz.getState().set({ rwb: 'goods' }); useGoods.getState().set({ sub: sub as 'items', ...(sub === 'stock' ? { sel, sf: 'low' } : sub === 'labels' ? { focus: sel } : { sel }) }); }}
+          items={[{ v: 'items:milk', label: en ? '① Products · reprice' : '① 商品资料 · 改价' }, { v: 'stock:milk', label: en ? '② Stock · low' : '② 库存 · 低库存' }, { v: 'labels:milk', label: en ? '③ Labels' : '③ 价签' }]} /></div>
       <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-sub w-72px flex-none">{en ? 'Stock' : '库存画面'}</span>
         <Seg value={''} onChange={(v) => { const x = STOCKS.find((s) => s.v === v)!; useBiz.getState().set({ rwb: 'stock' }); useStock.getState().set({ kind: x.kind, sel: v, filter: 'all' }); }} items={STOCKS.map((s) => ({ v: s.v, label: en ? s.en : s.zh }))} /></div>
       <div className="flex flex-wrap items-center gap-2"><span className="text-sm text-sub w-72px flex-none">{en ? 'Return' : '退货画面'}</span>

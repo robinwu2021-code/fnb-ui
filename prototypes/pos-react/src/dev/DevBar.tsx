@@ -21,7 +21,7 @@ export function DevBar({ page }: { page: 'app' | 'components' }) {
         <Seg value={biz === 'retail' ? rwb : s.wb} onChange={(v) => (biz === 'retail' ? setBiz({ rwb: v as RetailTab }) : s.act('wb:' + v))} items={tabs.map((x) => ({ v: x.v, label: t(x.label) }))} />
         <button type="button" className="hit text-sm text-primary-text font-600 ml-2" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? '收起开关 ▴' : '显示开关 ▾'}</button>
       </div>
-      {page === 'app' && biz === 'retail' && (rwb === 'pos' || rwb === 'orders' || rwb === 'stock') && <RetailBar />}
+      {page === 'app' && biz === 'retail' && (rwb === 'pos' || rwb === 'orders' || rwb === 'stock' || rwb === 'goods') && <RetailBar />}
       {open && <StyleControls compact />}
     </header>
   );

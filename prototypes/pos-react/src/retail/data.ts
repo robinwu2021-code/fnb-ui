@@ -47,7 +47,7 @@ export const lineUnit = (l: RLine) => (l.custom ? l.custom.p : item(l.id).p);
 export const lineAmt = (l: RLine) => (l.gift ? 0 : l.w != null ? round2(lineUnit(l) * l.w) : round2(lineUnit(l) * l.q));
 /** 行级促销（规则在 domain/cart.promoOff）：第二件半价 */
 export const linePromo = (l: RLine) => (l.custom || l.gift ? 0 : promoOff(item(l.id).promo, l.q, item(l.id).p));
-const memberSaveRaw = (l: RLine) => { const it = l.custom ? null : item(l.id); return it?.mp && !l.gift ? round2((it.p - it.mp) * l.q) : 0; };
+const memberSaveRaw = (l: RLine) => { const it = l.custom ? null : item(l.id); return it?.mp && !l.gift ? round2(Math.max(0, it.p - it.mp) * l.q) : 0; }; /* 会员价只在低于售价时生效 */
 export const lineMember = (l: RLine, member: boolean) => (member ? memberSaveRaw(l) : 0);
 
 /** 零售计价适配器：购物车行 → 价格行，用 RETAIL_RULES 算（方案 §八：行级促销 → 会员价 → 券在促销后 → 抹零到角） */
