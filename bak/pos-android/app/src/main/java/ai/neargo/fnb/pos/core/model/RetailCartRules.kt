@@ -1,9 +1,12 @@
 package ai.neargo.fnb.pos.core.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * 零售购物车规则（移植自原型 domain/cart.ts）：扫码加购合并、加减、撤销、赠送、件数、行级促销。
  * 和餐饮订单行分开：零售没有送厨、上菜状态。重量用整数克，金额用整数分。
  */
+@Serializable
 data class CartLine(
     val key: Long,
     val productId: String,
@@ -22,7 +25,7 @@ data class CartLine(
 }
 
 /** 行级促销 */
-enum class LinePromo { Half2 }
+@Serializable enum class LinePromo(val label: String) { Half2("第二件半价") }
 
 object RetailCartRules {
     data class AddResult(val lines: List<CartLine>, val last: Long)

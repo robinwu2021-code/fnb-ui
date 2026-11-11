@@ -30,6 +30,8 @@ data class Sku(
     val stock: Int,
     val manualPrice: Boolean = false,
     val manualStock: Boolean = false,
+    /** 零售：这一格规格自己的条码（服饰尺码 × 颜色） */
+    val barcode: String? = null,
 )
 
 @Serializable
@@ -51,6 +53,8 @@ data class Product(
     val mealGroups: List<MealGroup> = emptyList(),
     /** 离线搜索别名：空格或逗号分隔的全拼、首字母。 */
     val searchAliases: String = "",
+    /** 零售字段：条码、单位、称重、进价、会员价、促销、到期日、安全库存（餐饮门店为空） */
+    val retail: RetailInfo? = null,
 ) {
     val hasSpec get() = skus.isNotEmpty()
     /** 展示价：有 SKU 取最低 SKU 价。 */
@@ -284,6 +288,8 @@ data class StoreData(
     val settings: StoreSettings,
     /** 门店业态（默认餐饮，旧数据兼容） */
     val biz: BizType = BizType.Dining,
+    /** 零售业务数据（零售门店才有内容） */
+    val retail: RetailData = RetailData(),
     val areas: List<Area>,
     val tables: List<DiningTable>,
     val categories: List<Category>,

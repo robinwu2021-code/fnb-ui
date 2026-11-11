@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.model
 
+import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -10,7 +11,7 @@ import java.math.RoundingMode
  */
 object ReturnRules {
     data class SoldLine(val key: String, val qty: Int, val amount: Long, val returned: Int = 0, val weighed: Boolean = false)
-    enum class Reason(val label: String) { Quality("质量问题"), Unwanted("不想要了"), Wrong("拿错了"), Other("其他") }
+    @Serializable enum class Reason(val label: String) { Quality("质量问题"), Unwanted("不想要了"), Wrong("拿错了"), Other("其他") }
     enum class SaleStatus(val label: String) { Paid("已结账"), PartialReturn("部分退货"), Returned("已退货") }
 
     /** 还能退几件；称重行只能整行退（1 或 0） */

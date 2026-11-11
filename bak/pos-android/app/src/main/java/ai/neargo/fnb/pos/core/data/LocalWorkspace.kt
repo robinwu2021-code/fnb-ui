@@ -178,7 +178,7 @@ class LocalWorkspace(
     /** 身份与授权；为空时（单元测试）不做授权限制。 */
     private val identity: IdentityContext? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository, KdsRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository, KdsRepository, RetailRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
@@ -226,7 +226,9 @@ class LocalWorkspace(
                 })
             }) else loaded
             // 零售演示门店：旧数据里没有就补上（只补这一家，用户删掉的其他门店不恢复）
-            val withRetail = if (DemoCatalog.RETAIL_STORE_ID !in migrated.stores && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
+            // R0 时补进来的是空的零售门店（没有商品和零售数据）：换成完整的演示目录
+            val emptyMart = migrated.stores[DemoCatalog.RETAIL_STORE_ID]?.let { it.biz == BizType.Retail && it.products.isEmpty() && it.retail == RetailData() } == true
+            val withRetail = if ((DemoCatalog.RETAIL_STORE_ID !in migrated.stores || emptyMart) && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
             val restored = withRetail.copy(
                 deviceId = withRetail.deviceId.ifBlank { state.value.deviceId },
                 // 旧数据（N4 前）首次由本机加载时绑定本机密钥
@@ -921,6 +923,113 @@ class LocalWorkspace(
         }
     }
 
+
+    // —— 零售（R2）：挂单 / 取单、库存作业单据。规则在 StockDocRules；过账写 stockMovements，和餐饮盘点同一本流水 ——
+    override val retail: StateFlow<RetailData> = derive { it.store?.retail ?: RetailData() }
+
+    private fun retailEvent(type: String, payload: String) = EventSpec { _, _ -> Triple(type, payload, listOf("retail")) }
+    private fun StoreData.withRetail(f: (RetailData) -> RetailData) = copy(retail = f(retail))
+    private fun retailOnly(s: StoreData) = if (s.biz != BizType.Retail) "当前门店不是零售业态" else null
+    /** 账面：按件商品是件数，称重商品是克；SKU 用「商品#规格键」 */
+    private fun StoreData.bookOf(pid: String, sku: String?): Long {
+        val p = product(pid) ?: return 0
+        return (if (sku == null) p.stock else p.skus.firstOrNull { it.key == sku }?.stock)?.toLong() ?: 0
+    }
+    private fun StoreData.setBook(pid: String, sku: String?, value: Long, reason: String, actor: String): StoreData {
+        val p = product(pid) ?: return this
+        val before = if (sku == null) p.stock else p.skus.firstOrNull { it.key == sku }?.stock
+        val v = value.coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+        val label = if (sku == null) p.name else "${p.name} · ${p.skus.firstOrNull { it.key == sku }?.label.orEmpty()}"
+        val move = StockMovement(newId("SM"), pid, sku, label, before, v, before?.let { v - it }, reason, actor, clock())
+        return copy(stockMovements = stockMovements + move, products = products.map { x ->
+            when {
+                x.id != pid -> x
+                sku == null -> x.copy(stock = v)
+                else -> x.copy(skus = x.skus.map { if (it.key == sku) it.copy(stock = v, manualStock = true) else it })
+            }
+        })
+    }
+
+    override suspend fun holdCart(lines: List<CartLine>, member: String?, why: String): Result<String> {
+        var no = ""
+        return storeOp(event = retailEvent("RetailCartHeld", """{"lines":${lines.size}}"""), check = { s -> retailOnly(s) ?: if (lines.isEmpty()) "购物车是空的" else null }) { s ->
+            no = "H%04d".format(s.retail.saleSeq + s.retail.held.size)
+            s.withRetail { it.copy(held = it.held + RetailHeld(no, clock(), lines, member, why.trim().take(30))) }
+        }.map { no }
+    }
+
+    override suspend fun recallHeld(no: String): Result<RetailHeld> {
+        val h = state.value.store?.retail?.held?.firstOrNull { it.no == no } ?: return Result.failure(IllegalStateException("挂单不存在"))
+        return storeOp(event = retailEvent("RetailCartRecalled", """{"no":"$no"}"""), check = { s -> retailOnly(s) ?: if (s.retail.held.none { it.no == no }) "挂单不存在" else null }) { s ->
+            s.withRetail { it.copy(held = it.held.filterNot { x -> x.no == no }) }
+        }.map { h }
+    }
+
+    override suspend fun newStockDoc(kind: StockDocKind, supplier: String, scope: String): Result<String> {
+        var no = ""
+        val actor = actorName(state.value)
+        return storeOp(event = retailEvent("StockDocCreated", """{"kind":"$kind"}"""), check = { s -> retailOnly(s) ?: need(Perm.Settings) }) { s ->
+            no = "%s%04d".format(kind.prefix, s.retail.docSeq)
+            val st = if (kind == StockDocKind.Count) StockDocState.Counting else StockDocState.Draft
+            s.withRetail { it.copy(docSeq = it.docSeq + 1, stockDocs = listOf(StockDoc(no, kind, st, clock(), actor, supplier = supplier.trim().take(30), scope = scope.trim().take(30))) + it.stockDocs) }
+        }.map { no }
+    }
+
+    override suspend fun setStockDocLines(no: String, lines: List<StockDocLine>): Result<Unit> =
+        storeOp(event = retailEvent("StockDocUpdated", """{"no":"$no","lines":${lines.size}}"""), check = { s ->
+            val d = s.retail.stockDocs.firstOrNull { it.no == no }
+            when {
+                d == null -> "单据不存在"
+                !d.editable -> "单据已${d.state.label}，不能再改"
+                lines.any { it.qty < 0 } -> "数量不能为负"
+                lines.any { s.product(it.productId) == null } -> "商品不存在"
+                else -> retailOnly(s) ?: need(Perm.Settings)
+            }
+        }) { s -> s.withRetail { r -> r.copy(stockDocs = r.stockDocs.map { if (it.no == no) it.copy(lines = lines) else it }) } }
+
+    override suspend fun advanceStockDoc(no: String): Result<StockDocState> {
+        val actor = actorName(state.value)
+        var next = StockDocState.Draft
+        return storeOp(event = EventSpec { b, a ->
+            val d = a.retail.stockDocs.first { it.no == no }
+            Triple(if (d.state == StockDocState.Pending) "StockDocSubmitted" else "StockDocPosted", """{"no":"$no","state":"${d.state}"}""", listOf("retail") + d.lines.map { "stock:${it.productId}" })
+        }, check = { s ->
+            val d = s.retail.stockDocs.firstOrNull { it.no == no }
+            when {
+                d == null -> "单据不存在"
+                d.lines.isEmpty() -> "单据里还没有商品"
+                d.state !in setOf(StockDocState.Draft, StockDocState.Counting, StockDocState.Pending) -> "单据已${d.state.label}"
+                else -> retailOnly(s) ?: need(Perm.Settings)
+            }
+        }) { s0 ->
+            val d = s0.retail.stockDocs.first { it.no == no }
+            fun key(l: StockDocLine) = l.productId + (l.sku?.let { "#$it" } ?: "")
+            var s = s0
+            val updated: StockDoc = when {
+                d.kind == StockDocKind.Receive -> { d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, s.bookOf(l.productId, l.sku) + l.qty, "入库 ${d.no}", actor) }; d.copy(state = StockDocState.Posted) }
+                d.kind == StockDocKind.Loss -> { d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, s.bookOf(l.productId, l.sku) - l.qty, "报损 ${d.no} · ${l.reason?.label ?: "其他"}", actor) }; d.copy(state = StockDocState.Posted) }
+                d.state == StockDocState.Counting -> {
+                    // 提交：冻结账面快照，算差异，等审批
+                    val snap = d.lines.associate { key(it) to s.bookOf(it.productId, it.sku) }
+                    val diff = StockDocRules.countDiff(snap, d.lines.associate { key(it) to it.qty })
+                    d.copy(state = StockDocState.Pending, snapshot = snap, gain = diff.gain, loss = diff.loss)
+                }
+                else -> {
+                    // 审批过账：实盘覆盖账面
+                    d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, l.qty, "盘点 ${d.no}", actor) }
+                    d.copy(state = if (d.gain != 0L || d.loss != 0L) StockDocState.Variance else StockDocState.Posted)
+                }
+            }
+            next = updated.state
+            s.withRetail { r -> r.copy(stockDocs = r.stockDocs.map { if (it.no == no) updated else it }) }
+        }.map { next }
+    }
+
+    override suspend fun voidStockDoc(no: String): Result<Unit> =
+        storeOp(event = retailEvent("StockDocVoided", """{"no":"$no"}"""), check = { s ->
+            val d = s.retail.stockDocs.firstOrNull { it.no == no }
+            when { d == null -> "单据不存在"; !d.editable -> "只有草稿和盘点中的单据能作废"; else -> retailOnly(s) ?: need(Perm.Settings) }
+        }) { s -> s.withRetail { r -> r.copy(stockDocs = r.stockDocs.map { if (it.no == no) it.copy(state = StockDocState.Void) else it }) } }
     override suspend fun saveMenu(id: String?, name: String, en: String, productIds: List<String>): Result<Unit> {
         val key = id ?: newId("m")
         return storeOp(event = config(if (id == null) "MenuCreated" else "MenuUpdated", "menu") { key }, check = { s ->
