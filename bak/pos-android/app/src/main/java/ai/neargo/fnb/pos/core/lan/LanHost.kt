@@ -147,6 +147,15 @@ class LanHost(
                 if (token == req.token) LanResponse(req.id, true, token = token) else LanResponse(req.id, true, token = token, store = body)
             }
         }
+        // 厨房屏：按游标增量拉取任务卡；持久接收后回执（送达≠接单）
+        "kds-pull" -> {
+            val (list, cursor) = ws.kdsPull(req.storeId, req.token.toLongOrNull() ?: 0, req.payload)
+            LanResponse(req.id, true, token = cursor.toString(), store = lanJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(ai.neargo.fnb.pos.core.model.KdsTicket.serializer()), list))
+        }
+        "kds-ack" -> {
+            val acks = req.payload.split(',').mapNotNull { p -> p.substringBeforeLast(':').takeIf { it.isNotBlank() }?.let { it to (p.substringAfterLast(':').toIntOrNull() ?: 0) } }
+            ws.kdsAck(acks); LanResponse(req.id, true)
+        }
         else -> LanResponse(req.id, false, "未知请求")
     }
 }

@@ -170,6 +170,10 @@ fun PosApp(shell: ShellViewModel) {
         return
     }
     val container = appContainer()
+    // 厨房屏设备：直接显示厨房屏（工位设备由配对授权，不需员工上岗）
+    val kdsStation = container.kdsDevice.collectAsStateWithLifecycle().value.first
+    val lanRole = container.lan.collectAsStateWithLifecycle().value.role
+    if (kdsStation.isNotBlank() && lanRole == ai.neargo.fnb.pos.core.data.LanRole.Secondary) { ai.neargo.fnb.pos.feature.kds.KdsScreen(); return }
     val lockScope = androidx.compose.runtime.rememberCoroutineScope()
     val staffState by container.staff.staff.collectAsStateWithLifecycle()
     if (staffState.locked) { ai.neargo.fnb.pos.feature.staff.StaffLockScreen(session.store, onLogout = shell::logout); return }

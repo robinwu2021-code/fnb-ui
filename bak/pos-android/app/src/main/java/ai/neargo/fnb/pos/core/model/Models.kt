@@ -310,6 +310,9 @@ data class StoreData(
     val dayCloses: List<DayClose> = emptyList(),
     /** 员工（空表示尚未启用员工模式：门店账号按店长处理）。 */
     val employees: List<Employee> = emptyList(),
+    /** 厨房任务卡（主 POS 权威）与变更序号。 */
+    val kdsTickets: List<KdsTicket> = emptyList(),
+    val kdsSeq: Long = 0,
 ) {
     /** 点餐可见商品：属于任一已发布餐牌。 */
     val visibleProducts get(): List<Product> {

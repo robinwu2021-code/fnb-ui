@@ -165,10 +165,37 @@ class LanLink(
         s.update { it.copy(lastSyncAt = clock()) }
     }
 
+    /** 厨房屏：增量拉取任务卡 → 去重落盘 → 回执已持久接收的版本。返回新收到的张数。 */
+    suspend fun kdsSync(): Int {
+        val v = ws.lanSnapshot()
+        val storeId = v.storeId ?: return 0
+        if (v.kdsStation.isBlank()) return 0
+        var total = 0
+        while (true) {
+            val cur = ws.lanSnapshot().kdsCursor
+            val resp = request { LanRequest(it, "kds-pull", storeId, payload = v.kdsStation, token = cur.toString()) }
+            if (!resp.ok) { s.update { it.copy(error = resp.message) }; return total }
+            val list = lanJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(ai.neargo.fnb.pos.core.model.KdsTicket.serializer()), resp.store ?: "[]")
+            val acks = ws.kdsReceive(list, resp.token.toLongOrNull() ?: cur)
+            if (acks.isNotEmpty()) request { LanRequest(it, "kds-ack", storeId, payload = acks.joinToString(",") { (id, r) -> "$id:$r" }) }
+            total += acks.size
+            if (list.size < 200) break
+        }
+        s.update { it.copy(lastSyncAt = clock()) }
+        return total
+    }
+
+    /** 厨师操作：经主机仲裁（带所见版本），成功后立即刷新。 */
+    suspend fun kdsAdvance(ticketId: String, rev: Int, to: ai.neargo.fnb.pos.core.model.KdsState): IntentResult {
+        val r = submit(RemoteIntent.KdsAdvance(ticketId, rev, to), "厨房 ${to.label}")
+        runCatching { kdsSync() }
+        return r
+    }
+
     /** 后台循环：连接、重发、同步。 */
     fun start(intervalMs: Long = 2_000) = scope.launch(Dispatchers.IO) {
         while (isActive) {
-            if (isSecondary) runCatching { flushPending(); pull() }
+            if (isSecondary) runCatching { flushPending(); if (ws.lanSnapshot().kdsStation.isNotBlank()) kdsSync() else pull() }
             delay(intervalMs)
         }
     }

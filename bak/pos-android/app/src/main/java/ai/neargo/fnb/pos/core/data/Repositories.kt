@@ -208,3 +208,9 @@ interface StaffRepository {
     suspend fun signOutStaff()
     suspend fun saveEmployee(id: String?, name: String, role: ai.neargo.fnb.pos.core.model.Role, pin: String?, enabled: Boolean = true): Result<Unit>
 }
+
+
+/** 厨房屏（N7）：厨师操作经主机仲裁。 */
+interface KdsRepository {
+    suspend fun kdsAdvance(ticketId: String, expectedRev: Int, to: ai.neargo.fnb.pos.core.model.KdsState): Result<Unit>
+}

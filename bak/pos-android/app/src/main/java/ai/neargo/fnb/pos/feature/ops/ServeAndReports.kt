@@ -84,6 +84,10 @@ fun ServeRoute() {
                             if (extra.isNotBlank()) Text(extra, style = Pos.type.label, color = Pos.colors.sub)
                         }
                         if (i.line.status == LineStatus.Rushing) Tag("催菜中", bg = Pos.colors.dangerBg, fg = Pos.colors.danger)
+                        s.kdsTickets.firstOrNull { it.id == i.line.batchId }?.let { k ->
+                            Tag(if (k.deliveredAt == 0L) "厨房屏未接收" else "厨房 · ${k.state.label}", bg = if (k.state == ai.neargo.fnb.pos.core.model.KdsState.Done) Pos.colors.tint else Pos.colors.tile,
+                                fg = if (k.deliveredAt == 0L) Pos.colors.warning else Pos.colors.primary)
+                        }
                         Text(if (w < 0) "—" else "$w 分钟", style = Pos.type.strong, color = if (late) Pos.colors.danger else Pos.colors.sub, modifier = Modifier.width(80.dp))
                         if (i.line.status == LineStatus.Sent) PosButton("催菜", { advance(i, LineStatus.Rushing) }, size = BtnSize.Small)
                         PosButton("上菜", { advance(i, LineStatus.Served) }, size = BtnSize.Small, variant = BtnVariant.Primary)

@@ -42,6 +42,7 @@ sealed interface RemoteIntent {
     @Serializable data class CheckInReservation(val id: String) : RemoteIntent
     @Serializable data class SetPosition(val tableId: String, val x: Int, val y: Int) : RemoteIntent
     /** 主管授权：凭据只在加密通道内传给主机验证，不保存、不进事件。 */
+    @Serializable data class KdsAdvance(val ticketId: String, val rev: Int, val to: ai.neargo.fnb.pos.core.model.KdsState) : RemoteIntent
     @Serializable data class BindMember(val tableId: String, val memberId: String?) : RemoteIntent
     @Serializable data class SetPromotions(val tableId: String, val ids: List<String>) : RemoteIntent
     @Serializable data class Adjust(val tableId: String, val request: AdjustmentRequest, val email: String, val password: String) : RemoteIntent
@@ -66,6 +67,7 @@ fun interface CommandReceipts { suspend fun committed(storeId: String, deviceId:
 class HostExecutor(
     private val floor: FloorRepository, private val orders: OrderRepository, private val config: StoreConfigRepository,
     private val receipts: CommandReceipts, private val ops: ai.neargo.fnb.pos.core.data.OperationsRepository? = null,
+    private val kds: ai.neargo.fnb.pos.core.data.KdsRepository? = null,
 ) {
     private val lock = Mutex()
 
@@ -110,6 +112,7 @@ class HostExecutor(
         is RemoteIntent.CheckInReservation -> r(floor.checkInReservation(i.id))
         is RemoteIntent.SetPosition -> r(floor.setPosition(i.tableId, i.x, i.y))
         is RemoteIntent.Adjust -> r(orders.authorizeAdjustment(i.tableId, i.request, i.email, i.password))
+        is RemoteIntent.KdsAdvance -> kds?.let { r(it.kdsAdvance(i.ticketId, i.rev, i.to)) } ?: IntentResult(false, "主机不支持厨房屏")
         is RemoteIntent.BindMember -> ops?.let { r(it.bindMember(i.tableId, i.memberId)) } ?: IntentResult(false, "主机不支持会员操作")
         is RemoteIntent.SetPromotions -> ops?.let { r(it.setPromotions(i.tableId, i.ids)) } ?: IntentResult(false, "主机不支持优惠操作")
     }

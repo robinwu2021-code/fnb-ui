@@ -112,6 +112,10 @@ data class Vault(
     val lan: LanState = LanState(),
     /** 本机当班员工（员工模式下 PIN 上岗；换门店/退出登录清空）。 */
     val staffId: String = "",
+    /** 厨房屏（KDS）：本机工位名（空=不是厨房屏）、持久收件箱与拉取游标。 */
+    val kdsStation: String = "",
+    val kdsInbox: List<KdsTicket> = emptyList(),
+    val kdsCursor: Long = 0,
 ) {
     val store get() = storeId?.let { stores[it] }
 }
@@ -173,7 +177,7 @@ class LocalWorkspace(
     /** 身份与授权；为空时（单元测试）不做授权限制。 */
     private val identity: IdentityContext? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository, KdsRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
@@ -403,6 +407,76 @@ class LocalWorkspace(
     private fun sessionEnd(v: Vault): Long {
         val st = evaluate(v)
         return OfflineAuthority.sessionExpiry(clock(), st.grant?.takeIf { st.state == AuthState.Active }?.exp)
+    }
+
+    // —— 厨房屏（N7）：主机权威任务卡 ——
+    /** 退菜同步到任务卡：退菜份数计入，全部退完则取消（版本 +1，变更序号前进）。 */
+    private fun StoreData.kdsVoid(ticketId: String, uid: Long, qty: Int, reason: String): StoreData {
+        val t = kdsTickets.firstOrNull { it.id == ticketId } ?: return this
+        val lines = t.lines.map { if (it.uid == uid) it.copy(voidQty = (it.voidQty + qty).coerceAtMost(it.qty)) else it }
+        val cancelled = lines.all { it.active == 0 }
+        val n = t.copy(lines = lines, rev = t.rev + 1, seq = kdsSeq + 1, updatedAt = clock(), state = if (cancelled) KdsState.Cancelled else t.state,
+            note = if (cancelled) "全部退菜：$reason" else "部分退菜：$reason")
+        return copy(kdsTickets = kdsTickets.map { if (it.id == ticketId) n else it }, kdsSeq = kdsSeq + 1)
+    }
+
+    /** 厨师操作（接单/开始制作/完成/撤回完成）：须带所见版本；单据已变（含退菜取消）则拒绝，迟到命令不能覆盖取消。 */
+    override suspend fun kdsAdvance(ticketId: String, expectedRev: Int, to: KdsState): Result<Unit> {
+        val tableId = currentStore()?.kdsTickets?.firstOrNull { it.id == ticketId }?.tableId ?: return fail("任务卡不存在")
+        val origin = kotlinx.coroutines.currentCoroutineContext()[RemoteOrigin]
+        val actor = origin?.let { o -> currentStore()?.employees?.firstOrNull { it.id == o.actorId }?.name ?: "厨房屏" } ?: actorName(state.value)
+        return storeOp(event = EventSpec { _, a ->
+            val t = a.kdsTickets.first { it.id == ticketId }
+            Triple("KdsTicketAdvanced", kotlinx.serialization.json.Json.encodeToString(KdsTicket.serializer(), t), listOf("kds:$ticketId", "table:$tableId"))
+        }, check = { s ->
+            val t = s.kdsTickets.firstOrNull { it.id == ticketId }
+            when {
+                t == null -> "任务卡不存在"
+                t.rev != expectedRev -> if (t.state == KdsState.Cancelled) "该单已取消（退菜），不能再操作" else "单据已更新（退菜或其他工位操作），请刷新后再试"
+                else -> KdsRules.transition(t.state, to)
+            }
+        }) { s ->
+            s.copy(kdsTickets = s.kdsTickets.map { if (it.id == ticketId) it.copy(state = to, rev = it.rev + 1, seq = s.kdsSeq + 1, updatedAt = clock(), by = actor) else it }, kdsSeq = s.kdsSeq + 1)
+        }
+    }
+
+    /** 厨房屏增量拉取：返回 seq 大于游标的任务卡及新游标。 */
+    fun kdsPull(storeId: String, cursor: Long, station: String): Pair<List<KdsTicket>, Long> {
+        val s = state.value.stores[storeId] ?: return emptyList<KdsTicket>() to cursor
+        val list = s.kdsTickets.filter { it.seq > cursor && (station.isBlank() || it.station == station) }.sortedBy { it.seq }.take(200)
+        return list to (list.maxOfOrNull { it.seq } ?: cursor)
+    }
+
+    /** 厨房屏持久接收回执：记录送达（与厨师接单无关）。 */
+    suspend fun kdsAck(acks: List<Pair<String, Int>>) {
+        commit { v ->
+            val s = v.store ?: return@commit v
+            val now = clock()
+            val map = acks.toMap()
+            if (s.kdsTickets.none { (map[it.id] ?: 0) > it.deliveredRev }) return@commit v
+            v.copy(stores = v.stores + (s.id to s.copy(kdsTickets = s.kdsTickets.map { t ->
+                val r = map[t.id] ?: 0
+                if (r > t.deliveredRev) t.copy(deliveredRev = r, deliveredAt = if (t.deliveredAt == 0L) now else t.deliveredAt) else t
+            })))
+        }
+    }
+
+    // —— 厨房屏设备侧：持久收件箱 ——
+    val kdsDevice: StateFlow<Triple<String, List<KdsTicket>, Long>> = derive { Triple(it.kdsStation, it.kdsInbox, it.kdsCursor) }
+
+    suspend fun setKdsStation(station: String) { commit { it.copy(kdsStation = station.trim(), kdsInbox = if (station.isBlank()) emptyList() else it.kdsInbox, kdsCursor = if (station.isBlank()) 0 else it.kdsCursor) } }
+
+    /** 收到任务卡：去重合并后落盘，返回需回执的（id, rev）。 */
+    suspend fun kdsReceive(tickets: List<KdsTicket>, cursor: Long): List<Pair<String, Int>> {
+        var accepted = emptyList<KdsTicket>()
+        commit { v ->
+            val (merged, acc) = KdsRules.merge(v.kdsInbox, tickets)
+            accepted = acc
+            // 只保留未完结或最近 2 小时内更新的卡，避免收件箱无限增长
+            val keep = merged.filter { it.state !in setOf(KdsState.Done, KdsState.Cancelled) || clock() - it.updatedAt < 2 * 3_600_000L }
+            v.copy(kdsInbox = keep, kdsCursor = maxOf(v.kdsCursor, cursor))
+        }
+        return accepted.map { it.id to it.rev }
     }
 
     // —— 员工与权限 ——
@@ -1193,6 +1267,7 @@ class LocalWorkspace(
                 clock(), line?.name.orEmpty(), if (request.kind == AdjustmentKind.Discount) "${request.percent}%" else "")
             var next = s.withOrder(tableId, updated).copy(adjustments = s.adjustments + audit)
             if (request.kind == AdjustmentKind.Void && updated.lines.isEmpty()) next = next.withTable(tableId) { it.copy(status = TableStatus.Cleaning, guests = 0, openedAt = 0, paid = 0) }
+            if (request.kind == AdjustmentKind.Void && line?.batchId != null) next = next.kdsVoid(line.batchId, line.uid, request.quantity, audit.reason)
             if (request.kind == AdjustmentKind.Void) next = next.copy(printJobs = next.printJobs + PrintJob(newId("V"), PrintKind.Kitchen,
                 "$tableId 退菜单", listOf("【退菜单】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock()))
             v.copy(stores = v.stores + (s.id to next))
@@ -1252,7 +1327,9 @@ class LocalWorkspace(
         val out = if (online) s.outbox else s.outbox + OutboxItem(batch, OutboxKind.Kitchen, tableId, "$tableId 送厨 $n 份", clock())
         val sent = OrderRules.send(s.order(tableId), batch, online, clock())
         // 厨房单走本机/局域网，不依赖云端：离线也立即出单；云端待同步另由 outbox 与事件表示
-        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1).kitchenJob(tableId, batch)
+        val lines = sent.lines.filter { it.batchId == batch }.map { KdsLine(it.uid, it.name, it.spec, it.note, it.qty) }
+        val ticket = KdsTicket(batch, tableId, sent.orderId, "厨房", lines, clock(), seq = s.kdsSeq + 1, updatedAt = clock(), note = sent.note)
+        val next = s.withOrder(tableId, sent).copy(outbox = out, seq = s.seq + 1, kdsTickets = s.kdsTickets + ticket, kdsSeq = s.kdsSeq + 1).kitchenJob(tableId, batch)
         v.copy(stores = v.stores + (s.id to next)) to SendResult(n, !online)
     }
 

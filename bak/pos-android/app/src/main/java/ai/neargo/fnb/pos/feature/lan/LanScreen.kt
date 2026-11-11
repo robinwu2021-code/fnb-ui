@@ -136,6 +136,7 @@ private fun SecondarySection(c: AppContainer, lan: LanState, link: LinkStatus, l
     lan.pending.forEach { p -> Text("· ${p.summary} · ${time(p.createdAt)} · ${p.lastError.ifBlank { "等待中" }}", style = Pos.type.label, color = Pos.colors.warning) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PosButton("立即同步", { launch { notify(runCatching { c.lanLink.flushPending(); c.lanLink.pull() }, "已与主机同步") } }, variant = BtnVariant.Primary)
+        PosButton("设为厨房屏", { launch { c.setKdsStation("厨房"); c.messages.post("本机已设为厨房屏（厨房工位）") } })
         PosButton("解除配对", { launch { c.lanLink.unpair(); c.messages.post("已解除配对，回到单机") } }, variant = BtnVariant.Danger)
     }
 }
