@@ -256,4 +256,6 @@ interface RetailRepository {
     /** 入库 / 报损：过账；盘点：盘点中 → 提交（冻结账面）→ 再调一次为审批过账 */
     suspend fun advanceStockDoc(no: String): Result<ai.neargo.fnb.pos.core.model.StockDocState>
     suspend fun voidStockDoc(no: String): Result<Unit>
+    /** 零售收款入账：写零售单、收款记录（交班汇总包含）、小票、离线时进同步队列，并扣库存 */
+    suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale>
 }

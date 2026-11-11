@@ -84,6 +84,8 @@ class AppContainer(context: Context) {
     val print: PrintRepository = RoutedPrint(workspace, lanLink)
     val shift: ShiftRepository = RoutedShift(workspace, lanLink)
     val ops: OperationsRepository = RoutedOps(workspace, lanLink)
+    /** 零售（R3 起）：先只走本机；副 POS 经主机仲裁放在后面做。 */
+    val retail: RetailRepository = workspace
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
     val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
     val messages: MessageBus = SimpleMessageBus()

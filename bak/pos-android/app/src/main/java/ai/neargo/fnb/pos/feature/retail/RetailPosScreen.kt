@@ -1,0 +1,560 @@
+package ai.neargo.fnb.pos.feature.retail
+
+import ai.neargo.fnb.pos.app.appContainer
+import ai.neargo.fnb.pos.app.posViewModel
+import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
+import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
+import ai.neargo.fnb.pos.core.designsystem.component.CashPad
+import ai.neargo.fnb.pos.core.designsystem.component.EmptyState
+import ai.neargo.fnb.pos.core.designsystem.component.KeyValue
+import ai.neargo.fnb.pos.core.designsystem.component.LocalPosLayout
+import ai.neargo.fnb.pos.core.designsystem.component.Panel
+import ai.neargo.fnb.pos.core.designsystem.component.PosButton
+import ai.neargo.fnb.pos.core.designsystem.component.PosChip
+import ai.neargo.fnb.pos.core.designsystem.component.PosDialog
+import ai.neargo.fnb.pos.core.designsystem.component.PosIconButton
+import ai.neargo.fnb.pos.core.designsystem.component.PosSheet
+import ai.neargo.fnb.pos.core.designsystem.component.PosTextField
+import ai.neargo.fnb.pos.core.designsystem.component.QuantityStepper
+import ai.neargo.fnb.pos.core.designsystem.component.Section
+import ai.neargo.fnb.pos.core.designsystem.component.Tag
+import ai.neargo.fnb.pos.core.designsystem.component.Text
+import ai.neargo.fnb.pos.core.designsystem.component.Workbench
+import ai.neargo.fnb.pos.core.designsystem.theme.Pos
+import ai.neargo.fnb.pos.core.designsystem.theme.num
+import ai.neargo.fnb.pos.core.model.BillSide
+import ai.neargo.fnb.pos.core.model.CartLine
+import ai.neargo.fnb.pos.core.model.CashRules
+import ai.neargo.fnb.pos.core.model.Money
+import ai.neargo.fnb.pos.core.model.Product
+import ai.neargo.fnb.pos.core.model.RetailCheckout
+import ai.neargo.fnb.pos.core.model.RetailPricing
+import ai.neargo.fnb.pos.core.model.ScanBuffer
+import ai.neargo.fnb.pos.core.model.yuan
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material.icons.rounded.Scale
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.utf16CodePoint
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+@Composable
+fun RetailPosRoute() {
+    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
+    RetailPosScreen(state, vm::onAction, prefs?.layout?.bill ?: BillSide.Left)
+}
+
+/**
+ * 零售收银（原型 retail/RetailPos.tsx · W2）：左购物车 · 右扫码态 / 收款态；称重、规格矩阵、取单、清空、临时商品、收款完成是浮层。
+ * 扫码枪按键盘输入：扫码框有焦点时回车提交；没有焦点时由页面根节点按按键间隔识别（ScanBuffer），不弹软键盘。
+ */
+@Composable
+fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, side: BillSide = BillSide.Left) {
+    val layout = LocalPosLayout.current
+    val root = remember { FocusRequester() }
+    val buffer = remember { ScanBuffer() }
+    var fieldFocused by remember { mutableStateOf(false) }
+    val overlay = state.cart.overlay
+    LaunchedEffect(overlay == null, state.cart.mode) { if (overlay == null && !fieldFocused) runCatching { root.requestFocus() } }
+
+    Box(
+        Modifier.fillMaxSize().focusRequester(root).onPreviewKeyEvent { e ->
+            if (fieldFocused || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            val now = System.currentTimeMillis()
+            when {
+                e.key == Key.Enter || e.key == Key.NumPadEnter -> buffer.enter(now)?.let { onAction(RetailPosAction.Scan(it)); true } ?: false
+                e.utf16CodePoint in 33..126 -> { buffer.char(e.utf16CodePoint.toChar(), now); true }
+                else -> false
+            }
+        }.focusable(),
+    ) {
+        Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> CartPanel(state, onAction, m) }) { m ->
+            if (state.cart.mode == PosMode.Pay) PayPane(state, onAction, m) else ScanPane(state, onAction, m) { fieldFocused = it }
+        }
+    }
+
+    when (overlay) {
+        is RetailOverlay.Weigh -> state.product(overlay.productId)?.let { WeighDialog(it, overlay.grams, onAction) }
+        is RetailOverlay.Sku -> state.product(overlay.productId)?.let { SkuDialog(state, it, onAction) }
+        RetailOverlay.Held -> HeldSheet(state, onAction)
+        RetailOverlay.Clear -> ClearDialog(state, onAction)
+        RetailOverlay.Custom -> CustomDialog(state.cart.unknown, onAction)
+        is RetailOverlay.Done -> DoneDialog(state, overlay, onAction)
+        null -> Unit
+    }
+}
+
+/* ---------------- 左：购物车 ---------------- */
+
+@Composable
+private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, modifier: Modifier) {
+    val c = Pos.colors; val t = Pos.type
+    val cart = state.cart; val tot = state.totals
+    val pay = cart.mode == PosMode.Pay; val empty = cart.lines.isEmpty()
+    var menu by remember { mutableStateOf(false) }
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("购物车", style = t.title, color = c.ink)
+                    Text("单号 ${state.nextNo}", style = t.label.num(), color = c.sub)
+                    if (cart.member) Tag("会员", bg = c.tint, fg = c.primary)
+                    Spacer(Modifier.weight(1f))
+                    if (!pay) Box {
+                        PosIconButton(Icons.Rounded.MoreHoriz, "更多", { menu = true })
+                        DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem({ Text("开钱箱") }, { menu = false; onAction(RetailPosAction.OpenDrawer) })
+                            DropdownMenuItem({ Text("清空购物车", color = if (empty) c.sub else c.danger) }, { menu = false; onAction(RetailPosAction.AskClear) }, enabled = !empty)
+                        }
+                    }
+                }
+                if (!pay) Row(Modifier.padding(vertical = 6.dp).padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PosChip("会员", cart.member, { onAction(RetailPosAction.ToggleMember) })
+                    PosButton("挂单", { onAction(RetailPosAction.Hold) }, size = BtnSize.Small, enabled = !empty)
+                    PosButton(if (state.held.isEmpty()) "取单" else "取单 · ${state.held.size}", { onAction(RetailPosAction.ShowHeld) }, size = BtnSize.Small, enabled = state.held.isNotEmpty())
+                }
+            }
+            if (empty) {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Rounded.QrCodeScanner, null, tint = c.sub, modifier = Modifier.size(44.dp))
+                    Text("扫商品条码开始收银", style = t.strong, color = c.ink, modifier = Modifier.padding(top = 8.dp))
+                    Text("也可以点右侧商品，或先扫会员码", style = t.label, color = c.sub)
+                    if (!cart.member) PosButton("识别会员", { onAction(RetailPosAction.ToggleMember) }, variant = BtnVariant.Text, size = BtnSize.Small)
+                }
+            } else {
+                LazyColumn(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    items(cart.lines, key = { it.key }) { l -> CartLineRow(state, l, onAction) }
+                    if (tot.promo > 0 || tot.round > 0 || !cart.member || tot.memberSave > 0) item {
+                        Column(Modifier.padding(8.dp).clip(Pos.metrics.card).background(c.tile).padding(10.dp)) {
+                            Text("整单优惠", style = t.label, color = c.sub)
+                            if (tot.promo > 0) KeyValue("促销", "−${yuan(tot.promo)}", valueColor = c.primary)
+                            if (cart.member) { if (tot.memberSave > 0) KeyValue("会员价", "−${yuan(tot.memberSave)}", valueColor = c.primary) }
+                            else KeyValue("会员价", "未识别会员", valueColor = c.sub)
+                            if (tot.round > 0) KeyValue("抹零（到角）", "−${yuan(tot.round)}", valueColor = c.primary)
+                        }
+                    }
+                }
+            }
+            // 底部：应收 + 收款入口
+            Column(Modifier.fillMaxWidth().background(c.control).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (empty) "" else "应收", style = t.label, color = c.sub)
+                        Text("共 ${tot.pcs} 件${if (tot.save > 0) " · 已省 ${yuan(tot.save)}" else ""}", style = t.label.num(), color = c.sub)
+                    }
+                    Text(yuan(tot.due), style = t.amount.num(), color = c.ink)
+                }
+                if (pay) PosButton("继续加购", { onAction(RetailPosAction.BackToScan) }, Modifier.fillMaxWidth())
+                else {
+                    if (!empty) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if ("现金" in state.payMethods) PosButton("现金刚好 ${yuan(tot.due)}", { onAction(RetailPosAction.QuickCash) }, Modifier.weight(1f), size = BtnSize.Small, loading = cart.processing)
+                        if ("扫码" in state.payMethods) PosButton("扫码收款", { onAction(RetailPosAction.GoPay("扫码")) }, Modifier.weight(1f), size = BtnSize.Small, enabled = state.online)
+                    }
+                    PosButton(if (empty) "收款" else "收款 ${yuan(tot.due)}", { onAction(RetailPosAction.GoPay(null)) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !empty)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    val pay = state.cart.mode == PosMode.Pay
+    val info = state.lineInfo(l)
+    val promo = RetailPricing.linePromo(l, info)
+    val mem = if (state.cart.member) RetailPricing.lineMemberSave(l, info) else 0
+    val open = !pay && state.cart.open == l.key
+    val hl = !pay && state.cart.last == l.key
+    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(Pos.metrics.card).background(if (hl) c.tint else c.surface)
+        .clickable(enabled = !pay) { onAction(RetailPosAction.ToggleOpen(l.key)) }.padding(horizontal = 8.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(state.lineName(l), style = t.line, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val meta = buildList {
+                    if (l.grams != null) add("${kg(l.grams)} kg × ${yuan(info.unit)}/kg") else add("${yuan(info.unit)}/件")
+                    l.sku?.let { add(it) }
+                    if (l.custom) add("临时商品")
+                    if (l.gift) add("赠送")
+                    if (promo > 0) add("${ai.neargo.fnb.pos.core.model.LinePromo.Half2.label} −${yuan(promo)}")
+                    if (mem > 0) add("会员价 ${yuan(info.memberPrice ?: 0)} −${yuan(mem)}")
+                }
+                Text(meta.joinToString(" · "), style = t.label.num(), color = c.sub, maxLines = 2)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(yuan(state.lineAmount(l)), style = t.strong.num(), color = c.ink)
+                if (l.grams == null) {
+                    if (pay) Text("×${l.qty}", style = t.label.num(), color = c.sub)
+                    else QuantityStepper(l.qty, { d -> onAction(RetailPosAction.Bump(l.key, d)) }, Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+        if (open) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PosButton(if (l.gift) "取消赠送" else "赠送", { onAction(RetailPosAction.Gift(l.key)) }, size = BtnSize.Small)
+            PosButton("删除", { onAction(RetailPosAction.Remove(l.key)) }, size = BtnSize.Small, variant = BtnVariant.Danger)
+        }
+    }
+}
+
+/* ---------------- 右 · 扫码态 ---------------- */
+
+@Composable
+private fun ScanPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, modifier: Modifier, onFocus: (Boolean) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    val cart = state.cart
+    var text by remember { mutableStateOf("") }
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 常驻扫码框
+            Row(Modifier.fillMaxWidth().height(52.dp).clip(Pos.metrics.button).background(c.tile).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(if (cart.peek) Icons.Rounded.Search else Icons.Rounded.QrCodeScanner, null, tint = c.sub, modifier = Modifier.size(22.dp))
+                if (cart.qty > 1 && !cart.peek) Tag("× ${cart.qty}", bg = c.tint, fg = c.primary)
+                if (cart.peek) Tag("查价", bg = c.tint, fg = c.primary)
+                Box(Modifier.weight(1f)) {
+                    if (text.isEmpty()) Text(if (cart.peek) "扫码或输入条码查价" else "扫码或输入条码 / PLU，回车加入", style = t.body, color = c.sub, maxLines = 1)
+                    BasicTextField(text, { text = it.filterNot { ch -> ch == '\n' } }, singleLine = true, textStyle = t.body.copy(color = c.ink, fontSize = 17.sp), cursorBrush = SolidColor(c.primary),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { if (text.isNotBlank()) onAction(RetailPosAction.Scan(text)); text = "" }),
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { onFocus(it.isFocused) }.onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter)) { if (text.isNotBlank()) onAction(RetailPosAction.Scan(text)); text = ""; true } else false
+                        }.semantics { contentDescription = "扫码框" })
+                }
+                Tag("扫码枪", bg = c.surface, fg = c.success)
+            }
+            ScanStrip(state, onAction)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PosChip("常用", cart.cat == HOT, { onAction(RetailPosAction.SelectCat(HOT)) })
+                    state.categories.forEach { cat -> PosChip(cat.name, cart.cat == cat.id, { onAction(RetailPosAction.SelectCat(cat.id)) }) }
+                }
+                Row(Modifier.padding(start = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(2, 3, 5).forEach { n -> PosChip("× $n", cart.qty == n, { onAction(RetailPosAction.SetQty(n)) }) }
+                    PosChip("查价", cart.peek, { onAction(RetailPosAction.TogglePeek) })
+                    PosButton("临时商品", { onAction(RetailPosAction.AddCustom) }, size = BtnSize.Small)
+                }
+            }
+            LazyVerticalGrid(GridCells.Adaptive(150.dp), Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.shown, key = { it.id }) { p -> ItemTile(state, p, onAction) }
+            }
+        }
+    }
+}
+
+/** 扫码框下一行：未知条码 / 查价结果 / 刚扫的一件（撤销 · 再来一件）/ 提示 */
+@Composable
+private fun ScanStrip(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    val cart = state.cart
+    val strip = Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(Pos.metrics.button)
+    when {
+        cart.unknown != null -> Row(strip.background(c.dangerBg).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("未找到条码 ${cart.unknown}", style = t.body.num(), color = c.danger, modifier = Modifier.weight(1f))
+            PosButton("按临时商品加入", { onAction(RetailPosAction.AddCustom) }, size = BtnSize.Small)
+        }
+        cart.peek -> {
+            val p = cart.peekId?.let(state::product)
+            if (p == null) Row(strip.background(c.tile).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("查价模式：扫码或点商品只看价格和库存，不加入购物车", style = t.label, color = c.sub)
+            } else Row(strip.background(c.tile).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.name, style = t.strong, color = c.ink, maxLines = 1)
+                    val r = p.retail
+                    Text(listOfNotNull(r?.barcodes?.firstOrNull(), r?.promo?.label, r?.memberPrice?.let { "会员价 ${yuan(it)}" }).joinToString(" · "), style = t.label.num(), color = c.sub)
+                }
+                Text(priceText(p), style = t.amountM.num(), color = c.ink)
+                Text("库存 ${stockText(p)}", style = t.label.num(), color = c.sub)
+                PosButton("加入", { onAction(RetailPosAction.PeekAdd(p.id)) }, size = BtnSize.Small, enabled = !p.soldOut)
+            }
+        }
+        state.last != null -> {
+            val l = state.last!!
+            Row(strip.background(c.tile).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("刚扫", style = t.label, color = c.sub)
+                Text(state.lineName(l), style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(if (l.grams != null) "${kg(l.grams)} kg" else "× ${l.qty}", style = t.body.num(), color = c.ink)
+                Text(yuan(state.lineAmount(l)), style = t.strong.num(), color = c.ink)
+                Spacer(Modifier.weight(1f))
+                Text("共 ${state.totals.pcs} 件", style = t.label.num(), color = c.sub)
+                PosButton("撤销", { onAction(RetailPosAction.Undo(l.key)) }, size = BtnSize.Small, variant = BtnVariant.Text)
+                if (l.grams == null && !l.custom) PosButton("再来一件", { onAction(RetailPosAction.Bump(l.key, 1)) }, size = BtnSize.Small)
+            }
+        }
+        else -> Row(strip.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("无码商品点下方宫格；先点「× 2 / 3 / 5」再扫，一次加多件", style = t.label, color = c.sub)
+        }
+    }
+}
+
+@Composable
+private fun ItemTile(state: RetailPosUiState, p: Product, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    val weigh = p.retail?.weighable == true
+    val inCart = state.cart.lines.filter { it.productId == p.id && !it.custom }.sumOf { if (it.grams != null) 1 else it.qty }
+    val out = p.soldOut
+    val left = p.totalStock
+    Box(Modifier.fillMaxWidth().height(96.dp).clip(Pos.metrics.card).background(if (inCart > 0) c.tint else c.tile)
+        .clickable(enabled = !out) { onAction(RetailPosAction.Tap(p.id)) }.semantics { contentDescription = p.name }.padding(10.dp)) {
+        Column(Modifier.fillMaxSize()) {
+            Text(p.name, style = t.strong, color = if (out) c.sub else c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (weigh) Icon(Icons.Rounded.Scale, null, tint = c.sub, modifier = Modifier.size(12.dp))
+                Text(when { weigh -> "PLU"; p.hasSpec -> "多规格"; else -> p.retail?.barcodes?.firstOrNull()?.takeLast(6).orEmpty() }, style = t.label.num(), color = c.sub)
+            }
+            Spacer(Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(priceText(p), style = t.strong.num(), color = c.ink, modifier = Modifier.weight(1f))
+                when {
+                    out -> Tag("缺货", bg = c.dangerBg, fg = c.danger)
+                    !weigh && left != null && left <= 5 -> Tag("仅剩 $left", fg = c.warning)
+                }
+            }
+        }
+        if (inCart > 0) Text("$inCart", style = t.label.num().copy(fontWeight = FontWeight.SemiBold), color = c.onPrimary,
+            modifier = Modifier.align(Alignment.TopEnd).clip(Pos.metrics.button).background(c.primary).padding(horizontal = 6.dp, vertical = 1.dp))
+    }
+}
+
+/* ---------------- 右 · 收款态 ---------------- */
+
+@Composable
+private fun PayPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, modifier: Modifier) {
+    val c = Pos.colors; val t = Pos.type
+    val cart = state.cart; val due = state.totals.due
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("收款", style = t.title, color = c.ink, modifier = Modifier.weight(1f))
+                    Text("应收 ", style = t.body, color = c.sub)
+                    Text(yuan(due), style = t.hero.num(), color = c.primary)
+                }
+                Section("收款方式") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.payMethods.forEach { m ->
+                            PosButton(m, { onAction(RetailPosAction.SelectMethod(m)) }, Modifier.weight(1f), size = BtnSize.Large, selected = cart.method == m,
+                                enabled = !(m == "扫码" && !state.online))
+                        }
+                    }
+                    Text(when {
+                        !state.online -> "离线：扫码不可用；现金、银行卡、储值本机记账，联网后同步"
+                        "储值卡" in state.payMethods -> if (cart.member) "会员储值余额 ${yuan(state.wallet)}" else "储值卡需先识别会员"
+                        else -> "本机记账；扫码为演示渠道"
+                    }, style = t.label, color = if (state.online) c.sub else c.warning, modifier = Modifier.padding(top = 6.dp))
+                }
+                when (cart.method) {
+                    null -> EmptyState("选择收款方式；顾客出示付款码时直接扫，自动切到扫码收款")
+                    "现金" -> Section("现金收款") {
+                        CashPad(cart.cash, due, { onAction(RetailPosAction.CashInput(it)) }, enabled = !cart.processing)
+                    }
+                    "扫码" -> WaitBlock("请顾客出示付款码", "用扫码枪扫顾客的付款码，或让顾客扫收款码；演示环境点「确认已收款」")
+                    "银行卡" -> WaitBlock("请在刷卡机上刷卡 ${yuan(due)}", "刷卡机打出签购单后点「确认已收款」")
+                    else -> WaitBlock("会员储值扣款 ${yuan(due)}", "扣款后余额 ${yuan(maxOf(0, state.wallet - due))}")
+                }
+            }
+            Row(Modifier.fillMaxWidth().background(c.control).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PosButton("返回加购", { onAction(RetailPosAction.BackToScan) }, Modifier.weight(0.6f), variant = BtnVariant.Text, size = BtnSize.Large)
+                PosButton(state.block ?: if (cart.method == "现金") "确认收款 ${yuan(due)}" else "确认已收款 ${yuan(due)}", { onAction(RetailPosAction.Confirm) }, Modifier.weight(1.4f),
+                    variant = BtnVariant.Primary, size = BtnSize.Large, enabled = state.block == null && !cart.processing, loading = cart.processing)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WaitBlock(title: String, hint: String) {
+    Section(title) { Text(hint, style = Pos.type.label, color = Pos.colors.sub) }
+}
+
+/* ---------------- 浮层 ---------------- */
+
+@Composable
+private fun WeighDialog(p: Product, grams: Int, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    var input by remember(p.id) { mutableStateOf(if (grams > 0) kg(grams) else "") }
+    val w = parseKg(input) ?: grams
+    val amount = Money.roundHalfUp(p.price * w, 1000)
+    PosDialog("称重 · ${p.name}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)}/kg · ${p.retail?.barcodes?.firstOrNull().orEmpty()}", footer = {
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton("加入 ${yuan(amount)}", { onAction(RetailPosAction.AddWeighed(p.id, w)) }, variant = BtnVariant.Primary, enabled = w > 0)
+    }) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(Pos.metrics.card).background(c.tile).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("${kg(w)} kg", style = t.hero.copy(fontSize = 44.sp).num(), color = c.ink)
+            Text("未连接电子秤：手输重量（电子秤接入在 R8）", style = t.label, color = c.warning)
+        }
+        PosTextField(input, { v -> if (Regex("^\\d{0,2}(\\.\\d{0,3})?$").matches(v)) input = v }, "重量（kg，最多 3 位小数）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+            listOf(250, 500, 1000).forEach { q -> PosButton("${kg(q)} kg", { input = kg(q) }, Modifier.weight(1f), size = BtnSize.Small) }
+            PosButton("去皮 −12g", { input = kg(maxOf(0, w - 12)) }, Modifier.weight(1f), size = BtnSize.Small)
+            PosButton("归零", { input = "" }, Modifier.weight(1f), size = BtnSize.Small)
+        }
+        KeyValue("金额", yuan(amount))
+    }
+}
+
+@Composable
+private fun SkuDialog(state: RetailPosUiState, p: Product, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    var pick by remember(p.id) { mutableStateOf<String?>(null) }
+    val groups = state.groupsOf(p)
+    val rows = groups.firstOrNull()?.options.orEmpty()
+    val cols = groups.getOrNull(1)?.options
+    PosDialog("选规格 · ${p.name}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)} · 点一格加入，数字是库存", maxWidth = 640.dp, footer = {
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton(pick?.let { "加入 $it" } ?: "请选择规格", { pick?.let { onAction(RetailPosAction.AddSku(p.id, it)) } }, variant = BtnVariant.Primary, enabled = pick != null)
+    }) {
+        val cell: @Composable (Modifier, ai.neargo.fnb.pos.core.model.Sku?) -> Unit = { m, k ->
+            val n = k?.stock ?: 0; val on = k != null && pick == k.label
+            Box(m.height(52.dp).clip(Pos.metrics.button).background(if (on) c.tint else c.tile).clickable(enabled = n > 0) { pick = k?.label }
+                .semantics { contentDescription = k?.label ?: "" }, contentAlignment = Alignment.Center) {
+                Text(if (n <= 0) "缺货" else if (n <= 2) "仅剩 $n" else "$n", style = t.body.num().let { if (on) it.copy(fontWeight = FontWeight.SemiBold) else it },
+                    color = when { on -> c.primary; n <= 0 -> c.sub; n <= 2 -> c.warning; else -> c.ink })
+            }
+        }
+        Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (cols != null) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(groups[0].name, style = t.label, color = c.sub, modifier = Modifier.width(72.dp))
+                cols.forEach { z -> Text(z.name, style = t.strong, color = c.sub, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+            }
+            rows.forEach { r ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(r.name, style = t.strong, color = c.ink, modifier = Modifier.width(72.dp))
+                    if (cols == null) cell(Modifier.weight(1f), p.skus.firstOrNull { r.id in it.optionIds })
+                    else cols.forEach { z -> cell(Modifier.weight(1f), p.skus.firstOrNull { r.id in it.optionIds && z.id in it.optionIds }) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeldSheet(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    val fmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+    PosSheet({ onAction(RetailPosAction.Dismiss) }) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("挂单 · ${state.held.size}", style = t.title, color = c.ink)
+            if (state.cart.lines.isNotEmpty()) Text("当前购物车有 ${state.cart.lines.size} 行，取单时会先把它挂起", style = t.label, color = c.warning)
+            if (state.held.isEmpty()) EmptyState("没有挂单")
+            state.held.forEach { h ->
+                val tot = RetailCheckout.totals(state.products, h.lines, h.member != null)
+                Row(Modifier.fillMaxWidth().clip(Pos.metrics.card).background(c.tile).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${h.no} · ${yuan(tot.due)}", style = t.strong.num(), color = c.ink)
+                        Text(listOfNotNull(fmt.format(java.util.Date(h.at)), "${tot.pcs} 件", h.member, h.why.ifBlank { null }).joinToString(" · "), style = t.label.num(), color = c.sub)
+                    }
+                    PosButton("取单", { onAction(RetailPosAction.Recall(h.no)) }, size = BtnSize.Small, variant = BtnVariant.Soft)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClearDialog(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit) {
+    PosDialog("清空购物车？", { onAction(RetailPosAction.Dismiss) }, footer = {
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton("改为挂单", { onAction(RetailPosAction.Hold) })
+        PosButton("清空", { onAction(RetailPosAction.Clear) }, variant = BtnVariant.Danger)
+    }) {
+        Text("购物车里 ${state.cart.lines.size} 行、共 ${state.totals.pcs} 件会被移除，不能撤销。顾客只是暂时离开的话，用「挂单」。", style = Pos.type.body, color = Pos.colors.ink, modifier = Modifier.padding(vertical = 8.dp))
+    }
+}
+
+@Composable
+private fun CustomDialog(code: String?, onAction: (RetailPosAction) -> Unit) {
+    var name by remember { mutableStateOf("临时商品") }
+    var price by remember { mutableStateOf("") }
+    val fen = CashRules.amount(price) ?: 0
+    PosDialog("临时商品", { onAction(RetailPosAction.Dismiss) }, subtitle = code?.let { "未建档条码 $it" } ?: "无码商品按手输价格加入，不扣库存", footer = {
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton("加入 ${yuan(fen)}", { onAction(RetailPosAction.CustomAdd(name, fen)) }, variant = BtnVariant.Primary, enabled = fen > 0 && Money.withinBill(fen))
+    }) {
+        PosTextField(name, { if (it.length <= 20) name = it }, "名称")
+        PosTextField(price, { if (Regex("^\\d{0,6}(\\.\\d{0,2})?$").matches(it)) price = it }, "单价（元）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+    }
+}
+
+@Composable
+private fun DoneDialog(state: RetailPosUiState, d: RetailOverlay.Done, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    val method = d.sale.pays.firstOrNull()?.method.orEmpty()
+    PosDialog("收款完成", { onAction(RetailPosAction.Next) }, subtitle = "${d.sale.no} · ${d.sale.pieces} 件", footer = {
+        PosButton("下一位", { onAction(RetailPosAction.Next) }, variant = BtnVariant.Primary, size = BtnSize.Large)
+    }) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(if (method == "现金") "找零" else "已收", style = t.label, color = c.sub)
+            Text(yuan(if (method == "现金") d.change else d.sale.paid), style = t.hero.copy(fontSize = 44.sp).num(), color = c.ink)
+        }
+        KeyValue("应收", yuan(d.sale.paid))
+        if (method == "现金") KeyValue("实收", yuan(d.received))
+        KeyValue("收款方式", method)
+        if (d.save > 0) KeyValue("本单优惠", "−${yuan(d.save)}", valueColor = c.primary)
+        Text(if (state.online) "小票已加入打印队列，库存已扣减" else "离线：已本机记账并进入同步队列；小票已加入打印队列", style = t.label, color = c.sub, modifier = Modifier.padding(vertical = 8.dp))
+    }
+}
+
+/* ---------------- 小工具 ---------------- */
+
+private fun kg(grams: Int) = "%d.%03d".format(grams / 1000, grams % 1000)
+private fun parseKg(s: String): Int? = s.toBigDecimalOrNull()?.movePointRight(3)?.toInt()?.takeIf { it in 0..99_999 }
+private fun priceText(p: Product) = if (p.retail?.weighable == true) "${yuan(p.price)}/kg" else yuan(p.displayPrice)
+private fun stockText(p: Product): String = if (p.retail?.weighable == true) p.stock?.let { "${kg(it)} kg" } ?: "不限" else p.totalStock?.toString() ?: "不限"
