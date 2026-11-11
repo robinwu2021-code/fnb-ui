@@ -159,6 +159,7 @@ fun PosApp(shell: ShellViewModel) {
         dest?.hasRoute<ai.neargo.fnb.pos.navigation.RetailPosRoute>() == true -> TopLevel.RetailPos
         dest?.hasRoute<ai.neargo.fnb.pos.navigation.RetailOrdersRoute>() == true -> TopLevel.RetailOrders
         dest?.hasRoute<ai.neargo.fnb.pos.navigation.GoodsRoute>() == true -> TopLevel.Goods
+        dest?.hasRoute<ai.neargo.fnb.pos.navigation.StockWorkRoute>() == true -> TopLevel.StockWork
         else -> TopLevel.Order
     }
     val blocked by appContainer().recovery.blocked.collectAsStateWithLifecycle()
@@ -192,11 +193,12 @@ fun PosApp(shell: ShellViewModel) {
         if (denied) nav.goTop(if (session.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) ai.neargo.fnb.pos.navigation.RetailPosRoute else TablesRoute)
     }
     val go: (TopLevel) -> Unit = { nav.goTop(when (it) { TopLevel.Tables -> TablesRoute; TopLevel.Order -> OrderRoute; TopLevel.Manage -> ManageRoute
-        TopLevel.RetailPos -> ai.neargo.fnb.pos.navigation.RetailPosRoute; TopLevel.RetailOrders -> ai.neargo.fnb.pos.navigation.RetailOrdersRoute; TopLevel.Goods -> ai.neargo.fnb.pos.navigation.GoodsRoute }) }
+        TopLevel.RetailPos -> ai.neargo.fnb.pos.navigation.RetailPosRoute; TopLevel.RetailOrders -> ai.neargo.fnb.pos.navigation.RetailOrdersRoute; TopLevel.Goods -> ai.neargo.fnb.pos.navigation.GoodsRoute
+        TopLevel.StockWork -> ai.neargo.fnb.pos.navigation.StockWorkRoute }) }
     // 按门店业态分流（同一个 App）：切到零售门店进收银，切回餐饮门店进点餐；当前页已属于该业态（或是共用页）就不动
     val retail = session.biz == ai.neargo.fnb.pos.core.model.BizType.Retail
     androidx.compose.runtime.LaunchedEffect(session.storeId, session.biz) {
-        val inRetail = current in setOf(TopLevel.RetailPos, TopLevel.RetailOrders, TopLevel.Goods)
+        val inRetail = current in setOf(TopLevel.RetailPos, TopLevel.RetailOrders, TopLevel.Goods, TopLevel.StockWork)
         val inDining = dest == null || current in setOf(TopLevel.Tables, TopLevel.Order)
         if (retail && inDining) nav.goTop(ai.neargo.fnb.pos.navigation.RetailPosRoute)
         if (!retail && inRetail) nav.goTop(OrderRoute)
@@ -238,6 +240,7 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<ai.neargo.fnb.pos.navigation.RetailPosRoute> { ai.neargo.fnb.pos.feature.retail.RetailPosRoute() }
         composable<ai.neargo.fnb.pos.navigation.RetailOrdersRoute> { ai.neargo.fnb.pos.feature.retail.RetailOrdersRoute { nav.goTop(ai.neargo.fnb.pos.navigation.RetailPosRoute) } }
         composable<ai.neargo.fnb.pos.navigation.GoodsRoute> { ai.neargo.fnb.pos.feature.retail.RetailPlaceholder(ai.neargo.fnb.pos.feature.retail.RetailPage.Goods) }
+        composable<ai.neargo.fnb.pos.navigation.StockWorkRoute> { ai.neargo.fnb.pos.feature.retail.StockWorkRoute() }
     }
 }
 

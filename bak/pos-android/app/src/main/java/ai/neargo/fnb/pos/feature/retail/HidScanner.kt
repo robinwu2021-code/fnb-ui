@@ -1,0 +1,34 @@
+package ai.neargo.fnb.pos.feature.retail
+
+import ai.neargo.fnb.pos.core.model.ScanBuffer
+import androidx.compose.foundation.focusable
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.utf16CodePoint
+
+/**
+ * 扫码枪（HID 键盘）接收：挂在页面根节点上，页面根节点拿焦点（不弹软键盘）。
+ * 输入框有焦点时（paused = true）交给输入框自己处理回车；否则按按键间隔识别扫码枪（ScanBuffer），人手敲的键不算。
+ * 收银页、库存作业页共用。
+ */
+@Composable
+fun Modifier.hidScanner(focus: FocusRequester, paused: () -> Boolean, onCode: (String) -> Unit): Modifier {
+    val buffer = remember { ScanBuffer() }
+    return focusRequester(focus).onPreviewKeyEvent { e ->
+        if (paused() || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        val now = System.currentTimeMillis()
+        when {
+            e.key == Key.Enter || e.key == Key.NumPadEnter -> buffer.enter(now)?.let { onCode(it); true } ?: false
+            e.utf16CodePoint in 33..126 -> { buffer.char(e.utf16CodePoint.toChar(), now); true }
+            else -> false
+        }
+    }.focusable()
+}

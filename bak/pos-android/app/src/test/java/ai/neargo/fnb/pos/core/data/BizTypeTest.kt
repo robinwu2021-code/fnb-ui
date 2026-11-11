@@ -50,6 +50,6 @@ class BizTypeTest {
 
     @Test fun tabsFollowBiz() {
         assertEquals(listOf(TopLevel.Tables, TopLevel.Order), topTabs(BizType.Dining))
-        assertEquals(listOf(TopLevel.RetailPos, TopLevel.RetailOrders, TopLevel.Goods), topTabs(BizType.Retail))
+        assertEquals(listOf(TopLevel.RetailPos, TopLevel.RetailOrders, TopLevel.Goods, TopLevel.StockWork), topTabs(BizType.Retail))
     }
 }

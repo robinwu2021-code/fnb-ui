@@ -1015,8 +1015,11 @@ class LocalWorkspace(
                     d.copy(state = StockDocState.Pending, snapshot = snap, gain = diff.gain, loss = diff.loss)
                 }
                 else -> {
-                    // 审批过账：实盘覆盖账面
-                    d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, l.qty, "盘点 ${d.no}", actor) }
+                    // 审批过账：按差异（实盘 − 提交时冻结的账面）调整当前账面，提交后的入库、销售不会被覆盖掉
+                    d.lines.forEach { l ->
+                        val frozen = d.snapshot[key(l)] ?: s.bookOf(l.productId, l.sku)
+                        s = s.setBook(l.productId, l.sku, s.bookOf(l.productId, l.sku) + (l.qty - frozen), "盘点 ${d.no}", actor)
+                    }
                     d.copy(state = if (d.gain != 0L || d.loss != 0L) StockDocState.Variance else StockDocState.Posted)
                 }
             }

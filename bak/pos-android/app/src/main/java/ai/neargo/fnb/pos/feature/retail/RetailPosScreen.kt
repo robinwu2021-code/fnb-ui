@@ -110,21 +110,12 @@ fun RetailPosRoute() {
 fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, side: BillSide = BillSide.Left) {
     val layout = LocalPosLayout.current
     val root = remember { FocusRequester() }
-    val buffer = remember { ScanBuffer() }
     var fieldFocused by remember { mutableStateOf(false) }
     val overlay = state.cart.overlay
     LaunchedEffect(overlay == null, state.cart.mode) { if (overlay == null && !fieldFocused) runCatching { root.requestFocus() } }
 
     Box(
-        Modifier.fillMaxSize().focusRequester(root).onPreviewKeyEvent { e ->
-            if (fieldFocused || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-            val now = System.currentTimeMillis()
-            when {
-                e.key == Key.Enter || e.key == Key.NumPadEnter -> buffer.enter(now)?.let { onAction(RetailPosAction.Scan(it)); true } ?: false
-                e.utf16CodePoint in 33..126 -> { buffer.char(e.utf16CodePoint.toChar(), now); true }
-                else -> false
-            }
-        }.focusable(),
+        Modifier.fillMaxSize().hidScanner(root, { fieldFocused }) { onAction(RetailPosAction.Scan(it)) },
     ) {
         Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> CartPanel(state, onAction, m) }) { m ->
             if (state.cart.mode == PosMode.Pay) PayPane(state, onAction, m) else ScanPane(state, onAction, m) { fieldFocused = it }
