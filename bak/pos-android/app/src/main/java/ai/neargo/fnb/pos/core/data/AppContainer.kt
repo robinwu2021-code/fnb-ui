@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -66,7 +67,7 @@ class AppContainer(context: Context) {
     // —— 主副 POS（N5）：副机写入经主机仲裁；主机执行器直接使用本机仓库 ——
     private val deviceKeys get() = identity.keys
     val lanLink = ai.neargo.fnb.pos.core.lan.LanLink(workspace, deviceKeys, appScope, deviceName = android.os.Build.MODEL ?: "副 POS")
-    val lanHost = ai.neargo.fnb.pos.core.lan.LanHost(workspace, ai.neargo.fnb.pos.core.lan.HostExecutor(workspace, workspace, workspace, database, workspace, workspace), deviceKeys, appScope,
+    val lanHost = ai.neargo.fnb.pos.core.lan.LanHost(workspace, ai.neargo.fnb.pos.core.lan.HostExecutor(workspace, workspace, workspace, database, workspace, workspace, retail = workspace), deviceKeys, appScope,
         hostName = android.os.Build.MODEL ?: "主 POS")
     val lan get() = workspace.lanState
     suspend fun setHostRole(on: Boolean) {
@@ -84,17 +85,24 @@ class AppContainer(context: Context) {
     val print: PrintRepository = RoutedPrint(workspace, lanLink)
     val shift: ShiftRepository = RoutedShift(workspace, lanLink)
     val ops: OperationsRepository = RoutedOps(workspace, lanLink)
+    /** 零售（R3 起）：先只走本机；副 POS 经主机仲裁放在后面做。 */
+    val retail: RetailRepository = RoutedRetail(workspace, lanLink)
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
     val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
     val messages: MessageBus = SimpleMessageBus()
     /** 本机图片库：商品图片选择后复制到应用私有目录。 */
     val media = LocalMedia(context.applicationContext)
+    /** 运行期能力：第一期全离线（线上平台订单、云同步关闭） */
+    val runtime = ai.neargo.fnb.pos.core.model.RuntimeProfile.Phase1Offline
+    /** 本机电子秤（零售称重）：按本机偏好里的地址连接 */
+    val scale = ai.neargo.fnb.pos.core.hardware.NetworkScale(appScope)
 
     init {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
         if (workspace.lanState.value.role == LanRole.Host) appScope.launch(Dispatchers.IO) { runCatching { lanHost.start() }.onFailure { messages.post("主 POS 服务启动失败：${it.message}") } }
         lanLink.start()
+        appScope.launch { prefs.prefs.collect { p -> scale.configure(p.scaleHost, p.scalePort, p.scalePoll, if (p.scaleGrams) ai.neargo.fnb.pos.core.model.ScaleRules.Unit.G else ai.neargo.fnb.pos.core.model.ScaleRules.Unit.Kg) } }
         // 网口打印网关：仅主 POS/单机领取任务（副 POS 不打印）
         ai.neargo.fnb.pos.core.print.PrintGateway(workspace).start(appScope)
         // 授权到期、会话过期随时间发生：定时重新评估
@@ -191,6 +199,10 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
         val cd = booleanPreferencesKey("customer_display")
         val cdLines = booleanPreferencesKey("customer_lines")
         val cdSlides = booleanPreferencesKey("customer_slides")
+        val scaleHost = stringPreferencesKey("scale_host")
+        val scalePort = intPreferencesKey("scale_port")
+        val scalePoll = stringPreferencesKey("scale_poll")
+        val scaleGrams = booleanPreferencesKey("scale_grams")
     }
 
     private inline fun <reified E : Enum<E>> Preferences.enum(key: Preferences.Key<String>, default: E): E =
@@ -204,6 +216,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             layout = p.enum(K.layout, d.layout), photos = p[K.photos] ?: d.photos,
             font = p.enum(K.font, d.font), lang = p.enum(K.lang, d.lang),
             customerDisplay = p[K.cd] ?: d.customerDisplay, customerLines = p[K.cdLines] ?: d.customerLines, customerSlides = p[K.cdSlides] ?: d.customerSlides,
+            scaleHost = p[K.scaleHost] ?: d.scaleHost, scalePort = p[K.scalePort] ?: d.scalePort, scalePoll = p[K.scalePoll] ?: d.scalePoll, scaleGrams = p[K.scaleGrams] ?: d.scaleGrams,
         )
     }
 
@@ -214,6 +227,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             it[K.panel] = n.panelShape.name; it[K.button] = n.buttonShape.name; it[K.layout] = n.layout.name
             it[K.photos] = n.photos; it[K.font] = n.font.name; it[K.lang] = n.lang.name
             it[K.cd] = n.customerDisplay; it[K.cdLines] = n.customerLines; it[K.cdSlides] = n.customerSlides
+            it[K.scaleHost] = n.scaleHost; it[K.scalePort] = n.scalePort; it[K.scalePoll] = n.scalePoll; it[K.scaleGrams] = n.scaleGrams
         }
     }
 }

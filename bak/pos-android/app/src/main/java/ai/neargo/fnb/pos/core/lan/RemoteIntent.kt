@@ -47,6 +47,12 @@ sealed interface RemoteIntent {
     @Serializable data class BindMember(val tableId: String, val memberId: String?) : RemoteIntent
     @Serializable data class SetPromotions(val tableId: String, val ids: List<String>) : RemoteIntent
     @Serializable data class Adjust(val tableId: String, val request: AdjustmentRequest, val email: String, val password: String) : RemoteIntent
+    // 零售：收款、退换货、挂单 / 取单、补打小票由主机按当前价格与库存重算后入账
+    @Serializable data class RetailCheckout(val lines: List<ai.neargo.fnb.pos.core.model.CartLine>, val member: Boolean, val method: String, val received: Long, val online: Boolean, val extras: ai.neargo.fnb.pos.core.model.CheckoutExtras = ai.neargo.fnb.pos.core.model.CheckoutExtras()) : RemoteIntent
+    @Serializable data class RetailReturn(val req: ai.neargo.fnb.pos.core.model.ReturnRequest, val online: Boolean) : RemoteIntent
+    @Serializable data class RetailHold(val lines: List<ai.neargo.fnb.pos.core.model.CartLine>, val member: String?, val why: String) : RemoteIntent
+    @Serializable data class RetailRecall(val no: String) : RemoteIntent
+    @Serializable data class RetailReprint(val no: String) : RemoteIntent
 }
 
 /** 主机执行结果：ok=业务已执行（或重复请求返回原结果）；qty 用于送厨/挂单数量。 */
@@ -69,6 +75,7 @@ class HostExecutor(
     private val floor: FloorRepository, private val orders: OrderRepository, private val config: StoreConfigRepository,
     private val receipts: CommandReceipts, private val ops: ai.neargo.fnb.pos.core.data.OperationsRepository? = null,
     private val kds: ai.neargo.fnb.pos.core.data.KdsRepository? = null,
+    private val retail: ai.neargo.fnb.pos.core.data.RetailRepository? = null,
 ) {
     private val lock = Mutex()
 
@@ -117,5 +124,13 @@ class HostExecutor(
         is RemoteIntent.KdsRelease -> kds?.let { r(it.kdsRelease(i.ticketId, i.rev)) } ?: IntentResult(false, "主机不支持厨房屏")
         is RemoteIntent.BindMember -> ops?.let { r(it.bindMember(i.tableId, i.memberId)) } ?: IntentResult(false, "主机不支持会员操作")
         is RemoteIntent.SetPromotions -> ops?.let { r(it.setPromotions(i.tableId, i.ids)) } ?: IntentResult(false, "主机不支持优惠操作")
+        // 零售：成功时 message 带回单号，副机拉快照后按单号取结果
+        is RemoteIntent.RetailCheckout -> retail?.let { x -> x.checkoutRetail(i.lines, i.member, i.method, i.received, i.online, i.extras).fold({ IntentResult(true, it.no) }, { IntentResult(false, it.message ?: "收款失败") }) } ?: noRetail()
+        is RemoteIntent.RetailReturn -> retail?.let { x -> x.returnRetail(i.req, i.online).fold({ IntentResult(true, it.at.toString()) }, { IntentResult(false, it.message ?: "退货失败") }) } ?: noRetail()
+        is RemoteIntent.RetailHold -> retail?.let { x -> x.holdCart(i.lines, i.member, i.why).fold({ IntentResult(true, it) }, { IntentResult(false, it.message ?: "挂单失败") }) } ?: noRetail()
+        is RemoteIntent.RetailRecall -> retail?.let { x -> x.recallHeld(i.no).fold({ IntentResult(true, it.no) }, { IntentResult(false, it.message ?: "取单失败") }) } ?: noRetail()
+        is RemoteIntent.RetailReprint -> retail?.let { r(it.reprintSale(i.no)) } ?: noRetail()
     }
+
+    private fun noRetail() = IntentResult(false, "主机不支持零售操作")
 }

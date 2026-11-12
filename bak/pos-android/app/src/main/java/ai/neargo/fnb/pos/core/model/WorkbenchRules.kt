@@ -102,25 +102,27 @@ object Receipts {
     fun shift(r: ShiftRecord) = buildList {
         add("【交班单】${r.staff}"); add("${time.format(Date(r.start))} — ${time.format(Date(r.end))}"); add(rule())
         add(row("退菜 ${r.voidCount} 笔", yuan(r.voidAmount))); add(row("赠送 ${r.giftCount} 笔", yuan(r.giftAmount)))
-        add(row("收款笔数", "${r.count}")); add(row("营业额", yuan(r.total)))
+        add(row("收款笔数", "${r.count}")); if (r.refundCount > 0) add(row("退款 ${r.refundCount} 笔", yuan(-r.refund))); add(row("营业额", yuan(r.total)))
         r.byMethod.forEach { (m, v) -> add(row("  $m", yuan(v))) }
         add(rule()); add(row("备用金", yuan(r.float))); add(row("应有现金", yuan(r.cashExpected))); add(row("实盘", yuan(r.cashCounted)))
         add(row("差额", yuan(r.cashCounted - r.cashExpected)))
     }
 }
 
-/** 交班汇总：只统计本班开始后的收款。 */
+/** 交班汇总：只统计本班开始后的收款。退款（零售退货、退差价）记为负数收款：金额照常抵扣，笔数单独算。 */
 object ShiftRules {
-    data class Summary(val count: Int, val total: Long, val byMethod: Map<String, Long>, val cash: Long, val cashExpected: Long, val tables: Int, val voidAmount: Long = 0, val voidCount: Int = 0, val giftAmount: Long = 0, val giftCount: Int = 0)
+    data class Summary(val count: Int, val total: Long, val byMethod: Map<String, Long>, val cash: Long, val cashExpected: Long, val tables: Int, val voidAmount: Long = 0, val voidCount: Int = 0, val giftAmount: Long = 0, val giftCount: Int = 0,
+        val refundCount: Int = 0, val refund: Long = 0)
 
     fun summary(payments: List<PaymentRecord>, shift: ShiftState, adjustments: List<AdjustmentAudit> = emptyList()): Summary {
         val ps = payments.filter { it.at >= shift.start }
+        val refunds = ps.filter { it.amount < 0 }
         val by = ps.groupBy { it.method }.mapValues { (_, v) -> Money.sum(v.map { it.amount }) }
         val cash = by["现金"] ?: 0L
         val voids = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Void }
         val gifts = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Gift }
-        return Summary(ps.size, Money.sum(ps.map { it.amount }), by, cash, Math.addExact(shift.float, cash), ps.map { it.tableId }.distinct().size,
-            Money.sum(voids.map { it.amount }), voids.size, Money.sum(gifts.map { it.amount }), gifts.size)
+        return Summary(ps.size - refunds.size, Money.sum(ps.map { it.amount }), by, cash, Math.addExact(shift.float, cash), ps.filter { it.amount >= 0 }.map { it.tableId }.distinct().size,
+            Money.sum(voids.map { it.amount }), voids.size, Money.sum(gifts.map { it.amount }), gifts.size, refunds.size, -Money.sum(refunds.map { it.amount }))
     }
 }
 

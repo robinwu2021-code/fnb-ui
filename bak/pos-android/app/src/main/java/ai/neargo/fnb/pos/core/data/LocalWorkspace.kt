@@ -57,6 +57,7 @@ import ai.neargo.fnb.pos.core.model.DeliveryState
 import ai.neargo.fnb.pos.core.model.DeliveryRules
 import ai.neargo.fnb.pos.core.model.PaymentState
 import ai.neargo.fnb.pos.core.model.StoreSettings
+import ai.neargo.fnb.pos.core.model.BizType
 import ai.neargo.fnb.pos.core.model.StoreSummary
 import ai.neargo.fnb.pos.core.model.TableOrder
 import ai.neargo.fnb.pos.core.model.TableStatus
@@ -177,7 +178,7 @@ class LocalWorkspace(
     /** 身份与授权；为空时（单元测试）不做授权限制。 */
     private val identity: IdentityContext? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository, KdsRepository {
+) : SessionRepository, StoreConfigRepository, FloorRepository, OrderRepository, SyncRepository, PrintRepository, ShiftRepository, AuthRepository, OperationsRepository, StaffRepository, KdsRepository, RetailRepository {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     // 设备ID在首次创建时生成，随第一次保存落盘；不能等到下次启动再补，否则协调方登记会变化
@@ -224,11 +225,19 @@ class LocalWorkspace(
                     p.copy(searchAliases = p.searchAliases.ifBlank { original?.searchAliases.orEmpty() }, mealGroups = p.mealGroups.ifEmpty { original?.mealGroups.orEmpty() })
                 })
             }) else loaded
-            val restored = migrated.copy(
-                deviceId = migrated.deviceId.ifBlank { state.value.deviceId },
+            // 零售演示门店：旧数据里没有就补上（只补这一家，用户删掉的其他门店不恢复）
+            // R0 时补进来的是空的零售门店（没有商品和零售数据）：换成完整的演示目录
+            // 只给体验账号补：真实账号的门店以账号为准，不往里塞演示门店
+            val demoUser = migrated.user == "体验账号"
+            val emptyMart = migrated.stores[DemoCatalog.RETAIL_STORE_ID]?.let { it.biz == BizType.Retail && it.products.isEmpty() && it.retail == RetailData() } == true
+            val withRetail = if (demoUser && (DemoCatalog.RETAIL_STORE_ID !in migrated.stores || emptyMart) && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
+            // 第二家零售演示门店（调拨用）：旧数据里没有就补上
+            val withRetail2 = if (demoUser && DemoCatalog.RETAIL_STORE2_ID !in withRetail.stores && demo.containsKey(DemoCatalog.RETAIL_STORE2_ID)) withRetail.copy(stores = withRetail.stores + (DemoCatalog.RETAIL_STORE2_ID to demo.getValue(DemoCatalog.RETAIL_STORE2_ID))) else withRetail
+            val restored = withRetail2.copy(
+                deviceId = withRetail2.deviceId.ifBlank { state.value.deviceId },
                 // 旧数据（N4 前）首次由本机加载时绑定本机密钥
-                deviceKeyThumbprint = migrated.deviceKeyThumbprint.ifBlank { thumb },
-                stores = migrated.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
+                deviceKeyThumbprint = withRetail2.deviceKeyThumbprint.ifBlank { thumb },
+                stores = withRetail2.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
             )
             withContext(NonCancellable) {
                 store.save(json.encodeToString(Vault.serializer(), restored))
@@ -283,10 +292,10 @@ class LocalWorkspace(
     override val session: StateFlow<Session> = derive { v ->
         val s = v.store
         Session(v.user, s?.id, s?.settings?.shortName ?: "未选择门店",
-            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) DemoCatalog.STAFF else "未上岗", s?.currentTableId ?: "")
+            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) DemoCatalog.STAFF else "未上岗", s?.currentTableId ?: "", s?.biz ?: BizType.Dining)
     }
     override val stores: StateFlow<List<StoreSummary>> = derive { v ->
-        v.stores.values.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }) }
+        v.stores.values.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }, s.biz) }
     }
     override val current: StateFlow<StoreData?> = derive { it.store }
     override val tables: StateFlow<List<DiningTable>> = derive { it.store?.tables.orEmpty() }
@@ -918,6 +927,55 @@ class LocalWorkspace(
         }
     }
 
+
+    // —— 零售：实现在 RetailService（只依赖公共内核 StoreKernel），这里只委托，供主机仲裁和测试按原接口调用 ——
+    /** 公共内核：业态服务只通过它改门店数据（事务、权限、单号、打印副本、主管授权） */
+    internal val kernel: StoreKernel = object : StoreKernel {
+        override val vault: StateFlow<Vault> get() = state
+        override fun clock() = this@LocalWorkspace.clock()
+        override fun newId(prefix: String) = this@LocalWorkspace.newId(prefix)
+        override fun actorName(v: Vault) = this@LocalWorkspace.actorName(v)
+        override fun need(perm: Perm) = this@LocalWorkspace.need(perm)
+        override fun <T> derive(f: (Vault) -> T) = this@LocalWorkspace.derive(f)
+        override suspend fun storeOp(event: EventSpec?, check: (StoreData) -> String?, f: (StoreData) -> StoreData) = this@LocalWorkspace.storeOp(event, check, f)
+        override suspend fun <T> transaction(event: EventSpec?, f: (Vault) -> Pair<Vault, T>): T = this@LocalWorkspace.transaction(event, f)
+        override fun copies(s: StoreData, job: PrintJob) = s.withCopies(job)
+        override fun supervisorAuth(v: Vault, who: String, secret: String) = this@LocalWorkspace.supervisorAuth(v, who, secret)
+    }
+    private val settlement = Settlement(kernel)
+    private val retailService by lazy { RetailService(kernel) }
+    override val retail: StateFlow<RetailData> get() = retailService.retail
+    override suspend fun holdCart(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: String?, why: String): Result<String> = retailService.holdCart(lines, member, why)
+    override suspend fun recallHeld(no: String): Result<ai.neargo.fnb.pos.core.model.RetailHeld> = retailService.recallHeld(no)
+    override suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String, scope: String, toStore: String): Result<String> = retailService.newStockDoc(kind, supplier, scope, toStore)
+    override suspend fun setStockDocLines(no: String, lines: List<ai.neargo.fnb.pos.core.model.StockDocLine>): Result<Unit> = retailService.setStockDocLines(no, lines)
+    override suspend fun advanceStockDoc(no: String): Result<ai.neargo.fnb.pos.core.model.StockDocState> = retailService.advanceStockDoc(no)
+    override suspend fun voidStockDoc(no: String): Result<Unit> = retailService.voidStockDoc(no)
+    override suspend fun returnRetail(req: ai.neargo.fnb.pos.core.model.ReturnRequest, online: Boolean): Result<ai.neargo.fnb.pos.core.model.SaleReturn> = retailService.returnRetail(req, online)
+    override suspend fun reprintSale(no: String): Result<Unit> = retailService.reprintSale(no)
+    override suspend fun setRetailPrice(productId: String, price: Long): Result<Unit> = retailService.setRetailPrice(productId, price)
+    override suspend fun queueLabel(productId: String): Result<Unit> = retailService.queueLabel(productId)
+    override suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int> = retailService.printLabels(productIds, tpl)
+    override suspend fun simulateOnlineOrder(channel: ai.neargo.fnb.pos.core.model.SaleChannel): Result<String> = retailService.simulateOnlineOrder(channel)
+    override suspend fun advanceOnline(no: String): Result<ai.neargo.fnb.pos.core.model.OnlineState> = retailService.advanceOnline(no)
+    override suspend fun rejectOnline(no: String, reason: String): Result<Unit> = retailService.rejectOnline(no, reason)
+    override suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings): Result<Unit> = retailService.saveRetailSettings(settings)
+    override suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean, extras: ai.neargo.fnb.pos.core.model.CheckoutExtras): Result<ai.neargo.fnb.pos.core.model.RetailSale> = retailService.checkoutRetail(lines, member, method, received, online, extras)
+    override fun actor(): String = retailService.actor()
+    override suspend fun authorize(who: String, secret: String): Result<String> = retailService.authorize(who, secret)
+
+    /** 主管授权（退菜、折扣、无单退货共用）：员工姓名或 ID + PIN（需「授权」权限）、主管账号 + 密码，或体验账号；返回授权人 */
+    private fun supervisorAuth(v: Vault, who: String, secret: String): Result<String> = runCatching {
+        val account = v.accounts.firstOrNull { it.supervisor && it.email.equals(who.trim(), true) }
+        val demo = v.user == "体验账号" && who.trim() == "manager@demo.local" && secret == "demo12345"
+        val emp = v.store?.employees?.firstOrNull { it.enabled && (it.id == who.trim() || it.name == who.trim()) }
+        val empOk = emp != null && Perm.Adjust in Roles.perms(emp.role) && ManageRules.hash(secret, emp.salt) == emp.pinHash
+        require(empOk || demo || (account != null && ManageRules.hash(secret, account.salt) == account.hash)) {
+            if (emp != null && Perm.Adjust !in Roles.perms(emp.role)) "${emp.name}（${emp.role.label}）无授权权限" else "主管账号或密码（PIN）不正确"
+        }
+        emp?.takeIf { empOk }?.name ?: who.trim()
+    }
+
     override suspend fun saveMenu(id: String?, name: String, en: String, productIds: List<String>): Result<Unit> {
         val key = id ?: newId("m")
         return storeOp(event = config(if (id == null) "MenuCreated" else "MenuUpdated", "menu") { key }, check = { s ->
@@ -1035,24 +1093,16 @@ class LocalWorkspace(
             val pay = PaymentRecord(pid, tableId, amount, method, clock(), synced = online, received = if (method == "现金") received else amount, change = if (method == "现金") received - amount else 0L,
                 orderId = s.order(tableId).orderId.ifBlank { null }, currency = s.settings.currency,
                 state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
-            val out = if (online) s.outbox else s.outbox + OutboxItem(pid, OutboxKind.Payment, tableId, "$tableId $method 收款 ${yuan(amount)}", clock())
             val receipt = PrintJob(newId("R"), PrintKind.Receipt, "$tableId 结账单", Receipts.bill("结账单", s, tableId, s.order(tableId), clock(), pay), clock())
             val o = s.order(tableId); val t = OrderRules.totals(o)
             val snap = SettledOrder(o.orderId, tableId, pid, clock(), o.lines, t.sub, t.service, t.discount, t.due, method, o.memberId, o.promotions.map { it.name }, s.table(tableId)?.guests ?: 0)
             val member = s.members.firstOrNull { it.id == o.memberId }
-            val actor = actorName(state.value)
-            var members = s.members; var txns = s.memberTxns; var wallet = s.walletBalance
-            if (member != null) {
-                val stored = method == "储值卡"
-                val pts = (amount / 100) * s.settings.pointsPerYuan
-                val m2 = member.copy(balance = if (stored) member.balance - amount else member.balance, points = member.points + pts, totalSpent = member.totalSpent + amount, visits = member.visits + 1)
-                members = members.map { if (it.id == member.id) m2 else it }
-                if (stored) txns = txns + MemberTxn(newId("MT"), member.id, MemberTxnKind.Consume, -amount, m2.balance, clock(), pid, actor, method)
-                if (pts > 0) txns = txns + MemberTxn(newId("MT"), member.id, MemberTxnKind.Points, 0, m2.balance, clock(), pid, actor, points = pts)
-            } else if (method == "储值卡") wallet -= amount // 旧版演示余额
-            s.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
-                .copy(payments = s.payments + pay, outbox = out, printJobs = s.printJobs + s.withCopies(receipt), walletBalance = wallet,
-                    members = members, memberTxns = txns, settledOrders = s.settledOrders + snap)
+            // 收款记录、离线同步队列、会员积分 / 储值：公共收款 Settlement（零售收银同一份）
+            var next = settlement.record(s, pay, online, tableId, "$tableId $method 收款 ${yuan(amount)}")
+            next = if (member != null) settlement.memberSpend(next, member.id, amount, method == "储值卡", pid, actorName(state.value), method)
+                else if (method == "储值卡") next.copy(walletBalance = next.walletBalance - amount) else next // 旧版演示余额
+            next.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
+                .copy(printJobs = next.printJobs + next.withCopies(receipt), settledOrders = next.settledOrders + snap)
         }
     }
 
@@ -1416,7 +1466,7 @@ class LocalWorkspace(
             val s = v.store ?: return@transaction v to Result.failure(IllegalStateException("请先选择门店"))
             val sum = ShiftRules.summary(s.payments, s.shift, s.adjustments)
             val start = if (s.shift.start > 0) s.shift.start else s.payments.minOfOrNull { it.at } ?: clock()
-            val rec = ShiftRecord(newId("S"), start, clock(), staff, sum.total, sum.count, sum.byMethod, s.shift.float, sum.cashExpected, counted, sum.voidAmount, sum.voidCount, sum.giftAmount, sum.giftCount)
+            val rec = ShiftRecord(newId("S"), start, clock(), staff, sum.total, sum.count, sum.byMethod, s.shift.float, sum.cashExpected, counted, sum.voidAmount, sum.voidCount, sum.giftAmount, sum.giftCount, sum.refundCount, sum.refund)
             val next = s.copy(
                 shift = ShiftState(start = clock(), float = s.shift.float, history = s.shift.history + rec),
                 printJobs = s.printJobs + s.withCopies(PrintJob(newId("SH"), PrintKind.Shift, "交班单 $staff", Receipts.shift(rec), clock())),
@@ -1457,14 +1507,8 @@ class LocalWorkspace(
             AdjustmentKind.Discount -> "OrderDiscounted"
         }
         commit(page(type, tableId)) { v ->
-            val account = v.accounts.firstOrNull { it.supervisor && it.email.equals(email.trim(), true) }
-            val demo = v.user == "体验账号" && email.trim() == "manager@demo.local" && password == "demo12345"
             // 员工模式：主管/店长以姓名（或员工ID）+ PIN 授权，需具备「退菜、赠送、折扣授权」权限
-            val emp = v.store?.employees?.firstOrNull { it.enabled && (it.id == email.trim() || it.name == email.trim()) }
-            val empOk = emp != null && Perm.Adjust in Roles.perms(emp.role) && ManageRules.hash(password, emp.salt) == emp.pinHash
-            require(empOk || demo || (account != null && ManageRules.hash(password, account.salt) == account.hash)) {
-                if (emp != null && Perm.Adjust !in Roles.perms(emp.role)) "${emp.name}（${emp.role.label}）无授权权限" else "主管账号或密码（PIN）不正确"
-            }
+            val approver = supervisorAuth(v, email, password).getOrThrow()
             val s = v.store ?: error("请先选择门店")
             require(s.table(tableId)?.status == TableStatus.Dining) { "请先开台" }
             val old = s.order(tableId)
@@ -1476,7 +1520,7 @@ class LocalWorkspace(
                 AdjustmentKind.Void -> if (line?.gifted == true) 0 else (line?.unit ?: 0) * request.quantity
                 AdjustmentKind.Discount -> OrderRules.totals(old).due - OrderRules.totals(updated).due
             }
-            val audit = AdjustmentAudit(newId("A"), tableId, request.kind, actorName(v), emp?.takeIf { empOk }?.name ?: email.trim(), request.reason.trim(), amount,
+            val audit = AdjustmentAudit(newId("A"), tableId, request.kind, actorName(v), approver, request.reason.trim(), amount,
                 if (request.kind == AdjustmentKind.Gift) line?.qty ?: 0 else if (request.kind == AdjustmentKind.Void) request.quantity else 0,
                 clock(), line?.name.orEmpty(), if (request.kind == AdjustmentKind.Discount) "${request.percent}%" else "")
             var next = s.withOrder(tableId, updated).copy(adjustments = s.adjustments + audit)

@@ -43,7 +43,7 @@ object StaffRules {
      * 事件类型 → 所需权限。退菜/赠送/折扣由主管凭据单独授权，不在此校验；未列出的类型不需要额外权限。
      */
     fun permFor(eventType: String): Perm? = when (eventType) {
-        "PaymentRecorded" -> Perm.Checkout
+        "PaymentRecorded", "RetailSaleCompleted", "RetailReturned", "RetailReceiptReprinted", "OnlineOrderReceived", "OnlineOrderAdvanced", "OnlineOrderRejected" -> Perm.Checkout
         "MemberCreated" -> Perm.Member
         "MemberRecharged" -> Perm.Recharge
         "ShiftClosed" -> Perm.Shift
@@ -51,7 +51,11 @@ object StaffRules {
         "EmployeeSaved" -> Perm.Staff
         "StockAdjusted", "PromotionSaved", "StoreSettingsUpdated", "AreaCreated", "TableConfigCreated", "TableConfigUpdated",
         "CategoryCreated", "SpecGroupCreated", "ProductCreated", "ProductUpdated", "MenuCreated", "MenuUpdated",
-        "MenuPublished", "MenuUnpublished", "TablePositionChanged", "KitchenStationsSaved", "KitchenDeliveryPolicySaved", "KitchenDispatchSaved" -> Perm.Settings
+        "MenuPublished", "MenuUnpublished", "TablePositionChanged", "KitchenStationsSaved", "KitchenDeliveryPolicySaved", "KitchenDispatchSaved",
+        // 零售库存作业（入库 / 盘点 / 报损的建单、修改、过账、作废）
+        "StockDocCreated", "StockDocUpdated", "StockDocSubmitted", "StockDocPosted", "StockDocVoided",
+        // 零售商品：改价、价签
+        "RetailPriceChanged", "LabelQueued", "LabelsPrinted", "RetailSettingsSaved" -> Perm.Settings
         "DishVoided", "DishGifted", "OrderDiscounted" -> null
         // 厨房屏操作：由已配对工位设备授权
         "KdsTicketAdvanced", "KdsTicketReleased" -> null

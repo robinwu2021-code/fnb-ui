@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.manage
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
@@ -55,8 +57,9 @@ internal fun ColumnScope.CategoriesSection(store: StoreData, vm: ManageViewModel
 /** 商品资料：列表 + 新建 / 编辑（六分区编辑器）。未关联已发布餐牌的商品不进入点餐。 */
 @Composable
 internal fun ColumnScope.ProductsSection(store: StoreData, vm: ManageViewModel) {
-    val cols = listOf(Col("商品", 2f), Col("分类"), Col("售价", end = true), Col("库存", 0.7f, end = true), Col("餐牌", 1.4f), Col("", 0.6f, end = true))
-    PageHeader("商品资料", "${store.products.size} 个商品；只有关联已发布餐牌的商品出现在点餐页") { PosButton("新建商品", vm::newProduct, variant = BtnVariant.Primary) }
+    val retail = store.profile.retail
+    val cols = listOf(Col("商品", 2f), Col("分类"), Col("售价", end = true), Col("库存", 0.7f, end = true), Col(if (retail) "条码" else "餐牌", 1.4f), Col("", 0.6f, end = true))
+    PageHeader("商品资料", if (retail) "${store.products.size} 个商品；改价、价签在「商品」页签更顺手" else "${store.products.size} 个商品；只有关联已发布餐牌的商品出现在点餐页") { PosButton("新建商品", vm::newProduct, variant = BtnVariant.Primary) }
     DataTable(cols, Modifier.weight(1f)) {
         items(store.products.size) { i ->
             val p = store.products[i]
@@ -68,9 +71,11 @@ internal fun ColumnScope.ProductsSection(store: StoreData, vm: ManageViewModel) 
                     Cell(p.name)
                 },
                 { Cell(store.categories.firstOrNull { it.id == p.categoryId }?.name ?: "—", sub = true) },
-                { Cell(yuan(p.displayPrice) + if (p.hasSpec) " 起" else "") },
-                { Cell(p.totalStock?.toString() ?: "不限") },
-                { if (menus.none { it.published }) Tag("未上架", fg = Pos.colors.warning) else Cell(menus.filter { it.published }.joinToString("、") { it.name }, sub = true) },
+                { Cell(yuan(p.displayPrice) + if (p.retail?.weighable == true) "/kg" else if (p.hasSpec) " 起" else "") },
+                // 零售称重商品库存按克存，显示成 kg
+                { Cell(p.totalStock?.let { if (retail) ai.neargo.fnb.pos.core.model.StockWork.qtyText(p, it.toLong()) else it.toString() } ?: "不限") },
+                { if (retail) Cell(p.retail?.barcodes?.firstOrNull() ?: "—", sub = true)
+                  else if (menus.none { it.published }) Tag("未上架", fg = Pos.colors.warning) else Cell(menus.filter { it.published }.joinToString("、") { it.name }, sub = true) },
                 { PosButton("编辑", { vm.editProduct(p) }, variant = BtnVariant.Text, size = BtnSize.Small) },
             ), cols, onClick = { vm.editProduct(p) })
         }

@@ -243,3 +243,40 @@ internal data class KitchenDeliveryPolicyPayload(val modes: Map<String, ai.nearg
 
 @kotlinx.serialization.Serializable
 internal data class KitchenDispatchPayload(val modes: Map<String, ai.neargo.fnb.pos.core.model.KdsDispatch>)
+
+/**
+ * 零售（门店业态 = 零售）：挂单 / 取单、库存作业单据。收银、退换货、价签的写操作随 R3–R6 补进来。
+ */
+interface RetailRepository {
+    val retail: StateFlow<ai.neargo.fnb.pos.core.model.RetailData>
+    suspend fun holdCart(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: String?, why: String): Result<String>
+    suspend fun recallHeld(no: String): Result<ai.neargo.fnb.pos.core.model.RetailHeld>
+    suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String = "", scope: String = "", toStore: String = ""): Result<String>
+    suspend fun setStockDocLines(no: String, lines: List<ai.neargo.fnb.pos.core.model.StockDocLine>): Result<Unit>
+    /** 入库 / 报损：过账；盘点：盘点中 → 提交（冻结账面）→ 再调一次为审批过账 */
+    suspend fun advanceStockDoc(no: String): Result<ai.neargo.fnb.pos.core.model.StockDocState>
+    suspend fun voidStockDoc(no: String): Result<Unit>
+    /** 零售收款入账：写零售单、收款记录（交班汇总包含）、小票、离线时进同步队列，并扣库存 */
+    /** 退货 / 换货：原单记退货、退款记负数收款（换货不退钱，记抵扣）、回库存或记报损；无单退货要主管授权 */
+    suspend fun returnRetail(req: ai.neargo.fnb.pos.core.model.ReturnRequest, online: Boolean): Result<ai.neargo.fnb.pos.core.model.SaleReturn>
+    /** 补打零售小票 */
+    suspend fun reprintSale(no: String): Result<Unit>
+    /** 改售价：收银立即按新价算，商品进「待打价签」（已在队列里的保留最早的原价） */
+    suspend fun setRetailPrice(productId: String, price: Long): Result<Unit>
+    /** 手动把商品加进待打价签 */
+    suspend fun queueLabel(productId: String): Result<Unit>
+    /** 打印选中的价签：生成标签机指令并记录，打完从队列移走；返回张数 */
+    suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int>
+    /** 线上订单：模拟来单（演示；真实平台接入后由平台推送）、接单、拣货完成、顾客取走 / 送达、拒单 */
+    suspend fun simulateOnlineOrder(channel: ai.neargo.fnb.pos.core.model.SaleChannel): Result<String>
+    suspend fun advanceOnline(no: String): Result<ai.neargo.fnb.pos.core.model.OnlineState>
+    suspend fun rejectOnline(no: String, reason: String): Result<Unit>
+    /** 保存零售设置 */
+    suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings): Result<Unit>
+    suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean,
+                               extras: ai.neargo.fnb.pos.core.model.CheckoutExtras = ai.neargo.fnb.pos.core.model.CheckoutExtras()): Result<ai.neargo.fnb.pos.core.model.RetailSale>
+    /** 当前操作人（员工姓名；没有员工时是登录账号），记在单据和授权说明里 */
+    fun actor(): String
+    /** 主管授权（改价、整单折扣用）：通过返回授权人 */
+    suspend fun authorize(who: String, secret: String): Result<String>
+}

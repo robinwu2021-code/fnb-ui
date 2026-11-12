@@ -30,6 +30,8 @@ data class Sku(
     val stock: Int,
     val manualPrice: Boolean = false,
     val manualStock: Boolean = false,
+    /** 零售：这一格规格自己的条码（服饰尺码 × 颜色） */
+    val barcode: String? = null,
 )
 
 @Serializable
@@ -51,6 +53,8 @@ data class Product(
     val mealGroups: List<MealGroup> = emptyList(),
     /** 离线搜索别名：空格或逗号分隔的全拼、首字母。 */
     val searchAliases: String = "",
+    /** 零售字段：条码、单位、称重、进价、会员价、促销、到期日、安全库存（餐饮门店为空） */
+    val retail: RetailInfo? = null,
 ) {
     val hasSpec get() = skus.isNotEmpty()
     /** 展示价：有 SKU 取最低 SKU 价。 */
@@ -282,6 +286,10 @@ data class StoreData(
     val code: String,
     val address: String,
     val settings: StoreSettings,
+    /** 门店业态（默认餐饮，旧数据兼容） */
+    val biz: BizType = BizType.Dining,
+    /** 零售业务数据（零售门店才有内容） */
+    val retail: RetailData = RetailData(),
     val areas: List<Area>,
     val tables: List<DiningTable>,
     val categories: List<Category>,
@@ -369,6 +377,8 @@ const val TASK_LOG_LIMIT = 500
 
 @Serializable enum class PrintKind(val label: String, val printer: String) {
     Kitchen("厨房单", "厨房"), PreBill("预结单", "前台"), Receipt("结账单", "前台"), Shift("交班单", "前台"), Test("测试页", "指定"),
+    /** 零售价签：正文是 TSPL 指令，发往「标签机」路由的打印机 */
+    Label("价签", "标签机"),
 }
 /**
  * 打印状态（N6 分级）：Printed 仅用于模拟/历史与人工确认；真实打印机发出后为 Sent（已写入且状态正常，仍非出纸确认），
@@ -432,6 +442,9 @@ data class ShiftRecord(
     val voidCount: Int = 0,
     val giftAmount: Long = 0,
     val giftCount: Int = 0,
+    /** 退款（零售退货、退差价）：笔数与金额（正数）；营业额已扣过 */
+    val refundCount: Int = 0,
+    val refund: Long = 0,
 )
 
 /** 当前班次：开班时间、备用金、历史交班。 */
@@ -447,6 +460,8 @@ data class Session(
     val store: String,
     val staff: String,
     val currentTableId: String,
+    /** 当前门店业态 */
+    val biz: BizType = BizType.Dining,
 )
 
 /** 设备与网络：online = 系统网络可用且未强制离线。 */
@@ -459,7 +474,10 @@ data class DeviceStatus(
 }
 
 /** 门店卡片（选店页）。 */
-data class StoreSummary(val id: String, val name: String, val code: String, val address: String, val tables: Int, val dining: Int)
+data class StoreSummary(val id: String, val name: String, val code: String, val address: String, val tables: Int, val dining: Int, val biz: BizType = BizType.Dining)
+
+/** 门店业态：登录选店后按它进餐饮或零售工作台（同一个 App）。旧数据没有这个字段，读出为餐饮。 */
+@Serializable enum class BizType(val label: String, val en: String) { Dining("餐饮", "Dining"), Retail("零售", "Retail") }
 
 
 /** 默认活动（与旧版写死的券/活动一致，便于迁移）。 */

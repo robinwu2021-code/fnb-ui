@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.shift
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -54,12 +56,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class ShiftUiState(val shift: ShiftState = ShiftState(), val summary: ShiftRules.Summary = ShiftRules.summary(emptyList(), ShiftState()), val staff: String = "", val closing: Boolean = false)
+data class ShiftUiState(val shift: ShiftState = ShiftState(), val summary: ShiftRules.Summary = ShiftRules.summary(emptyList(), ShiftState()), val staff: String = "", val closing: Boolean = false, val retail: Boolean = false)
 
 class ShiftViewModel(config: StoreConfigRepository, session: SessionRepository, private val shift: ShiftRepository, private val messages: MessageBus) : ViewModel() {
     val state = combine(config.current, session.session) { s, ss ->
         val st = s?.shift ?: ShiftState()
-        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st, s?.adjustments.orEmpty()), ss.staff)
+        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st, s?.adjustments.orEmpty()), ss.staff, retail = s?.profile?.tables == false)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShiftUiState())
 
     /** 交班：实盘金额（元）校验后生成交班记录与交班单，开启新班次。 */
@@ -108,10 +110,11 @@ private fun Summary(state: ShiftUiState, modifier: Modifier) {
             DetailBlock("营业额") {
                 Text(yuan(s.total), style = t.amount.num(), color = c.ink)
                 KeyValue("收款笔数", "${s.count} 笔")
-                KeyValue("结账桌台", "${s.tables} 桌")
+                if (s.refundCount > 0) KeyValue("退款（已从营业额扣除）", "${s.refundCount} 笔 · ${yuan(-s.refund)}")
+                if (!state.retail) KeyValue("结账桌台", "${s.tables} 桌")
                 KeyValue("客单价", if (s.count > 0) yuan(s.total / s.count) else "—")
             }
-            DetailBlock("退赠统计") {
+            if (!state.retail) DetailBlock("退赠统计") {
                 KeyValue("退菜笔数", "${s.voidCount}")
                 KeyValue("退菜金额", yuan(s.voidAmount))
                 KeyValue("赠送笔数", "${s.giftCount}")

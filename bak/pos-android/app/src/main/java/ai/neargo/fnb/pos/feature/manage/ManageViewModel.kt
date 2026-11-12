@@ -31,8 +31,18 @@ enum class Section(val group: String, val label: String) {
     Tables("门店运营", "桌台管理"), Areas("门店运营", "桌台区域"), Store("门店运营", "门店与营业"),
     Members("会员与营销", "会员管理"), Promotions("会员与营销", "优惠活动"),
     Categories("商品管理", "商品分类"), Products("商品管理", "商品资料"), Specs("商品管理", "规格组"), Stock("商品管理", "库存盘点"), Menus("商品管理", "餐牌管理"),
+    Retail("商品管理", "零售设置"),
     Devices("设备与系统", "终端与打印"), Payments("设备与系统", "收款与费用"), Staff("设备与系统", "员工与权限"), Display("设备与系统", "界面显示"), Lan("设备与系统", "主副 POS"), Stations("设备与系统", "厨房档口"), Customer("设备与系统", "客显屏"), Auth("设备与系统", "授权中心"), Data("设备与系统", "数据与恢复"), Gallery("设备与系统", "组件验收"),
     SwitchStore("账号与门店", "切换门店"), Account("账号与门店", "账号登录"),
+}
+
+/** 按门店业态裁剪菜单：零售没有桌台、餐牌、厨房档口，库存走「库存」页签；餐饮没有零售设置 */
+fun Section.visibleFor(biz: ai.neargo.fnb.pos.core.model.BizType) = visibleFor(ai.neargo.fnb.pos.core.model.BizProfile.of(biz))
+fun Section.visibleFor(p: ai.neargo.fnb.pos.core.model.BizProfile) = when (this) {
+    Section.Tables, Section.Areas, Section.Menus, Section.Stations -> p.tables
+    Section.Stock -> p.manageStock
+    Section.Retail -> p.retail
+    else -> true
 }
 
 /** 图片状态：empty → reading → ready / error（v3.4）。 */
