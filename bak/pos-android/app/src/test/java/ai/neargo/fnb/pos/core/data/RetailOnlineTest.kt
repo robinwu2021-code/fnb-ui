@@ -53,4 +53,22 @@ class RetailOnlineTest {
         assertTrue(w.current.value!!.printJobs.none { it.title == "拣货单 $b" })
         assertTrue(w.simulateOnlineOrder(SaleChannel.Store).isFailure)
     }
+
+    @Test fun miniSaleRefundsToOnlinePay() = runTest(UnconfinedTestDispatcher()) {
+        val w = mart(backgroundScope)
+        val no = w.simulateOnlineOrder(SaleChannel.Mini).getOrThrow()
+        repeat(3) { w.advanceOnline(no).getOrThrow() }
+        val sale = w.retail.value.sales.first { it.no == w.retail.value.online.first { o -> o.no == no }.saleNo }
+        val pick = mapOf(sale.lines.first().key to 1)
+        // 小程序单原路退回线上支付；离线不行
+        assertEquals("离线时线上支付退款不可用", w.returnRetail(ReturnRequest(sale.no, pick, ReturnRules.Reason.Unwanted, true, ONLINE_PAY), false).exceptionOrNull()?.message)
+        val r = w.returnRetail(ReturnRequest(sale.no, pick, ReturnRules.Reason.Unwanted, true, ONLINE_PAY), true).getOrThrow()
+        assertEquals(ONLINE_PAY, w.current.value!!.payments.last().method); assertEquals(-r.amount, w.current.value!!.payments.last().amount)
+    }
+
+    @Test fun emptyPoolFailsInsteadOfCrashing() = runTest(UnconfinedTestDispatcher()) {
+        val w = mart(backgroundScope)
+        w.current.value!!.products.filter { (it.stock ?: 0) > 0 }.forEach { w.adjustStock(it.id, null, 0, "清空").getOrThrow() }
+        assertEquals("没有可下单的在售商品", w.simulateOnlineOrder(SaleChannel.Mini).exceptionOrNull()?.message)
+    }
 }

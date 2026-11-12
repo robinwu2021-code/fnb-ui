@@ -22,6 +22,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.Workbench
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
 import ai.neargo.fnb.pos.core.designsystem.theme.num
 import ai.neargo.fnb.pos.core.model.BillSide
+import ai.neargo.fnb.pos.core.model.ONLINE_PAY
 import ai.neargo.fnb.pos.core.model.RetailSale
 import ai.neargo.fnb.pos.core.model.ReturnRules
 import ai.neargo.fnb.pos.core.model.yuan
@@ -316,17 +317,21 @@ private fun ReasonStep(state: RetailOrdersUiState, f: ReturnFlow, sale: RetailSa
     if (sale != null && sale.discount > 0) Text("原单有整单优惠 ${yuan(sale.discount)}，已按各行实付比例分摊后计算退款", style = t.label, color = c.sub)
 }
 
+/** 要联网才能退的方式 */
+private val OFFLINE_BLOCKED = setOf("扫码", ONLINE_PAY)
+
 @Composable
 private fun RefundStep(state: RetailOrdersUiState, f: ReturnFlow, onAction: (RetailOrdersAction) -> Unit) {
     val c = Pos.colors; val t = Pos.type
     Text(if (f.noReceipt) "退款方式（无单只能退现金或储值）" else if (state.settings.originalMethod) "退款方式（按原收款方式退）" else "退款方式", style = t.section, color = c.ink)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf("现金", "扫码", "银行卡", "储值卡").forEach { m ->
+        // 小程序单原路退回线上支付：原单有这种收款才多一个按钮
+        (listOf("现金", "扫码", "银行卡", "储值卡") + listOf(ONLINE_PAY).filter { it in state.methods }).forEach { m ->
             PosButton(m, { onAction(RetailOrdersAction.Method(m)) }, Modifier.weight(1f), size = BtnSize.Large, selected = f.method == m,
-                enabled = m in state.methods && !(m == "扫码" && !state.online))
+                enabled = m in state.methods && !(m in OFFLINE_BLOCKED && !state.online))
         }
     }
-    if (!state.online && f.method == "扫码") Text("离线时扫码退款不可用", style = t.label, color = c.warning)
+    if (!state.online && f.method in OFFLINE_BLOCKED) Text("离线时${f.method}退款不可用", style = t.label, color = c.warning)
     Row(Modifier.fillMaxWidth().clip(Pos.metrics.card).background(c.tint).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("退款金额", style = t.body, color = c.ink)

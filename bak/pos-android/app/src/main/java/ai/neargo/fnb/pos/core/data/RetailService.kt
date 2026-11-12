@@ -181,15 +181,18 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
             val t = RetailCheckout.totalsWith(ps, s.promotions, lines, member, extras)
             val credit = s.retail.credit
             val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
+            // 活动、限售时段、限购：按顺序只算一次（前面的校验没过就不算）
+            var block: String? = null; var blockDone = false
+            fun ruleBlock(): String? { if (!blockDone) { blockDone = true
+                block = RetailCheckout.promotionBlock(ps, s.promotions, lines, extras.promotionIds) ?: RetailCheckout.restrictBlock(ps, lines, s.retail.settings, nowTime()) ?: RetailCheckout.limitBlock(ps, lines, s.retail.settings.promoLimit) }
+                return block }
             when {
                 lines.isEmpty() && credit == null -> "购物车是空的"
                 lines.any { !it.custom && s.product(it.productId) == null } -> "购物车里有已下架的商品"
                 extras.discountPct !in 50..100 -> "整单折扣在 5 折到不打折之间"
                 lines.any { (it.price ?: 0) < 0 } -> "改后单价不能为负"
                 RetailCheckout.needsApproval(lines, extras) && extras.approver.isBlank() -> "改价、整单折扣需要主管授权"
-                RetailCheckout.promotionBlock(ps, s.promotions, lines, extras.promotionIds) != null -> RetailCheckout.promotionBlock(ps, s.promotions, lines, extras.promotionIds)
-                RetailCheckout.restrictBlock(ps, lines, s.retail.settings, nowTime()) != null -> RetailCheckout.restrictBlock(ps, lines, s.retail.settings, nowTime())
-                RetailCheckout.limitBlock(ps, lines, s.retail.settings.promoLimit) != null -> RetailCheckout.limitBlock(ps, lines, s.retail.settings.promoLimit)
+                ruleBlock() != null -> ruleBlock()
                 !Money.withinBill(t.due) || !Money.withinBill(received) -> "金额超出上限"
                 // 换货抵扣后不用再收钱：收款方式不看
                 credit != null && st.pay == 0L -> retailOnly(s) ?: need(Perm.Checkout)
@@ -281,8 +284,10 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 req.exchange -> retailOnly(s) ?: need(Perm.Checkout)
                 req.saleNo == null && req.method !in ReturnRules.NO_RECEIPT_METHODS -> "无单退货只能退现金或储值"
                 sale != null && s.retail.settings.originalMethod && sale.pays.none { it.method == req.method } -> "只能按原收款方式退"
-                sale != null && req.method !in s.settings.payMethods -> "门店未启用「${req.method}」"
-                !online && req.method == "扫码" -> "离线时扫码退款不可用"
+                // 线上支付（小程序单）原路退回，不看门店收款方式
+                sale != null && req.method == ONLINE_PAY && sale.pays.none { it.method == ONLINE_PAY } -> "原单没有线上支付"
+                sale != null && req.method != ONLINE_PAY && req.method !in s.settings.payMethods -> "门店未启用「${req.method}」"
+                !online && (req.method == "扫码" || req.method == ONLINE_PAY) -> "离线时${req.method}退款不可用"
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
@@ -327,7 +332,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                         x.copy(lines = x.lines.map { it.copy(returned = applied.getValue(it.key).returned) }, returns = x.returns + r)
                     }
                 }, credit = if (req.exchange) ExchangeCredit(sale.no, amount, pieces, sale.pays.firstOrNull { it.method != EXCHANGE }?.method ?: "现金", sale.memberId) else d.credit)
-                else d.copy(looseReturns = listOf(LooseReturn(ref, clock(), back.map { it.first }, amount, req.reason, req.method, approver, req.restock)) + d.looseReturns)
+                else d.copy(looseReturns = listOf(LooseReturn(ref, r.at, back.map { it.first }, amount, req.reason, req.method, approver, req.restock)) + d.looseReturns)
             }
         }.map { out!! }
     }
@@ -391,14 +396,21 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
             o.lines.sortedBy { l -> s.product(l.productId)?.categoryId.orEmpty() }.map { l -> "□ ${s.product(l.productId)?.name ?: l.productId}${l.sku?.let { " $it" }.orEmpty()} ×${l.qty}" } +
             listOfNotNull(o.note.ifBlank { null }?.let { "备注：$it" }), clock())
 
+    /** 演示线上单可挑的商品：在售、按件、无规格 */
+    private fun onlinePool(s: StoreData) = s.products.filter { it.retail?.weighable != true && !it.hasSpec && (it.stock ?: 0) > 0 && it.price >= 100 }
+
     override suspend fun simulateOnlineOrder(channel: SaleChannel): Result<String> {
         var no = ""
         return storeOp(event = retailEvent("OnlineOrderReceived", """{"channel":"$channel"}"""), check = { s ->
-            if (channel == SaleChannel.Store) "门店渠道不是线上订单" else retailOnly(s) ?: need(Perm.Checkout)
+            when {
+                channel == SaleChannel.Store -> "门店渠道不是线上订单"
+                onlinePool(s).isEmpty() -> "没有可下单的在售商品"
+                else -> retailOnly(s) ?: need(Perm.Checkout)
+            }
         }) { s ->
             val seq = s.retail.onlineSeq
             // 演示：从在售、按件、无规格的商品里轮流挑 2–3 样
-            val pool = s.products.filter { it.retail?.weighable != true && !it.hasSpec && (it.stock ?: 0) > 0 && it.price >= 100 }
+            val pool = onlinePool(s)
             val picks = (0 until 2 + seq % 2).map { pool[(seq * 3 + it * 5) % pool.size] }.distinctBy { it.id }
             val lines = picks.mapIndexed { i, p -> CartLine(i + 1L, p.id, 1 + (seq + i) % 2) }
             val t = RetailCheckout.totals(s.products, lines, false)

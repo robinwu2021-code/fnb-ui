@@ -141,18 +141,24 @@ class RoutedRetail(private val ws: LocalWorkspace, private val link: LanLink) : 
         if (!link.isSecondary) return ws.checkoutRetail(lines, member, method, received, online, extras)
         val r = link.submit(I.RetailCheckout(lines, member, method, received, online, extras), "零售收款 $method")
         if (!r.ok) return Result.failure(IllegalStateException(r.message))
-        val sales = retailOf()?.sales.orEmpty()
-        return (sales.firstOrNull { it.no == r.message } ?: sales.firstOrNull())?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已收款，等主机同步后到订单页查看"))
+        // 按主机回传的单号精确取；副本还没有就拉一次，仍没有就报已入账（不拿别的单顶替）
+        val find = { retailOf()?.sales?.firstOrNull { it.no == r.message } }
+        return (find() ?: run { runCatching { link.pull() }; find() })?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已入账，等主机同步后到订单页查看"))
     }
 
     override suspend fun returnRetail(req: ai.neargo.fnb.pos.core.model.ReturnRequest, online: Boolean): Result<ai.neargo.fnb.pos.core.model.SaleReturn> {
         if (!link.isSecondary) return ws.returnRetail(req, online)
         val r = link.submit(I.RetailReturn(req, online), if (req.exchange) "换货 ${req.saleNo}" else "退货 ${req.saleNo ?: "无单"}")
         if (!r.ok) return Result.failure(IllegalStateException(r.message))
-        val d = retailOf()
-        val ret = req.saleNo?.let { no -> d?.sales?.firstOrNull { it.no == no }?.returns?.lastOrNull() }
-            ?: d?.looseReturns?.firstOrNull()?.let { ai.neargo.fnb.pos.core.model.SaleReturn(it.at, it.amount, it.lines.sumOf { l -> l.qty }, it.reason, it.method) }
-        return ret?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已退货，等主机同步后到订单页查看"))
+        // 主机回传这笔退货的时间戳：按原单（或无单退货）+ 时间精确取，取不到拉一次，仍没有就报已入账
+        val at = r.message.toLongOrNull()
+        val find = {
+            val d = retailOf()
+            if (req.saleNo != null) d?.sales?.firstOrNull { it.no == req.saleNo }?.returns?.firstOrNull { it.at == at }
+            else d?.looseReturns?.firstOrNull { it.at == at }?.let { ai.neargo.fnb.pos.core.model.SaleReturn(it.at, it.amount, it.lines.sumOf { l -> l.qty }, it.reason, it.method) }
+        }
+        val ret = find() ?: run { runCatching { link.pull() }; find() }
+        return ret?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已入账，等主机同步后到订单页查看"))
     }
 
     override suspend fun holdCart(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: String?, why: String): Result<String> {

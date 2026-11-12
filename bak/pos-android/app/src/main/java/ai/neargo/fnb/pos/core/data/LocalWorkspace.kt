@@ -227,10 +227,12 @@ class LocalWorkspace(
             }) else loaded
             // 零售演示门店：旧数据里没有就补上（只补这一家，用户删掉的其他门店不恢复）
             // R0 时补进来的是空的零售门店（没有商品和零售数据）：换成完整的演示目录
+            // 只给体验账号补：真实账号的门店以账号为准，不往里塞演示门店
+            val demoUser = migrated.user == "体验账号"
             val emptyMart = migrated.stores[DemoCatalog.RETAIL_STORE_ID]?.let { it.biz == BizType.Retail && it.products.isEmpty() && it.retail == RetailData() } == true
-            val withRetail = if ((DemoCatalog.RETAIL_STORE_ID !in migrated.stores || emptyMart) && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
+            val withRetail = if (demoUser && (DemoCatalog.RETAIL_STORE_ID !in migrated.stores || emptyMart) && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
             // 第二家零售演示门店（调拨用）：旧数据里没有就补上
-            val withRetail2 = if (DemoCatalog.RETAIL_STORE2_ID !in withRetail.stores && demo.containsKey(DemoCatalog.RETAIL_STORE2_ID)) withRetail.copy(stores = withRetail.stores + (DemoCatalog.RETAIL_STORE2_ID to demo.getValue(DemoCatalog.RETAIL_STORE2_ID))) else withRetail
+            val withRetail2 = if (demoUser && DemoCatalog.RETAIL_STORE2_ID !in withRetail.stores && demo.containsKey(DemoCatalog.RETAIL_STORE2_ID)) withRetail.copy(stores = withRetail.stores + (DemoCatalog.RETAIL_STORE2_ID to demo.getValue(DemoCatalog.RETAIL_STORE2_ID))) else withRetail
             val restored = withRetail2.copy(
                 deviceId = withRetail2.deviceId.ifBlank { state.value.deviceId },
                 // 旧数据（N4 前）首次由本机加载时绑定本机密钥

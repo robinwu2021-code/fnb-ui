@@ -6,6 +6,7 @@ import ai.neargo.fnb.pos.core.data.RetailRepository
 import ai.neargo.fnb.pos.core.data.StoreConfigRepository
 import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.model.EXCHANGE
+import ai.neargo.fnb.pos.core.model.ONLINE_PAY
 import ai.neargo.fnb.pos.core.model.ExchangeCredit
 import ai.neargo.fnb.pos.core.model.Product
 import ai.neargo.fnb.pos.core.model.RetailSale
@@ -88,7 +89,7 @@ data class RetailOrdersUiState(
     val pieces: Int get() = flow?.let { f -> sale(f.saleNo)?.let { ReturnRules.pickedPieces(it.soldLines, f.pick) } ?: f.pick.values.sum() } ?: 0
     /** 退款可选方式：有单按原单收款方式（设置关掉「原路退」时门店启用的都行），无单只能现金 / 储值 */
     val methods: List<String> get() = flow?.let { f ->
-        sale(f.saleNo)?.let { s -> if (settings.originalMethod) s.pays.map { it.method }.filter { it != EXCHANGE }.distinct() else payMethods } ?: ReturnRules.NO_RECEIPT_METHODS
+        sale(f.saleNo)?.let { s -> val own = s.pays.map { it.method }.filter { it != EXCHANGE }.distinct(); if (settings.originalMethod) own else (payMethods + own.filter { it == ONLINE_PAY }).distinct() } ?: ReturnRules.NO_RECEIPT_METHODS
     } ?: emptyList()
 }
 

@@ -126,7 +126,7 @@ class HostExecutor(
         is RemoteIntent.SetPromotions -> ops?.let { r(it.setPromotions(i.tableId, i.ids)) } ?: IntentResult(false, "主机不支持优惠操作")
         // 零售：成功时 message 带回单号，副机拉快照后按单号取结果
         is RemoteIntent.RetailCheckout -> retail?.let { x -> x.checkoutRetail(i.lines, i.member, i.method, i.received, i.online, i.extras).fold({ IntentResult(true, it.no) }, { IntentResult(false, it.message ?: "收款失败") }) } ?: noRetail()
-        is RemoteIntent.RetailReturn -> retail?.let { x -> x.returnRetail(i.req, i.online).fold({ IntentResult(true) }, { IntentResult(false, it.message ?: "退货失败") }) } ?: noRetail()
+        is RemoteIntent.RetailReturn -> retail?.let { x -> x.returnRetail(i.req, i.online).fold({ IntentResult(true, it.at.toString()) }, { IntentResult(false, it.message ?: "退货失败") }) } ?: noRetail()
         is RemoteIntent.RetailHold -> retail?.let { x -> x.holdCart(i.lines, i.member, i.why).fold({ IntentResult(true, it) }, { IntentResult(false, it.message ?: "挂单失败") }) } ?: noRetail()
         is RemoteIntent.RetailRecall -> retail?.let { x -> x.recallHeld(i.no).fold({ IntentResult(true, it.no) }, { IntentResult(false, it.message ?: "取单失败") }) } ?: noRetail()
         is RemoteIntent.RetailReprint -> retail?.let { r(it.reprintSale(i.no)) } ?: noRetail()

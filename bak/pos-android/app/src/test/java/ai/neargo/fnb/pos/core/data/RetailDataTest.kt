@@ -103,4 +103,14 @@ class RetailDataTest {
         assertEquals(22, r.current.value!!.products.size)
         assertEquals(6, r.retail.value.sales.size)
     }
+
+    @Test fun demoStoresAreNotAddedToRealAccounts() = runTest(UnconfinedTestDispatcher()) {
+        val disk = Disk(); val w = ws(disk, backgroundScope); w.enterDemo(); w.selectStore("s-main"); yield()
+        // 真实账号的旧数据：没有零售演示门店
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(disk.data!!) as kotlinx.serialization.json.JsonObject
+        val stores = (root["stores"] as kotlinx.serialization.json.JsonObject).filterKeys { it != DemoCatalog.RETAIL_STORE_ID && it != DemoCatalog.RETAIL_STORE2_ID }
+        disk.data = kotlinx.serialization.json.JsonObject(root + ("stores" to kotlinx.serialization.json.JsonObject(stores)) + ("user" to kotlinx.serialization.json.JsonPrimitive("owner@shop.cn"))).toString()
+        val r = ws(disk, backgroundScope); r.restore(); yield()
+        assertTrue(r.stores.value.none { it.id == DemoCatalog.RETAIL_STORE_ID || it.id == DemoCatalog.RETAIL_STORE2_ID })
+    }
 }
