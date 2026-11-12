@@ -41,6 +41,8 @@ sealed interface RetailOverlay {
     data object Discount : RetailOverlay
     data object Promos : RetailOverlay
     data object Member : RetailOverlay
+    /** 一码多品：同一个码对应多个商品，让收银员选 */
+    data class PickProduct(val code: String, val ids: List<String>) : RetailOverlay
     data class Done(val sale: RetailSale, val received: Long, val change: Long, val save: Long, val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null, val refund: Long = 0) : RetailOverlay
 }
 
@@ -87,6 +89,8 @@ data class RetailPosUiState(
     /** 当班员工能不能直接改价 / 打折（有「退菜、赠送、折扣授权」权限）；不能就要主管输账号和 PIN */
     val canAdjust: Boolean = true,
     val members: List<ai.neargo.fnb.pos.core.model.Member> = emptyList(),
+    /** 今天按临期折扣卖的商品 */
+    val expiryOff: Set<String> = emptySet(),
 ) {
     val memberRec get() = members.firstOrNull { it.id == cart.memberId }
     /** 现在能用的活动（门槛满足的才算进去） */
@@ -135,6 +139,7 @@ sealed interface RetailPosAction {
     data class Remove(val key: Long) : RetailPosAction
     data object ToggleMember : RetailPosAction
     data class PickMember(val id: String) : RetailPosAction
+    data class PickProduct(val id: String) : RetailPosAction
     data class NewMember(val phone: String, val name: String) : RetailPosAction
     data object AddCustom : RetailPosAction
     /** 购物车里的快捷购物袋 */
@@ -190,13 +195,15 @@ class RetailPosViewModel(
     private val perms = staff?.staff ?: kotlinx.coroutines.flow.MutableStateFlow(ai.neargo.fnb.pos.core.data.StaffState())
     val state: StateFlow<RetailPosUiState> = combine(config.current, cart, device.status, perms) { store, c, d, st ->
         if (store == null) return@combine RetailPosUiState(cart = c)
-        val products = store.products
+        // 临期自动折扣：按「今天的价」收银（和入账同一份规则）
+        val products = RetailCheckout.priced(store.products, store.retail.settings, java.time.LocalDate.now())
         RetailPosUiState(
             cart = c, products = products,
             categories = store.categories.filter { cat -> products.any { it.categoryId == cat.id } },
             specGroups = store.specGroups, held = store.retail.held, nextNo = "#R%04d".format(store.retail.saleSeq),
             payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.members.firstOrNull { it.id == c.memberId }?.balance ?: store.walletBalance, online = d.online,
             members = store.members,
+            expiryOff = products.filter { p -> store.products.firstOrNull { it.id == p.id }?.price != p.price }.map { it.id }.toSet(),
             totals = RetailCheckout.totalsWith(products, store.promotions, c.lines, c.member,
                 ai.neargo.fnb.pos.core.model.CheckoutExtras(c.discountPct, c.promoIds.filter { id -> store.promotions.firstOrNull { it.id == id }?.let { it.enabled } == true }, c.approver)),
             credit = store.retail.credit, settings = store.retail.settings,
@@ -209,7 +216,8 @@ class RetailPosViewModel(
 
     private fun add(line: CartLine) {
         val r = RetailCartRules.scanAdd(cart.value.lines, line) { ++seq }
-        // 促销品限购（零售设置）：超了就不加，提示原因
+        // 禁售时段、促销品限购（零售设置）：超了就不加，提示原因
+        RetailCheckout.restrictBlock(s().products, r.lines, s().settings, java.time.LocalTime.now())?.let { messages.post(it); set { c -> c.copy(qty = 1, overlay = null) }; return }
         RetailCheckout.limitBlock(s().products, r.lines, s().settings.promoLimit)?.let { messages.post(it); set { c -> c.copy(qty = 1, overlay = null) }; return }
         set { it.copy(lines = r.lines, last = r.last, unknown = null, qty = 1, overlay = null, mode = PosMode.Scan, method = null, cash = "") }
     }
@@ -256,7 +264,9 @@ class RetailPosViewModel(
             RetailCheckout.addBlock(p, k.label)?.let { messages.post(it); return }
             add(CartLine(0, p.id, c.qty, sku = k.label)); return
         }
-        val p = BarcodeRules.findByCode(products, raw) { it.retail?.barcodes.orEmpty() }
+        val all = BarcodeRules.findAllByCode(products, raw) { it.retail?.barcodes.orEmpty() }
+        if (all.size > 1 && !c.peek) { set { it.copy(overlay = RetailOverlay.PickProduct(raw, all.map { x -> x.id }), unknown = null) }; return }
+        val p = all.firstOrNull() ?: BarcodeRules.findByCode(products, raw) { it.retail?.barcodes.orEmpty() }
         when {
             p == null -> set { it.copy(unknown = raw, peekId = null) }
             c.peek -> set { it.copy(peekId = p.id, unknown = null) }
@@ -283,6 +293,7 @@ class RetailPosViewModel(
             is RetailPosAction.Gift -> set { it.copy(lines = RetailCartRules.toggleGift(it.lines, a.key), open = null) }
             is RetailPosAction.Remove -> set { c -> c.copy(lines = RetailCartRules.remove(c.lines, a.key), open = null, last = c.last.takeIf { it != a.key }) }
             RetailPosAction.ToggleMember -> set { if (it.member) it.copy(member = false, memberId = "") else it.copy(overlay = RetailOverlay.Member) }
+            is RetailPosAction.PickProduct -> s().product(a.id)?.let { p -> set { it.copy(overlay = null) }; pick(p) }
             is RetailPosAction.PickMember -> set { it.copy(member = true, memberId = a.id, overlay = null) }
             is RetailPosAction.NewMember -> viewModelScope.launchStorage(messages) {
                 val r = ops?.createMember(a.phone, a.name) ?: Result.failure(IllegalStateException("不能新建会员"))

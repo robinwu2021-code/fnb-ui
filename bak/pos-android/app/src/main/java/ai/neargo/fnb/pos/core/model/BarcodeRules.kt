@@ -47,6 +47,12 @@ object BarcodeRules {
             ?: if (c.length == 13 && c.all(Char::isDigit)) items.firstOrNull { item -> codesOf(item).any { it.any(Char::isDigit) && toEan13(it) == c } } else null
     }
 
+    /** 一码多品：同一个码对应的所有商品（按码找时用第一个，收银时多于一个就弹出让收银员选） */
+    fun <T> findAllByCode(items: List<T>, raw: String, codesOf: (T) -> List<String>): List<T> {
+        val c = clean(raw)
+        return items.filter { item -> codesOf(item).any { clean(it) == c } }
+    }
+
     /** EAN-13 校验位（前 12 位） */
     fun ean13Check(d12: String): String {
         val s = d12.mapIndexed { i, ch -> (ch - '0') * (if (i % 2 == 1) 3 else 1) }.sum()

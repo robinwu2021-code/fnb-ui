@@ -136,6 +136,12 @@ data class RetailSettings(
     val noReceiptAuth: Boolean = true,
     /** 有单退货只能原路退 */
     val originalMethod: Boolean = true,
+    /** 临期自动折扣（百分比，100 = 不打折）：临期商品收银时按这个折扣算 */
+    val expiryPct: Int = 100,
+    /** 禁售时段（HH:mm，可跨零点；空 = 不限）与禁售的分类 */
+    val restrictFrom: String = "",
+    val restrictTo: String = "",
+    val restrictCats: List<String> = emptyList(),
 )
 
 /** 零售单收款里「换货抵扣」这一笔的方式名（不是真的收款方式，不进收款记录） */

@@ -1030,13 +1030,18 @@ class LocalWorkspace(
         }.map { next }
     }
 
+    /** 门店今天（按本机时区）、现在时刻：临期折扣、禁售时段用 */
+    private fun today() = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    private fun nowTime() = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+
     override suspend fun authorize(who: String, secret: String): Result<String> = supervisorAuth(state.value, who, secret)
 
     override suspend fun checkoutRetail(lines: List<CartLine>, member: Boolean, method: String, received: Long, online: Boolean, extras: CheckoutExtras): Result<RetailSale> {
         var sale: RetailSale? = null
         val actor = actorName(state.value)
         return storeOp(event = EventSpec { _, a -> val x = a.retail.sales.first(); Triple("RetailSaleCompleted", """{"no":"${x.no}","amount":${x.paid},"method":"$method"}""", listOf("retail") + x.lines.filter { it.productId.isNotBlank() }.map { "stock:${it.productId}" }) }, check = { s ->
-            val t = RetailCheckout.totalsWith(s.products, s.promotions, lines, member, extras)
+            val ps = RetailCheckout.priced(s.products, s.retail.settings, today())
+            val t = RetailCheckout.totalsWith(ps, s.promotions, lines, member, extras)
             val credit = s.retail.credit
             val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
             when {
@@ -1045,8 +1050,9 @@ class LocalWorkspace(
                 extras.discountPct !in 50..100 -> "整单折扣在 5 折到不打折之间"
                 lines.any { (it.price ?: 0) < 0 } -> "改后单价不能为负"
                 RetailCheckout.needsApproval(lines, extras) && extras.approver.isBlank() -> "改价、整单折扣需要主管授权"
-                RetailCheckout.promotionBlock(s.products, s.promotions, lines, extras.promotionIds) != null -> RetailCheckout.promotionBlock(s.products, s.promotions, lines, extras.promotionIds)
-                RetailCheckout.limitBlock(s.products, lines, s.retail.settings.promoLimit) != null -> RetailCheckout.limitBlock(s.products, lines, s.retail.settings.promoLimit)
+                RetailCheckout.promotionBlock(ps, s.promotions, lines, extras.promotionIds) != null -> RetailCheckout.promotionBlock(ps, s.promotions, lines, extras.promotionIds)
+                RetailCheckout.restrictBlock(ps, lines, s.retail.settings, nowTime()) != null -> RetailCheckout.restrictBlock(ps, lines, s.retail.settings, nowTime())
+                RetailCheckout.limitBlock(ps, lines, s.retail.settings.promoLimit) != null -> RetailCheckout.limitBlock(ps, lines, s.retail.settings.promoLimit)
                 !Money.withinBill(t.due) || !Money.withinBill(received) -> "金额超出上限"
                 // 换货抵扣后不用再收钱：收款方式不看
                 credit != null && st.pay == 0L -> retailOnly(s) ?: need(Perm.Checkout)
@@ -1060,7 +1066,8 @@ class LocalWorkspace(
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
-            val t = RetailCheckout.totalsWith(s0.products, s0.promotions, lines, member, extras)
+            val ps0 = RetailCheckout.priced(s0.products, s0.retail.settings, today())
+            val t = RetailCheckout.totalsWith(ps0, s0.promotions, lines, member, extras)
             val credit = s0.retail.credit
             val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
             val no = "#R%04d".format(s0.retail.saleSeq)
@@ -1073,7 +1080,7 @@ class LocalWorkspace(
             val cash = method == "现金"
             val pays = listOfNotNull(credit?.let { SalePay(EXCHANGE, minOf(it.amount, t.due)) }.takeIf { (it?.amount ?: 0) > 0 }, if (st.pay > 0) SalePay(method, st.pay) else null)
             val mem = s0.members.firstOrNull { it.id == extras.memberId }
-            val x = RetailSale(no, clock(), member = mem?.name ?: if (member) "会员" else null, memberId = mem?.id.orEmpty(), lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round + t.coupon + t.manual, pays = pays, adjust = adjust)
+            val x = RetailSale(no, clock(), member = mem?.name ?: if (member) "会员" else null, memberId = mem?.id.orEmpty(), lines = RetailCheckout.saleLines(ps0, lines, member), discount = t.round + t.coupon + t.manual, pays = pays, adjust = adjust)
             var s = s0
             // 扣库存：按件扣件数，称重扣克；临时商品不管库存
             lines.filter { !it.custom }.forEach { l ->
@@ -1265,6 +1272,9 @@ class LocalWorkspace(
             settings.promoLimit !in 0..99 -> "限购件数在 0–99 之间"
             settings.returnDays !in 0..365 -> "退货期限在 0–365 天之间"
             settings.bagIds.any { s.product(it) == null } -> "购物袋商品不存在"
+            settings.expiryPct !in 10..100 -> "临期折扣在 1–10 折之间"
+            (settings.restrictFrom.isNotBlank() || settings.restrictTo.isNotBlank()) && listOf(settings.restrictFrom, settings.restrictTo).any { runCatching { java.time.LocalTime.parse(it) }.isFailure } -> "禁售时段请填 HH:mm，例如 22:00"
+            settings.restrictCats.any { c -> s.categories.none { it.id == c } } -> "禁售分类不存在"
             else -> retailOnly(s) ?: need(Perm.Settings)
         }
     }) { s -> s.withRetail { it.copy(settings = settings) } }

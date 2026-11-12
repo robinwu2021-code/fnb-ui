@@ -84,6 +84,30 @@ object RetailCheckout {
         else -> null
     }
 
+    /**
+     * 临期自动折扣：临期商品（按零售设置的提前天数）售价、各规格价都按折扣算，四舍五入到分。
+     * 收银页和入账都先用它把商品资料「换成今天的价」，其余计价不变。
+     */
+    fun priced(products: List<Product>, rs: RetailSettings, today: java.time.LocalDate): List<Product> {
+        if (rs.expiryPct >= 100) return products
+        fun off(v: Long) = Money.roundHalfUp(v * rs.expiryPct, 100)
+        return products.map { p -> if (!StockWork.near(p, today, rs.expiryDays)) p else p.copy(price = off(p.price), skus = p.skus.map { it.copy(price = off(it.price)) }) }
+    }
+
+    /** 现在是否在禁售时段（HH:mm，可以跨零点，如 22:00–08:00） */
+    fun inRestrict(rs: RetailSettings, now: java.time.LocalTime): Boolean {
+        val f = runCatching { java.time.LocalTime.parse(rs.restrictFrom) }.getOrNull() ?: return false
+        val t = runCatching { java.time.LocalTime.parse(rs.restrictTo) }.getOrNull() ?: return false
+        return if (f <= t) !now.isBefore(f) && now.isBefore(t) else !now.isBefore(f) || now.isBefore(t)
+    }
+
+    /** 禁售：时段内禁售分类的商品不能卖 */
+    fun restrictBlock(products: List<Product>, lines: List<CartLine>, rs: RetailSettings, now: java.time.LocalTime): String? {
+        if (rs.restrictCats.isEmpty() || !inRestrict(rs, now)) return null
+        val byId = products.associateBy { it.id }
+        return lines.firstNotNullOfOrNull { l -> byId[l.productId]?.takeIf { it.categoryId in rs.restrictCats } }?.let { "${it.name} 在 ${rs.restrictFrom}–${rs.restrictTo} 禁售" }
+    }
+
     /** 促销品每单限购：同一商品（各规格合计）件数超过 limit 时返回原因；limit = 0 不限 */
     fun limitBlock(products: List<Product>, lines: List<CartLine>, limit: Int): String? {
         if (limit <= 0) return null

@@ -161,6 +161,17 @@ fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
         RetailOverlay.Discount -> DiscountDialog(state, onAction)
         RetailOverlay.Promos -> PromoDialog(state, onAction)
         RetailOverlay.Member -> MemberDialog(state, onAction)
+        is RetailOverlay.PickProduct -> PosDialog("这个码对应多个商品", { onAction(RetailPosAction.Dismiss) }, subtitle = "条码 ${overlay.code}，请选顾客拿的那一个", footer = {
+            PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        }) {
+            overlay.ids.mapNotNull { state.product(it) }.forEach { p ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(Pos.metrics.button).background(Pos.colors.tile).clickable { onAction(RetailPosAction.PickProduct(p.id)) }.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(p.name, style = Pos.type.strong, color = Pos.colors.ink, modifier = Modifier.weight(1f))
+                    Text(priceText(p), style = Pos.type.strong.num(), color = Pos.colors.ink)
+                }
+            }
+        }
         is RetailOverlay.Done -> DoneDialog(state, overlay, onAction)
         null -> Unit
     }
@@ -414,6 +425,7 @@ private fun ItemTile(state: RetailPosUiState, p: Product, onAction: (RetailPosAc
                 Text(priceText(p), style = t.strong.num(), color = c.ink, modifier = Modifier.weight(1f))
                 when {
                     out -> Tag("缺货", bg = c.dangerBg, fg = c.danger)
+                    p.id in state.expiryOff -> Tag("临期 ${pctText(state.settings.expiryPct)}", fg = c.warning)
                     !weigh && left != null && left <= 5 -> Tag("仅剩 $left", fg = c.warning)
                 }
             }

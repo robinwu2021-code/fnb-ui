@@ -59,6 +59,7 @@ fun ColumnScope.RetailSettingsPage(store: StoreData) {
             KeyValue("店内码", "2 开头 7 位（如 2000001）")
             KeyValue("称重码", "18 位：2 + 商品码 6 + 金额 5 + 重量 5 + 校验 1")
             KeyValue("价签条码", "印 EAN-13；店内码、PLU 补成 13 位，收银扫得出")
+            KeyValue("一码多品", "同一个码对应多个商品时，收银弹出让收银员选")
             Text("条码格式目前固定，接电子秤时按秤的标签格式开放配置", style = t.label, color = c.sub)
         }
         Section("价签") {
@@ -70,9 +71,26 @@ fun ColumnScope.RetailSettingsPage(store: StoreData) {
         }
         Section("临期与预警") {
             StepRow("临期提前提醒", if (d.expiryDays == 0) "只提醒当天到期和已过期的" else "到期前 ${d.expiryDays} 天起算临期（库存预警、商品页状态）", d.expiryDays, "天", 0, 30) { d = d.copy(expiryDays = it) }
+            Text("临期自动折扣（收银时临期商品按这个折扣卖，宫格上标「临期 × 折」）", style = t.label, color = c.sub, modifier = Modifier.padding(top = 6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                listOf(100 to "不打折", 90 to "9 折", 80 to "8 折", 70 to "7 折", 50 to "5 折").forEach { (v, l) -> PosChip(l, d.expiryPct == v, { d = d.copy(expiryPct = v) }) }
+            }
         }
         Section("限购") {
             StepRow("促销品每单限购", if (d.promoLimit == 0) "不限购" else "有促销（如第二件半价）的商品，每单最多 ${d.promoLimit} 件；收银加购和收款都会拦", d.promoLimit, "件", 0, 99) { d = d.copy(promoLimit = it) }
+        }
+        Section("禁售时段") {
+            Text("时段内勾选分类的商品不能卖（如烟酒夜间禁售）；可以跨零点，例如 22:00–08:00", style = t.label, color = c.sub)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ai.neargo.fnb.pos.core.designsystem.component.PosTextField(d.restrictFrom, { v -> if (Regex("^[0-9:]{0,5}$").matches(v)) d = d.copy(restrictFrom = v) }, "开始（HH:mm）", Modifier.weight(1f))
+                ai.neargo.fnb.pos.core.designsystem.component.PosTextField(d.restrictTo, { v -> if (Regex("^[0-9:]{0,5}$").matches(v)) d = d.copy(restrictTo = v) }, "结束（HH:mm）", Modifier.weight(1f))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                store.categories.forEach { cat ->
+                    val on = cat.id in d.restrictCats
+                    PosChip(cat.name, on, { d = d.copy(restrictCats = if (on) d.restrictCats - cat.id else d.restrictCats + cat.id) })
+                }
+            }
         }
         Section("购物袋") {
             Text("勾选的商品在购物车上方显示快捷按钮，一点就加", style = t.label, color = c.sub)
