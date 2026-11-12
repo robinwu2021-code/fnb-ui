@@ -131,6 +131,8 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                     { if (state.order.pending.isEmpty() && state.held.isNotEmpty()) dialog = "retrieve" else onAction(OrderAction.Hold) }, m, size = BtnSize.Small, textStyle = t.label, enabled = state.canOrder)
             }
 
+            state.cloudNote?.let { n -> CloudNoteRow(n) }
+
             // 新加 / 待同步分组插在顶部；数量变化时回到顶部，避免新行出现在可视区之外
             val list = rememberLazyListState()
             LaunchedEffect(state.order.pending.size, state.order.queued.size) { list.animateScrollToItem(0) }
@@ -235,5 +237,22 @@ internal fun DockDialogs(state: OrderUiState, dialog: String?, close: () -> Unit
                 PosDivider()
             }
         }
+    }
+}
+
+/** 本单云端提示：上传被拒去同步中心处理；价差说明结账时以服务端应收为准 */
+@androidx.compose.runtime.Composable
+private fun CloudNoteRow(n: ai.neargo.fnb.pos.feature.order.CloudNote) {
+    val c = ai.neargo.fnb.pos.core.designsystem.theme.Pos.colors
+    val parts = buildList {
+        if (n.issues > 0) add("云端 ${n.issues} 条上传被拒，请到同步中心处理")
+        if (n.diffMinor != 0L) add("服务端下单金额 ${ai.neargo.fnb.pos.core.model.yuan(n.remoteMinor)}，本机 ${ai.neargo.fnb.pos.core.model.yuan(n.localMinor)}（" +
+            (if (n.diffMinor > 0) "多 " else "少 ") + ai.neargo.fnb.pos.core.model.yuan(kotlin.math.abs(n.diffMinor)) + "），联网结账以服务端为准")
+    }
+    if (parts.isEmpty()) return
+    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 6.dp)
+        .background((if (n.issues > 0) c.danger else c.warning).copy(alpha = 0.08f), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))) {
+        ai.neargo.fnb.pos.core.designsystem.component.Text(parts.joinToString("；"), style = ai.neargo.fnb.pos.core.designsystem.theme.Pos.type.label,
+            color = if (n.issues > 0) c.danger else c.warning, modifier = androidx.compose.ui.Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
     }
 }

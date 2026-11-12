@@ -11,7 +11,10 @@ import org.junit.Test
 /** 连通监控：未设置 / 副 POS / 断网 / 防抖上线 / 令牌失效 / 在线自动上传 / 需处理与解除 */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CloudMonitorTest {
-    private class Settings(var v: CloudSettings) : CloudSettingsStore { override fun load() = v; override fun save(settings: CloudSettings) { v = settings } }
+    private class Settings(var v: CloudSettings, var online: Long = 0) : CloudSettingsStore {
+        override fun load() = v; override fun save(settings: CloudSettings) { v = settings }
+        override fun lastOnlineAt() = online; override fun saveLastOnlineAt(at: Long) { online = at }
+    }
     private class Api : CloudApi {
         var fail: CloudException? = null
         var openFail: CloudException? = null
@@ -106,5 +109,49 @@ class CloudMonitorTest {
         m.skip("ev-1")
         assertTrue(events.list.isEmpty()); assertTrue(api.opened.isEmpty())
         assertTrue(m.state.value.badge is CloudBadge.Online)
+    }
+
+    @Test fun offlineLimitWarnsThenBlocksDayCloseAndClearsOnReconnect() = runTest(UnconfinedTestDispatcher()) {
+        val h = 3_600_000L; var now = 1_000 * h
+        val store = Settings(CloudSettings("http://x", "NS002"))
+        val m = CloudMonitor(store, api, { "s-coast" }, { refs }, events, net, up, pending, { now })
+        m.observe(backgroundScope)
+        pending.value = 0; m.tick(); m.tick()
+        assertEquals(now, store.online)                                         // 连上即记时间（重启后还在）
+        api.fail = CloudException(CloudErrorKind.Network, 0, "断网"); net.value = false; pending.value = 3
+        now += 23 * h; m.tick(); assertEquals(CloudLimit.None, m.state.value.limit); assertNull(m.dayCloseBlock())
+        now += 2 * h; m.tick()
+        assertTrue(m.state.value.limit is CloudLimit.Warn); assertNull(m.dayCloseBlock())
+        assertTrue((m.state.value.badge as CloudBadge.Offline).limit is CloudLimit.Warn)
+        now += 48 * h; m.tick()
+        assertTrue(m.state.value.limit is CloudLimit.Block); assertNotNull(m.dayCloseBlock())
+        api.fail = null; net.value = true; pending.value = 0; m.tick(); m.tick()
+        assertEquals(CloudLimit.None, m.state.value.limit); assertNull(m.dayCloseBlock())
+        assertEquals(now, store.online)
+    }
+
+    @Test fun limitStartsFromConfigureNotFromNever() = runTest(UnconfinedTestDispatcher()) {
+        var now = 5_000_000L
+        val store = Settings(CloudSettings())
+        val m = CloudMonitor(store, api, { "s-coast" }, { refs }, events, net, up, pending, { now })
+        m.observe(backgroundScope)
+        m.configure(CloudSettings("http://x", "NS002"))
+        assertEquals(5_000_000L, store.online)
+        net.value = false; now += 80 * 3_600_000L; m.tick()
+        assertTrue(m.state.value.limit is CloudLimit.Block)                    // 设置后一直连不上，同样计时
+    }
+
+    @Test fun secondaryNeverBlocked() = runTest(UnconfinedTestDispatcher()) {
+        val store = Settings(CloudSettings("http://x", "NS002"), online = 1)
+        up.value = false; net.value = false
+        val m = CloudMonitor(store, api, { "s-coast" }, { refs }, events, net, up, pending, { 1_000 * 3_600_000L })
+        m.observe(backgroundScope); m.tick()
+        assertNull(m.dayCloseBlock())
+    }
+
+    @Test fun priceDiffsComeFromRefs() = runTest(UnconfinedTestDispatcher()) {
+        refs.put(CloudRef("pricediff", "K-1", "16200/17010"))
+        val m = monitor(); m.observe(backgroundScope); m.refreshLocal()
+        assertEquals(listOf(CloudPriceDiff("K-1", 16200, 17010)), m.state.value.priceDiffs)
     }
 }

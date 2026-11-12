@@ -24,7 +24,13 @@ import kotlinx.serialization.Serializable
 interface CloudSettingsStore {
     fun load(): CloudSettings
     fun save(settings: CloudSettings)
+    /** 最近一次连上云端的时间（重启后仍记得，离线时限按它算） */
+    fun lastOnlineAt(): Long = 0
+    fun saveLastOnlineAt(at: Long) {}
 }
+
+/** 送厨下单时服务端金额与本机不一致（本机批次 id、本机金额、服务端金额，分） */
+data class CloudPriceDiff(val batchId: String, val localMinor: Long, val remoteMinor: Long)
 
 /** 页面展示用的云端状态 */
 data class CloudState(
@@ -38,6 +44,9 @@ data class CloudState(
     val lastSyncAt: Long = 0,
     /** 服务端门店桌台数（探测时带回，用于确认门店号填对了） */
     val tables: Int = 0,
+    val lastOnlineAt: Long = 0,
+    val limit: CloudLimit = CloudLimit.None,
+    val priceDiffs: List<CloudPriceDiff> = emptyList(),
 )
 
 /**
@@ -62,7 +71,7 @@ class CloudMonitor(
     /** 一轮上传后（ack 改了待上传数）刷新统计 */
     private val afterRound: suspend () -> Unit = {},
 ) {
-    private val s = MutableStateFlow(CloudState(settings = settingsStore.load()))
+    private val s = MutableStateFlow(CloudState(settings = settingsStore.load(), lastOnlineAt = settingsStore.lastOnlineAt()))
     val state: StateFlow<CloudState> = s.asStateFlow()
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val roundLock = Mutex()
@@ -105,7 +114,7 @@ class CloudMonitor(
                 // 门店号或令牌错误：属于配置问题，直接判离线并显示原因
                 if (e is CloudException && e.kind != CloudErrorKind.Network) cur.health.forceOffline(e.message.orEmpty()) else cur.health.failure(e.message ?: "连接失败")
             })
-            cur.copy(health = h, tables = probe.getOrNull()?.tables ?: cur.tables).withBadge()
+            cur.copy(health = h, tables = probe.getOrNull()?.tables ?: cur.tables, lastOnlineAt = if (probe.isSuccess) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
         }
         if (s.value.health.online && s.value.pending > 0) runRound()
     }
@@ -126,7 +135,9 @@ class CloudMonitor(
     fun configure(settings: CloudSettings) {
         val clean = settings.copy(baseUrl = settings.baseUrl.trim().trimEnd('/'), storeNo = settings.storeNo.trim(), token = settings.token.trim())
         settingsStore.save(clean)
-        s.update { it.copy(settings = clean, health = CloudHealth(), issues = issuesOf(clean)).withBadge() }
+        // 新设置从现在起算离线时长（不把设置前的时间算进去）
+        val at = clock().also(settingsStore::saveLastOnlineAt)
+        s.update { it.copy(settings = clean, health = CloudHealth(), issues = issuesOf(clean), priceDiffs = diffsOf(clean), lastOnlineAt = at).withBadge() }
         wake.trySend(Unit)
     }
 
@@ -153,6 +164,19 @@ class CloudMonitor(
     private fun scopeKey(st: CloudSettings) = storeId()?.let { "$it@${st.storeNo}" }
     private fun refs() = scopeKey(s.value.settings)?.let(refsFor)
     private fun issuesOf(st: CloudSettings) = scopeKey(st)?.let { refsFor(it).issues() }.orEmpty()
+    private fun diffsOf(st: CloudSettings) = scopeKey(st)?.let { refsFor(it).all("pricediff") }.orEmpty().mapNotNull { r ->
+        r.remoteNo.split('/').takeIf { it.size == 2 }?.let { (l, rm) -> CloudPriceDiff(r.localId, l.toLongOrNull() ?: return@let null, rm.toLongOrNull() ?: return@let null) }
+    }
+
+    /** 记录连上云端的时间；1 分钟内不重复写盘 */
+    private fun markOnline(prev: Long): Long {
+        val now = clock()
+        if (now - prev >= 60_000) settingsStore.saveLastOnlineAt(now)
+        return if (now - prev >= 60_000) now else prev
+    }
+
+    /** 当前门店的价差、需处理（进店 / 换店后刷新） */
+    fun refreshLocal() { s.update { it.copy(issues = issuesOf(it.settings), priceDiffs = diffsOf(it.settings)).withBadge() } }
 
     private suspend fun runRound(): SyncRound = roundLock.withLock {
         val st = s.value.settings
@@ -167,17 +191,27 @@ class CloudMonitor(
                 CloudErrorKind.Unauthorized -> cur.health.forceOffline(r.stoppedBy.message.orEmpty())
                 else -> cur.health
             }
-            cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues()).withBadge()
+            val reached = r.stoppedBy?.kind != CloudErrorKind.Network
+            cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues(), priceDiffs = diffsOf(cur.settings),
+                lastOnlineAt = if (reached) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
         }
         if (r.uploaded + r.local > 0) runCatching { afterRound() }
         r
     }
 
-    private fun CloudState.withBadge(): CloudState = copy(badge = when {
-        !uploader -> CloudBadge.ViaHost
-        !settings.configured -> CloudBadge.NotConfigured
-        issues.isNotEmpty() -> CloudBadge.NeedsAction(issues.size)
-        health.online -> CloudBadge.Online(pending)
-        else -> CloudBadge.Offline(pending, health.lastError)
-    })
+    private fun CloudState.withBadge(): CloudState {
+        val lim = CloudLimits.evaluate(settings.configured && uploader, health.online, pending, lastOnlineAt, clock())
+        return copy(limit = lim, badge = when {
+            !uploader -> CloudBadge.ViaHost
+            !settings.configured -> CloudBadge.NotConfigured
+            // 离线时限优先于需处理显示：它会挡日结
+            lim is CloudLimit.Block -> CloudBadge.Offline(pending, health.lastError, lim)
+            issues.isNotEmpty() -> CloudBadge.NeedsAction(issues.size)
+            health.online -> CloudBadge.Online(pending)
+            else -> CloudBadge.Offline(pending, health.lastError, lim)
+        })
+    }
+
+    /** 日结前检查：超过 72 小时连不上云端时返回原因 */
+    fun dayCloseBlock(): String? = (s.value.limit as? CloudLimit.Block)?.message
 }

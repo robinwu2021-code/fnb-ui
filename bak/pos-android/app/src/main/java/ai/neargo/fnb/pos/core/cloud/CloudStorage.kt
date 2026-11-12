@@ -16,6 +16,11 @@ internal class SqliteCloudRefs(private val database: () -> SQLiteDatabase, priva
             if (it.moveToFirst()) CloudRef(kind, localId, it.getString(0), it.getLong(1)) else null
         }
 
+    override fun all(kind: String): List<CloudRef> =
+        db.rawQuery("SELECT local_id,remote_no,version FROM cloud_refs WHERE scope=? AND kind=? ORDER BY rowid", arrayOf(scope, kind)).use {
+            buildList { while (it.moveToNext()) add(CloudRef(kind, it.getString(0), it.getString(1), it.getLong(2))) }
+        }
+
     override fun put(ref: CloudRef) {
         db.insertWithOnConflict("cloud_refs", null, ContentValues().apply {
             put("scope", scope); put("kind", ref.kind); put("local_id", ref.localId); put("remote_no", ref.remoteNo); put("version", ref.version)
@@ -54,6 +59,8 @@ internal class PrefsCloudSettings(context: Context) : CloudSettingsStore {
     override fun save(settings: CloudSettings) {
         sp.edit().putString("baseUrl", settings.baseUrl).putString("storeNo", settings.storeNo).putString("token", settings.token).apply()
     }
+    override fun lastOnlineAt() = sp.getLong("lastOnlineAt", 0)
+    override fun saveLastOnlineAt(at: Long) { sp.edit().putLong("lastOnlineAt", at).apply() }
 }
 
 

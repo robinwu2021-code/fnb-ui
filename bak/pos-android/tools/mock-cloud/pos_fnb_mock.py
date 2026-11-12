@@ -16,7 +16,7 @@ demo-catalog.json 由 DemoCatalogExport 单测从演示门店生成（菜名、�
 - 推送：登记终端拿端号；SSE 帧 event=push 带 id；定向消息 event=message；心跳为注释行；?hold=秒 控制连接保持时长。
 - 调试：GET /_mock/state；POST /_mock/fail {"times":N,"http":503|"code":...}；POST /_mock/reset；
   POST /_mock/occupy {"name":"H04","state":"IN_USE|IDLE"}；POST /_mock/notify {"topic":..,"refNo":..} 发推送；
-  POST /_mock/direct {"kind":"app.upgrade"} 发定向消息。
+  POST /_mock/direct {"kind":"app.upgrade"} 发定向消息；POST /_mock/price {"factor":1.1} 服务端调价（制造价差）。
 """
 import argparse
 import json
@@ -204,7 +204,7 @@ def price_of(line):
     for i in CFG["catalog"]["items"]:
         for s in i["skus"]:
             if s["skuNo"] == line["skuNo"]:
-                return int(s.get("priceMinor") or 0)
+                return int(round(int(s.get("priceMinor") or 0) * DB.get("priceFactor", 1.0)))
     return 0
 
 
@@ -354,6 +354,8 @@ class H(BaseHTTPRequestHandler):
             if t:
                 bump(t, turnoverState=body.get("state", "IN_USE"))
             return self.send(200, t or {})
+        if path == "/_mock/price":   # 服务端调价（制造价差）：factor=1.1 即贵 10%
+            DB["priceFactor"] = float(body.get("factor", 1.0)); return self.send(200, {"priceFactor": DB["priceFactor"]})
         if path == "/_mock/notify":
             emit(body.get("topic", "trade.order"), body.get("refType", "ORDER"), body.get("refNo", nid("O")), int(body.get("refVersion", 1)))
             return self.send(200, {"seq": DB["seq"]})
