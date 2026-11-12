@@ -92,8 +92,13 @@ fun RetailOrdersScreen(state: RetailOrdersUiState, onAction: (RetailOrdersAction
         state.rejecting?.let { RejectDialog(it, onAction) }
         return
     }
-    Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> state.current?.let { SaleDetail(state, it, onAction, m) } ?: Panel(m) { EmptyState("没有订单", Modifier.padding(16.dp)) } }) { m ->
-        SaleList(state, onAction, m, onlineOrders)
+    // 扫码枪：扫小票单号 / 会员码直接搜；弹窗关掉后焦点回到页面本身（不然回车会点到页头按钮）
+    val root = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(state.flow == null) { if (state.flow == null) runCatching { root.requestFocus() } }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().hidScanner(root, { state.flow != null }) { onAction(RetailOrdersAction.Search(it)) }) {
+        Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> state.current?.let { SaleDetail(state, it, onAction, m) } ?: Panel(m) { EmptyState("没有订单", Modifier.padding(16.dp)) } }) { m ->
+            SaleList(state, onAction, m, onlineOrders)
+        }
     }
     state.flow?.let { ReturnDialog(state, it, onAction) }
 }

@@ -92,7 +92,7 @@ private fun CenterCard(content: @Composable () -> Unit) {
 
 @Composable
 private fun Brand(subtitle: String) {
-    Text("南山小馆 POS", style = Pos.type.title, color = Pos.colors.ink)
+    Text("门店收银", style = Pos.type.title, color = Pos.colors.ink)
     Text(subtitle, style = Pos.type.label, color = Pos.colors.sub)
     Spacer(Modifier.height(20.dp))
 }

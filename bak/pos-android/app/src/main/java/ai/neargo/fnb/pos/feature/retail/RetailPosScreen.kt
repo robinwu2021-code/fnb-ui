@@ -73,6 +73,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -233,13 +234,13 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                             if (tot.promo > 0) KeyValue("促销", "−${yuan(tot.promo)}", valueColor = c.primary)
                             if (cart.member) { if (tot.memberSave > 0) KeyValue("会员价", "−${yuan(tot.memberSave)}", valueColor = c.primary) }
                             else KeyValue("会员价", "未识别会员", valueColor = c.sub)
-                            // 点行打开选择：优惠活动（门店配置）、整单折扣（主管授权）
+                            // 点行打开选择：优惠活动（门店配置）、整单折扣（主管授权）；收款页也能改，应收随之重算（实收不够时确认键会提示）
                             val names = state.promotions.filter { it.id in cart.promoIds }.joinToString("、") { it.name + if (!state.promoValid(it.id)) "（未满门槛）" else "" }
                             KeyValue("优惠活动", if (tot.coupon > 0) "−${yuan(tot.coupon)}" else names.ifBlank { if (state.promotions.isEmpty()) "无可用活动" else "选择 ›" },
-                                Modifier.clickable(enabled = !pay && state.promotions.isNotEmpty()) { onAction(RetailPosAction.AskPromos) }, valueColor = if (tot.coupon > 0) c.primary else c.sub)
+                                Modifier.clickable(enabled = state.promotions.isNotEmpty()) { onAction(RetailPosAction.AskPromos) }, valueColor = if (tot.coupon > 0) c.primary else c.sub)
                             if (names.isNotBlank() && tot.coupon > 0) Text(names, style = t.label, color = c.sub)
                             KeyValue("整单折扣", if (cart.discountPct < 100) "${pctText(cart.discountPct)} −${yuan(tot.manual)}" else "选择 ›",
-                                Modifier.clickable(enabled = !pay) { onAction(RetailPosAction.AskDiscount) }, valueColor = if (tot.manual > 0) c.primary else c.sub)
+                                Modifier.clickable { onAction(RetailPosAction.AskDiscount) }, valueColor = if (tot.manual > 0) c.primary else c.sub)
                             if (tot.round > 0) KeyValue("抹零（到角）", "−${yuan(tot.round)}", valueColor = c.primary)
                         }
                     }
@@ -343,7 +344,14 @@ private fun ScanPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Uni
             }
             ScanStrip(state, onAction)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 分类多（或英文名长）时横向滚动；右边还有没露出来的就渐隐，提示可以滑
+                val catScroll = rememberScrollState()
+                val fade = c.surface
+                Row(Modifier.weight(1f).drawWithContent {
+                    drawContent()
+                    if (catScroll.canScrollForward) drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(fade.copy(alpha = 0f), fade), startX = size.width - 48.dp.toPx(), endX = size.width),
+                        topLeft = androidx.compose.ui.geometry.Offset(size.width - 48.dp.toPx(), 0f))
+                }.horizontalScroll(catScroll), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PosChip("常用", cart.cat == HOT, { onAction(RetailPosAction.SelectCat(HOT)) })
                     state.categories.forEach { cat -> PosChip(nameOf(cat), cart.cat == cat.id, { onAction(RetailPosAction.SelectCat(cat.id)) }) }
                 }

@@ -27,7 +27,9 @@ fun Modifier.hidScanner(focus: FocusRequester, paused: () -> Boolean, onCode: (S
     val self = remember { booleanArrayOf(false) }   // 根节点自己有焦点（不是子节点）
     return focusRequester(focus).onFocusChanged { self[0] = it.isFocused }.onPreviewKeyEvent { e ->
         if (!self[0] || paused() || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-        val now = System.currentTimeMillis()
+        // 用按键发生的时间（系统事件时间戳），不用处理时的时间：切页后界面线程忙，按键排队处理，
+        // 处理间隔会被拉长，按处理时间算会把扫码枪的前几个字符误判成人手输入丢掉
+        val now = e.nativeKeyEvent.eventTime
         when {
             e.key == Key.Enter || e.key == Key.NumPadEnter -> buffer.enter(now)?.let { onCode(it); true } ?: false
             e.utf16CodePoint in 33..126 -> { buffer.char(e.utf16CodePoint.toChar(), now); true }
