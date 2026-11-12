@@ -326,7 +326,9 @@ class RetailPosViewModel(
             }
             RetailPosAction.AddCustom -> set { it.copy(overlay = RetailOverlay.Custom) }
             is RetailPosAction.CustomAdd -> if (a.price > 0) add(CartLine(0, "custom", 1, customName = a.name.trim().ifBlank { "临时商品" }, customPrice = a.price))
-            RetailPosAction.OpenDrawer -> messages.post("已发送开钱箱指令（演示）")
+            RetailPosAction.OpenDrawer -> viewModelScope.launchStorage(messages) {
+                retail.openDrawer().onSuccess { messages.post("已发送开钱箱指令") }.onFailure { messages.post(it.message ?: "开钱箱失败") }
+            }
             RetailPosAction.Hold -> hold { set { CartState(cat = it.cat) } }
             RetailPosAction.ShowHeld -> set { it.copy(overlay = RetailOverlay.Held) }
             is RetailPosAction.Recall -> viewModelScope.launchStorage(messages) {

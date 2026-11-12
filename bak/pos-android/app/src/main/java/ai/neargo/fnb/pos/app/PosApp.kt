@@ -104,6 +104,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -208,7 +211,8 @@ fun PosApp(shell: ShellViewModel) {
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, dining = profile.tables, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
-                    onLock = { lockScope.launch { container.staff.signOutStaff() } }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
+                    onLock = { lockScope.launch { container.staff.signOutStaff() } }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang,
+                    onDrawer = { lockScope.launch { container.retail.openDrawer().onSuccess { shell.messages.post("已发送开钱箱指令") }.onFailure { shell.messages.post(it.message ?: "开钱箱失败") } } })
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)
                 val authStatus by appContainer().auth.auth.collectAsStateWithLifecycle()
@@ -264,6 +268,15 @@ private fun NavHostController.goTopInternal(route: Any) = navigate(route) {
     restoreState = true
 }
 
+/**
+ * 页头只用手点：键盘焦点进不来，进来的按键也不处理。
+ * 扫码枪就是键盘，扫完补一个回车；页头按钮拿着焦点时这个回车会点开「切换门店」等，所以页头一律不接键盘。
+ */
+private fun Modifier.touchOnly() = this
+    .onPreviewKeyEvent { true }
+    .focusProperties { onEnter = { cancelFocusChange() } }
+    .focusGroup()
+
 /** 工作台导航：桌台 · 点餐 · 系统管理（齿轮）。 */
 @Composable
 private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage: () -> Unit, biz: ai.neargo.fnb.pos.core.model.BizType = ai.neargo.fnb.pos.core.model.BizType.Dining) {
@@ -280,6 +293,8 @@ private class HeaderActions(
     /** 出菜（厨房）只在餐饮门店有 */
     val dining: Boolean = true,
     val perms: Set<ai.neargo.fnb.pos.core.model.Perm> = ai.neargo.fnb.pos.core.model.Perm.entries.toSet(), val staffMode: Boolean = false, val onLock: () -> Unit = {}, val onDisplay: () -> Unit, val onSync: () -> Unit, val onStore: () -> Unit, val onLang: () -> Unit,
+    /** 手动开钱箱（两业态共用，钱箱接在前台小票机） */
+    val onDrawer: () -> Unit = {},
 )
 
 /** AppHeader（宽屏）：门店 / 员工·终端、工作台导航；右侧图标工具栏。无页脚，内容区直达底部。 */
@@ -288,7 +303,7 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
     val c = Pos.colors
     val t = Pos.type
     Row(
-        Modifier.fillMaxWidth().heightIn(min = PosSize.header).background(c.surface).padding(start = 14.dp, end = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = PosSize.header).touchOnly().background(c.surface).padding(start = 14.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(Modifier.width(140.dp).clickable(role = Role.Button, onClickLabel = "切换门店", onClick = actions.onStore)) {
@@ -303,7 +318,7 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
             if (ai.neargo.fnb.pos.core.model.Perm.Reports in actions.perms) ToolIcon(Icons.Outlined.Assessment, "报表与日结", onClick = actions.onReports)
             ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息：A06 预订 19:00 到店；厨房已出 A02 麻婆豆腐（演示）") }
             PrinterIcon(actions)
-            ToolIcon(Icons.Outlined.PointOfSale, "钱箱") { actions.notice("钱箱操作需要权限，演示环境未连接钱箱") }
+            ToolIcon(Icons.Outlined.PointOfSale, "钱箱", onClick = actions.onDrawer)
             if (ai.neargo.fnb.pos.core.model.Perm.Shift in actions.perms) ToolIcon(Icons.Outlined.SwapHoriz, "交班", onClick = actions.onShift)
             if (actions.staffMode) ToolIcon(Icons.Outlined.Lock, "锁屏换人", onClick = actions.onLock)
             ToolIcon(Icons.Outlined.Translate, "语言：中文 / EN", onClick = actions.onLang)
@@ -318,7 +333,7 @@ private fun Header(session: Session, current: TopLevel, onNavigate: (TopLevel) -
 private fun CompactHeader(session: Session, actions: HeaderActions) {
     val c = Pos.colors
     var more by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).background(c.surface).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).touchOnly().background(c.surface).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(session.store, style = Pos.type.strong, color = c.ink, modifier = Modifier.weight(1f).clickable(role = Role.Button, onClickLabel = "切换门店", onClick = actions.onStore), maxLines = 1, overflow = TextOverflow.Ellipsis)
         StatusIcon(actions)
         ToolIcon(Icons.Outlined.Notifications, "消息 2 条", badge = 2) { actions.notice("2 条消息（演示）") }

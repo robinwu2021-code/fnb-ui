@@ -200,6 +200,8 @@ class RoutedRetail(private val ws: LocalWorkspace, private val link: LanLink) : 
     override suspend fun voidStockDoc(no: String) = if (link.isSecondary) hostOnly() else ws.voidStockDoc(no)
     override suspend fun setRetailPrice(productId: String, price: Long) = if (link.isSecondary) hostOnly() else ws.setRetailPrice(productId, price)
     override suspend fun queueLabel(productId: String) = if (link.isSecondary) hostOnly() else ws.queueLabel(productId)
+    // 钱箱接在主 POS 的小票机上
+    override suspend fun openDrawer() = if (link.isSecondary) hostOnly() else ws.openDrawer()
     override suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl) = if (link.isSecondary) hostOnly() else ws.printLabels(productIds, tpl)
     override suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings) = if (link.isSecondary) hostOnly() else ws.saveRetailSettings(settings)
     // 线上订单由主 POS 接单处理（平台推送到主机）

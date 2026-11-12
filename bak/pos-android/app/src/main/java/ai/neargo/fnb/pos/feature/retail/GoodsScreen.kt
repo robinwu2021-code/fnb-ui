@@ -89,7 +89,11 @@ fun GoodsScreen(state: GoodsUiState, onAction: (GoodsAction) -> Unit) {
     val layout = LocalPosLayout.current
     val gap = Pos.metrics.gap
     val sideW = if (layout.wide) maxOf(layout.dockW, 420.dp) else layout.dockW
-    Row(Modifier.fillMaxSize().padding(gap), horizontalArrangement = Arrangement.spacedBy(gap)) {
+    // 扫码枪：价签页扫到就加进待打价签，其他页按条码搜；页面本身拿焦点，回车不会点到别的按钮
+    val root = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(state.sub) { runCatching { root.requestFocus() } }
+    Row(Modifier.fillMaxSize().hidScanner(root, { false }) { code -> onAction(if (state.sub == GoodsSub.Labels) GoodsAction.AddLabel(code) else GoodsAction.Search(code)) }
+        .padding(gap), horizontalArrangement = Arrangement.spacedBy(gap)) {
         Panel(Modifier.width(140.dp).fillMaxHeight()) {
             Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 RailItem(GoodsSub.Items.label, state.products.size, state.sub == GoodsSub.Items, { onAction(GoodsAction.Sub(GoodsSub.Items)) })

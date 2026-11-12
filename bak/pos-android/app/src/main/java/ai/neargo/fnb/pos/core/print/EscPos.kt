@@ -20,15 +20,35 @@ object EscPos {
     private val CENTER = byteArrayOf(0x1B, 0x61, 0x01)
     private val LEFT = byteArrayOf(0x1B, 0x61, 0x00)
     private val FEED_CUT = byteArrayOf(0x1B, 0x64, 0x04, 0x1D, 0x56, 0x42, 0x00) // ESC d 4 + GS V B 0
+    /** 钱箱脉冲 ESC p m t1 t2：引脚 2（m=0），通电 50ms、断电 500ms（单位 2ms），常见钱箱通用 */
+    val DRAWER = byteArrayOf(0x1B, 0x70, 0x00, 0x19, 0xFA.toByte())
     /** 实时状态查询 DLE EOT n：1 打印机、2 脱机原因、4 纸张传感器。 */
     fun status(n: Int) = byteArrayOf(0x10, 0x04, n.toByte())
+
+    /**
+     * 打印机能认的字：常见小票机 / 标签机字库只有 GBK（GB2312），GB18030 的四字节字符会打成乱码。
+     * 「¥」换成全角「￥」（GB2312 有）；其他四字节字符（生僻字、表情）换成「?」。
+     */
+    fun printable(text: String): String = buildString {
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i); val ch = String(Character.toChars(cp)); i += Character.charCount(cp)
+            append(when {
+                cp == 0xA5 -> "￥"
+                cp < 0x80 -> ch
+                ch.toByteArray(CHARSET).size > 2 -> "?"
+                else -> ch
+            })
+        }
+    }
 
     fun encode(lines: List<String>, cut: Boolean = true): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(INIT); out.write(CN_ON)
         lines.forEachIndexed { i, l ->
-            if (i == 0) { out.write(CENTER); out.write(BOLD_BIG); out.write(l.toByteArray(CHARSET)); out.write('\n'.code); out.write(NORMAL); out.write(LEFT) }
-            else { out.write(l.toByteArray(CHARSET)); out.write('\n'.code) }
+            val b = printable(l).toByteArray(CHARSET)
+            if (i == 0) { out.write(CENTER); out.write(BOLD_BIG); out.write(b); out.write('\n'.code); out.write(NORMAL); out.write(LEFT) }
+            else { out.write(b); out.write('\n'.code) }
         }
         if (cut) out.write(FEED_CUT) else out.write(byteArrayOf(0x1B, 0x64, 0x04))
         return out.toByteArray()
@@ -40,7 +60,7 @@ object EscPos {
  * 标签机一般不回 ESC/POS 状态，发送时不查状态。
  */
 object Tspl {
-    fun encode(lines: List<String>): ByteArray = lines.joinToString("\r\n", postfix = "\r\n").toByteArray(EscPos.CHARSET)
+    fun encode(lines: List<String>): ByteArray = EscPos.printable(lines.joinToString("\r\n", postfix = "\r\n")).toByteArray(EscPos.CHARSET)
 }
 
 /** 一次发送尝试的结果（分级）：没发出 / 已发出且状态正常 / 结果未知。 */

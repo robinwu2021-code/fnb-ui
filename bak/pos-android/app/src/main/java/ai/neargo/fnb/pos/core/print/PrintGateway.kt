@@ -19,9 +19,13 @@ class PrintGateway(private val ws: LocalWorkspace, private val client: EscPosCli
         var n = 0
         while (n < max) {
             val (job, printer) = ws.claimNextPrint() ?: break
-            // 价签任务按 TSPL 发，不查 ESC/POS 状态；其余按 ESC/POS
+            // 价签任务按 TSPL 发，不查 ESC/POS 状态；开钱箱只发脉冲；其余按 ESC/POS
             val label = job.kind == ai.neargo.fnb.pos.core.model.PrintKind.Label
-            val data = if (label) Tspl.encode(job.body) else EscPos.encode(job.body)
+            val data = when (job.kind) {
+                ai.neargo.fnb.pos.core.model.PrintKind.Label -> Tspl.encode(job.body)
+                ai.neargo.fnb.pos.core.model.PrintKind.Drawer -> EscPos.DRAWER
+                else -> EscPos.encode(job.body)
+            }
             val outcome = try { withContext(Dispatchers.IO) { client.send(printer.host, printer.port, data, printer.statusQuery && !label) } }
                 catch (e: CancellationException) { throw e }
                 catch (e: Exception) { SendOutcome.Unknown("发送异常：${e.message}") }

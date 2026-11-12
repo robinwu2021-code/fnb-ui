@@ -364,6 +364,11 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
         }
     }
 
+    // 钱箱两业态都有：不限零售门店
+    override suspend fun openDrawer(): Result<Unit> = storeOp(event = EventSpec { _, _ -> Triple("DrawerOpened", """{"by":"manual"}""", listOf("drawer")) }, check = { _ -> need(Perm.Checkout) }) { s ->
+        settlement.openDrawer(s, "手动")
+    }
+
     override suspend fun queueLabel(productId: String): Result<Unit> = storeOp(event = retailEvent("LabelQueued", """{"product":"$productId"}"""), check = { s ->
         retailOnly(s) ?: if (s.product(productId) == null) "商品不存在" else need(Perm.Settings)
     }) { s ->

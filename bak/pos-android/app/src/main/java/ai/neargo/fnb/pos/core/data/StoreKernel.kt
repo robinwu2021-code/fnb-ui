@@ -7,6 +7,7 @@ import ai.neargo.fnb.pos.core.model.OutboxKind
 import ai.neargo.fnb.pos.core.model.PaymentRecord
 import ai.neargo.fnb.pos.core.model.Perm
 import ai.neargo.fnb.pos.core.model.PrintJob
+import ai.neargo.fnb.pos.core.model.PrintKind
 import ai.neargo.fnb.pos.core.model.StoreData
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,6 +41,13 @@ internal class Settlement(private val k: StoreKernel) {
     /** 记一笔收款（退款为负数）；离线时同时进同步队列，联网后补传 */
     fun record(s: StoreData, pay: PaymentRecord, online: Boolean, scope: String, summary: String): StoreData =
         s.copy(payments = s.payments + pay, outbox = if (online) s.outbox else s.outbox + OutboxItem(pay.id, OutboxKind.Payment, scope, summary, k.clock()))
+            .let { if (pay.method == CASH) openDrawer(it, summary) else it }
+
+    /** 现金收款 / 退款都要开钱箱：排一张「开钱箱」任务，发到前台小票机（没配打印机就是模拟） */
+    fun openDrawer(s: StoreData, why: String): StoreData =
+        s.copy(printJobs = s.printJobs + PrintJob(k.newId("D"), PrintKind.Drawer, "开钱箱 · $why", emptyList(), k.clock()))
+
+    companion object { const val CASH = "现金" }
 
     /** 会员消费：累计消费、来店次数、按实付给积分；储值支付扣会员余额并记流水 */
     fun memberSpend(s: StoreData, memberId: String, paid: Long, stored: Boolean, ref: String, actor: String, method: String): StoreData {

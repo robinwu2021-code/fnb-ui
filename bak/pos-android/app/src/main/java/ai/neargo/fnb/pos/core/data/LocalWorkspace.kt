@@ -955,6 +955,7 @@ class LocalWorkspace(
     override suspend fun reprintSale(no: String): Result<Unit> = retailService.reprintSale(no)
     override suspend fun setRetailPrice(productId: String, price: Long): Result<Unit> = retailService.setRetailPrice(productId, price)
     override suspend fun queueLabel(productId: String): Result<Unit> = retailService.queueLabel(productId)
+    override suspend fun openDrawer() = retailService.openDrawer()
     override suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int> = retailService.printLabels(productIds, tpl)
     override suspend fun simulateOnlineOrder(channel: ai.neargo.fnb.pos.core.model.SaleChannel): Result<String> = retailService.simulateOnlineOrder(channel)
     override suspend fun advanceOnline(no: String): Result<ai.neargo.fnb.pos.core.model.OnlineState> = retailService.advanceOnline(no)
@@ -1364,7 +1365,7 @@ class LocalWorkspace(
     override suspend fun testPrint(printerId: String) = storeOp(check = { s -> need(Perm.Settings) ?: if (s.printers.none { it.id == printerId }) "打印机不存在" else null }) { s ->
         val p = s.printers.first { it.id == printerId }
         val w = p.width
-        val body = listOf("打印测试", "-".repeat(w), "打印机：${p.name}", "地址：${p.host}:${p.port}", "纸宽：${if (w == 32) "58mm" else "80mm"}", "中文：南山小馆 · 宫保鸡丁 ¥48.00", "-".repeat(w),
+        val body = listOf("打印测试", "-".repeat(w), "打印机：${p.name}", "地址：${p.host}:${p.port}", "纸宽：${if (w == 32) "58mm" else "80mm"}", "中文：门店收银 · 中文与金额 ¥48.00", "-".repeat(w),
             java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(clock())))
         s.copy(printJobs = s.printJobs + PrintJob(newId("T"), PrintKind.Test, "测试页 ${p.name}", body, clock(), printerId = p.id))
     }

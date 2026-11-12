@@ -100,7 +100,8 @@ fun PrintersPanel() {
         var wide by remember { mutableStateOf(p.width == 48) }
         var status by remember { mutableStateOf(p.statusQuery) }
         var enabled by remember { mutableStateOf(p.enabled) }
-        var error by remember { mutableStateOf<String?>(null) }
+        // 改了任一项就收起上次的错误（不然改对了还挂着红字）
+        var error by remember(name, host, port) { mutableStateOf<String?>(null) }
         PosDialog(if (p.name.isBlank()) "添加打印机" else "编辑打印机", onDismiss = { editing = null }, footer = {
             PosButton("取消", { editing = null }, size = BtnSize.Large)
             PosButton("保存", {
@@ -110,13 +111,14 @@ fun PrintersPanel() {
         }) {
             PosTextField(name, { name = it }, "名称", hint = "例如 厨房热菜")
             PosTextField(host, { host = it }, "IP 地址", hint = "例如 192.168.1.50")
-            PosTextField(port, { port = it.filter(Char::isDigit).take(5) }, "端口", keyboard = KeyboardOptions(keyboardType = KeyboardType.Number), error = error)
+            PosTextField(port, { port = it.filter(Char::isDigit).take(5) }, "端口", keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 PosButton("58mm", { wide = false }, selected = !wide, size = BtnSize.Small)
                 PosButton("80mm", { wide = true }, selected = wide, size = BtnSize.Small)
                 PosButton(if (status) "查询状态：开" else "查询状态：关", { status = !status }, size = BtnSize.Small, selected = status)
                 PosButton(if (enabled) "启用" else "停用", { enabled = !enabled }, size = BtnSize.Small, selected = enabled)
             }
+            error?.let { Text(it, style = Pos.type.label, color = Pos.colors.danger, modifier = Modifier.padding(top = 8.dp)) }
         }
     }
 }
