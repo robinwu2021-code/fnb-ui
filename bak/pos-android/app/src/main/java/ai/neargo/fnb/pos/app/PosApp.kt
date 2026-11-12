@@ -236,6 +236,18 @@ fun PosApp(shell: ShellViewModel) {
             }
             ToastHost(shell.messages, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = if (layout.wide) 24.dp else 72.dp))
             if (displayOpen) DisplaySheetRoute(onDismiss = { displayOpen = false })
+            // 商户自己的新门店还没有员工：先设店长（没有员工时任何人都有全部权限）
+            val store by container.config.current.collectAsStateWithLifecycle()
+            var later by rememberSaveable(session.storeId) { mutableStateOf(false) }
+            store?.takeIf { it.owner.isNotEmpty() && it.employees.isEmpty() && !later }?.let { s ->
+                ai.neargo.fnb.pos.feature.staff.OwnerSetupDialog(s.settings.shortName, onLater = { later = true }) { name, pin, done ->
+                    lockScope.launch {
+                        container.staff.saveEmployee(null, name, ai.neargo.fnb.pos.core.model.Role.Owner, pin, true)
+                            .onSuccess { done(null); shell.messages.post("已设置店长 ${name.trim()}，本机已用店长上岗；其他员工到「系统管理 · 员工与权限」添加") }
+                            .onFailure { done(it.message ?: "设置失败") }
+                    }
+                }
+            }
         }
     }
 }

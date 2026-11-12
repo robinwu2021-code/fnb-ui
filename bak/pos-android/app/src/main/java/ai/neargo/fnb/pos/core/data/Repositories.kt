@@ -32,6 +32,8 @@ import kotlinx.coroutines.flow.StateFlow
 interface SessionRepository {
     val session: StateFlow<Session>
     val stores: StateFlow<List<StoreSummary>>
+    /** 当前账号能看到的门店完整数据（商户汇总报表用） */
+    val visibleStores: StateFlow<List<ai.neargo.fnb.pos.core.model.StoreData>>
     suspend fun login(email: String, password: String): Result<Unit>
     suspend fun register(merchant: String, email: String, password: String, confirm: String): Result<Unit>
     suspend fun enterDemo()
@@ -51,6 +53,12 @@ interface StoreConfigRepository {
     suspend fun addCategory(name: String, en: String): Result<Unit>
     suspend fun addSpecGroup(name: String, en: String, options: String): Result<Unit>
     suspend fun saveProduct(product: Product, menuIds: Set<String>): Result<Unit>
+    /** 批量删商品：在用（未结账餐饮订单、零售挂单、未完成线上单）的不能删；同时移出餐牌和待打价签。返回删除数 */
+    suspend fun deleteProducts(ids: Set<String>): Result<Int>
+    /** 批量调价：按百分比（-90 到 +300），结果按角取整；没手动改过的规格价跟着走；零售开了自动价签就进待打价签 */
+    suspend fun repriceProducts(ids: Set<String>, percent: Int): Result<Int>
+    /** 批量删桌台：只能删空闲且没有预订的桌 */
+    suspend fun deleteTables(ids: Set<String>): Result<Int>
     suspend fun adjustStock(productId: String, skuKey: String?, value: Int, reason: String): Result<Unit>
     suspend fun saveMenu(id: String?, name: String, en: String, productIds: List<String>): Result<Unit>
     suspend fun setPublished(menuId: String, published: Boolean): Result<Unit>

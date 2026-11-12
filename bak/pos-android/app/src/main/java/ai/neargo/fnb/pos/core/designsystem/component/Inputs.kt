@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -58,19 +59,28 @@ fun PosTextField(
     keyboard: KeyboardOptions = KeyboardOptions.Default,
     /** 出现时自动获得焦点（弹窗里唯一 / 第一个要填的框用） */
     autoFocus: Boolean = false,
+    /** 键盘「前往 / 完成」时执行（表单最后一个框直接提交） */
+    onGo: (() -> Unit)? = null,
 ) {
     val c = Pos.colors
     val t = Pos.type
     val focus = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    // 单行框按键盘「下一项」跳到下一个输入框（表单一路填下去，不用伸手点被键盘挡住的框）；调用方指定了动作就照它的
+    val opts = if (singleLine && (keyboard.imeAction == androidx.compose.ui.text.input.ImeAction.Default || keyboard.imeAction == androidx.compose.ui.text.input.ImeAction.Unspecified)) keyboard.copy(imeAction = androidx.compose.ui.text.input.ImeAction.Next) else keyboard
     if (autoFocus) androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         // 点标签也能聚焦输入框
-        Text(label, style = t.label, color = c.sub, modifier = Modifier.clickable(role = Role.Button, onClickLabel = "编辑$label") { focus.requestFocus() }.padding(bottom = 4.dp))
+        Text(label, style = t.label, color = c.sub, modifier = Modifier.focusProperties { canFocus = false }.clickable(role = Role.Button, onClickLabel = "编辑$label") { focus.requestFocus() }.padding(bottom = 4.dp))
         BasicTextField(
             value, onChange, singleLine = singleLine,
             textStyle = t.body.copy(color = c.ink),
             cursorBrush = SolidColor(c.primary),
-            keyboardOptions = keyboard,
+            keyboardOptions = opts,
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                // 标签不可聚焦，往下就是下一个输入框；最后一个框往下没有了就收起键盘（不绕回第一个）
+                onNext = { if (!focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)) focusManager.clearFocus() },
+                onGo = { focusManager.clearFocus(); onGo?.invoke() }, onDone = { focusManager.clearFocus(); onGo?.invoke() }),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
             modifier = Modifier.fillMaxWidth().focusRequester(focus).heightIn(min = PosSize.medium).clip(Pos.metrics.button).background(c.tile)
                 .then(if (error != null) Modifier.border(1.dp, c.danger, Pos.metrics.button) else Modifier)

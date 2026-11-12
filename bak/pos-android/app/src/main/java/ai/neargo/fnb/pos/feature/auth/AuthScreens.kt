@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -85,7 +87,7 @@ fun AuthRoute() {
 
 @Composable
 private fun CenterCard(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Pos.colors.canvas).verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Pos.colors.canvas).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
         Panel(Modifier.widthIn(max = 440.dp).fillMaxWidth()) { Column(Modifier.padding(24.dp)) { content() } }
     }
 }
@@ -105,7 +107,7 @@ private fun LoginForm(state: AuthUiState, onLogin: (String, String) -> Unit, onD
     Brand("登录 · 离线模式下使用本机账号")
     val e = fieldOf(state.error)
     PosTextField(email, { email = it }, "邮箱", error = e["email"], keyboard = KeyboardOptions(keyboardType = KeyboardType.Email))
-    PosTextField(pwd, { pwd = it }, "密码（至少 8 位）", password = true, error = e["pwd"] ?: e["form"])
+    PosTextField(pwd, { pwd = it }, "密码（至少 8 位）", password = true, error = e["pwd"] ?: e["form"], keyboard = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go), onGo = { onLogin(email, pwd) })
     Spacer(Modifier.height(12.dp))
     PosButton("登录", { onLogin(email, pwd) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, loading = state.busy)
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -125,7 +127,7 @@ private fun RegisterForm(state: AuthUiState, onRegister: (String, String, String
     PosTextField(merchant, { merchant = it }, "商户名称", error = e["merchant"])
     PosTextField(email, { email = it }, "邮箱", error = e["email"], keyboard = KeyboardOptions(keyboardType = KeyboardType.Email))
     PosTextField(pwd, { pwd = it }, "密码（至少 8 位）", password = true, error = e["pwd"])
-    PosTextField(confirm, { confirm = it }, "确认密码", password = true, error = e["confirm"] ?: e["form"])
+    PosTextField(confirm, { confirm = it }, "确认密码", password = true, error = e["confirm"] ?: e["form"], keyboard = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go), onGo = { onRegister(merchant, email, pwd, confirm) })
     Spacer(Modifier.height(12.dp))
     PosButton("注册并选择门店", { onRegister(merchant, email, pwd, confirm) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, loading = state.busy)
     PosButton("已有账号，去登录", onSwitch, Modifier.padding(top = 8.dp), variant = BtnVariant.Text)
@@ -150,7 +152,7 @@ fun StorePicker(stores: List<StoreSummary>, current: String?, onPick: (String) -
     val t = Pos.type
     var creating by remember { mutableStateOf(false) }
     if (creating && onCreate != null) CreateStoreDialog(onCreate) { creating = false }
-    Box(Modifier.fillMaxSize().background(c.canvas).verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(c.canvas).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
         Column(Modifier.widthIn(max = 760.dp).fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

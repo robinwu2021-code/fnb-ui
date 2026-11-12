@@ -43,6 +43,11 @@ fun PosDialog(
     val c = Pos.colors
     val t = Pos.type
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // 弹窗窗口随软键盘缩小：底部按钮留在键盘上方，内容区自己滚动（不然「保存」被键盘挡住）
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.SideEffect {
+            (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
         Surface(
             Modifier.padding(24.dp).widthIn(max = maxWidth).fillMaxWidth().heightIn(max = 720.dp),
             shape = RoundedCornerShape(12.dp), color = c.surface, tonalElevation = 0.dp, shadowElevation = 0.dp,

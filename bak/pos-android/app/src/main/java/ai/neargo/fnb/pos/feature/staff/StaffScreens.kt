@@ -130,3 +130,34 @@ fun StaffPanel() {
         }
     }
 }
+
+/**
+ * 新门店设店长：真实商户的门店没有员工时，任何人打开都有全部权限，所以先设一位店长（姓名 + PIN）。
+ * 设好后本机直接以店长上岗；可以先「稍后」，但每次进店都会再提醒。
+ */
+@Composable
+fun OwnerSetupDialog(store: String, onLater: () -> Unit, onSave: (name: String, pin: String, done: (String?) -> Unit) -> Unit) {
+    var name by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
+    var pin2 by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember(name, pin, pin2) { mutableStateOf<String?>(null) }
+    ai.neargo.fnb.pos.core.designsystem.component.PosDialog("设置店长", onLater, subtitle = store, footer = {
+        PosButton("稍后", onLater, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Large)
+        PosButton("设置并上岗", {
+            val why = when {
+                name.isBlank() -> "请填写店长姓名"
+                ai.neargo.fnb.pos.core.model.StaffRules.pin(pin) != null -> ai.neargo.fnb.pos.core.model.StaffRules.pin(pin)
+                pin != pin2 -> "两次输入的 PIN 不一致"
+                else -> null
+            }
+            if (why != null) error = why else { busy = true; onSave(name, pin) { e -> busy = false; error = e } }
+        }, variant = ai.neargo.fnb.pos.core.designsystem.component.BtnVariant.Primary, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Large, loading = busy)
+    }) {
+        Text("这家门店还没有员工，现在任何人打开都有全部权限。先设一位店长：之后收银、退款、改价等按员工权限控制，换人用 PIN 上岗。", style = Pos.type.label, color = Pos.colors.sub)
+        PosTextField(name, { name = it.take(12) }, "店长姓名", modifier = Modifier.padding(top = 8.dp))
+        PosTextField(pin, { pin = it.filter(Char::isDigit).take(6) }, "PIN（4–6 位数字）", keyboard = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword), password = true)
+        PosTextField(pin2, { pin2 = it.filter(Char::isDigit).take(6) }, "再输一次 PIN", keyboard = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword), password = true)
+        error?.let { Text(it, style = Pos.type.label, color = Pos.colors.danger, modifier = Modifier.padding(top = 8.dp)) }
+    }
+}

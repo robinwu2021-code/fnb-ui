@@ -297,6 +297,7 @@ class LocalWorkspace(
             // 没设员工：演示门店显示演示收银员，真实门店提示去设员工
             staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) (if (s?.owner.isNullOrEmpty()) DemoCatalog.STAFF else "未设员工") else "未上岗", s?.currentTableId ?: "", s?.biz ?: BizType.Dining)
     }
+    override val visibleStores: StateFlow<List<StoreData>> = derive { v -> v.stores.values.filter { visible(v, it) } }
     override val stores: StateFlow<List<StoreSummary>> = derive { v ->
         v.stores.values.filter { visible(v, it) }.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }, s.biz) }
     }
@@ -749,6 +750,45 @@ class LocalWorkspace(
         val exists = s.products.any { it.id == product.id }
         val products = if (exists) s.products.map { if (it.id == product.id) product else it } else s.products + product
         s.copy(products = products, menus = ManageRules.relink(s.menus, product.id, menuIds))
+    }
+
+    override suspend fun deleteProducts(ids: Set<String>): Result<Int> = persistenceResult {
+        storeOp(event = EventSpec { _, _ -> Triple("ProductsDeleted", """{"ids":${ids.joinToString(",", "[", "]") { "\"$it\"" }}}""", listOf(Aggregates.CATALOG)) }, check = { s ->
+            val inUse = CatalogBulk.inUse(s)
+            when {
+                ids.isEmpty() -> "请选择要删除的商品"
+                ids.any { id -> s.products.none { it.id == id } } -> "商品不存在"
+                ids.any { it in inUse } -> "「${s.products.first { it.id in inUse && it.id in ids }.name}」还在未结账的单里，结账后再删"
+                else -> null
+            }
+        }) { s -> CatalogBulk.delete(s, ids) }.map { ids.size }
+    }
+
+    override suspend fun repriceProducts(ids: Set<String>, percent: Int): Result<Int> = persistenceResult {
+        storeOp(event = EventSpec { _, _ -> Triple("ProductsRepriced", """{"count":${ids.size},"percent":$percent}""", listOf(Aggregates.CATALOG)) }, check = { s ->
+            when {
+                ids.isEmpty() -> "请选择要调价的商品"
+                percent == 0 -> "调价幅度不能为 0"
+                percent !in -90..300 -> "调价幅度在 -90% 到 +300% 之间"
+                ids.any { id -> s.products.none { it.id == id } } -> "商品不存在"
+                else -> null
+            }
+        }) { s -> CatalogBulk.reprice(s, ids, percent) }.map { ids.size }
+    }
+
+    override suspend fun deleteTables(ids: Set<String>): Result<Int> = persistenceResult {
+        storeOp(event = EventSpec { _, _ -> Triple("TablesDeleted", """{"ids":${ids.joinToString(",", "[", "]") { "\"$it\"" }}}""", listOf(Aggregates.CATALOG)) }, check = { s ->
+            val bad = s.tables.firstOrNull { it.id in ids && (it.status != TableStatus.Idle || s.reservations.any { r -> r.tableId == it.id && r.status == ReservationStatus.Booked }) }
+            when {
+                ids.isEmpty() -> "请选择要删除的桌台"
+                ids.any { id -> s.tables.none { it.id == id } } -> "桌台不存在"
+                bad != null -> "${bad.id} ${bad.status.label}或有预订，不能删除"
+                else -> null
+            }
+        }) { s ->
+            val left = s.tables.filterNot { it.id in ids }
+            s.copy(tables = left, orders = s.orders - ids, currentTableId = if (s.currentTableId in ids) left.firstOrNull()?.id.orEmpty() else s.currentTableId)
+        }.map { ids.size }
     }
 
     override suspend fun adjustStock(productId: String, skuKey: String?, value: Int, reason: String): Result<Unit> {
