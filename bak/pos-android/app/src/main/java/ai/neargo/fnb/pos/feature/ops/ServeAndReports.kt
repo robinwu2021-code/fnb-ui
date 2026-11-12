@@ -134,11 +134,16 @@ fun ReportsRoute() {
         else -> s.dayCloses.firstOrNull { it.id == range }?.let { Triple(it.start, it.end + 1, "日结 ${time(it.start)} — ${time(it.end)}") } ?: Triple(dayStart, now + 1, "当前营业日")
     }
     val r = ReportRules.build(s, from, to)
+    // 商户汇总：账号下有多家门店（可能跨业态）时出现
+    val all by c.session.visibleStores.collectAsStateWithLifecycle()
+    var merchant by remember { mutableStateOf(false) }
+    if (merchant && all.size > 1) { MerchantReportPage(all, onBack = { merchant = false }); return }
     Panel(Modifier.fillMaxSize().padding(Pos.metrics.gap)) {
         Column(Modifier.padding(Pos.metrics.pad)) {
             PageHeader("报表与日结", title) {
                 PosButton("当前营业日", { range = "today" }, size = BtnSize.Small, selected = range == "today")
                 PosButton("近 7 天", { range = "week" }, size = BtnSize.Small, selected = range == "week")
+                if (all.size > 1) PosButton("商户汇总", { merchant = true }, size = BtnSize.Small)
                 PosButton("日结", { closing = true }, size = BtnSize.Small, variant = BtnVariant.Primary)
             }
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -176,6 +181,34 @@ fun ReportsRoute() {
             today.byMethod.forEach { (m, v) -> KeyValue("  $m", yuan(v)) }
             KeyValue("会员充值", yuan(today.recharge))
             Text("日结后生成日结单，营业日重新开始；已结账数据保留，可在历史日结中查看。", style = Pos.type.label, color = Pos.colors.sub, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+/** 商户汇总页：今日（自然日）/ 近 7 天；各门店营业额、单数、退款，按业态小计，收款方式合并 */
+@Composable
+private fun MerchantReportPage(stores: List<ai.neargo.fnb.pos.core.model.StoreData>, onBack: () -> Unit) {
+    var week by remember { mutableStateOf(false) }
+    val now = System.currentTimeMillis()
+    val from = if (week) now - 7 * 86_400_000L else ai.neargo.fnb.pos.core.model.MerchantReport.dayStart(now)
+    val m = ai.neargo.fnb.pos.core.model.MerchantReport.build(stores, from, now + 1)
+    Panel(Modifier.fillMaxSize().padding(Pos.metrics.gap)) {
+        Column(Modifier.padding(Pos.metrics.pad)) {
+            PageHeader("商户汇总", "${stores.size} 家门店 · ${if (week) "近 7 天" else "今日（${time(from)} 起）"}") {
+                PosButton("今日", { week = false }, size = BtnSize.Small, selected = !week)
+                PosButton("近 7 天", { week = true }, size = BtnSize.Small, selected = week)
+                PosButton("返回本店", onBack, size = BtnSize.Small, variant = BtnVariant.Text)
+            }
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                GroupTitle("合计")
+                KeyValue("营业额（实收，退款已扣）", yuan(m.revenue)); KeyValue("单数", "${m.orders}"); KeyValue("零售退款", yuan(m.refund))
+                m.byBiz.forEach { (b, v) -> Bar(b.label, v, m.revenue) }
+                GroupTitle("各门店")
+                m.rows.forEach { row -> KeyValue("${row.name} · ${row.biz.label}", "${yuan(row.revenue)} · ${row.orders} 单" + if (row.refund > 0) " · 退 ${yuan(row.refund)}" else "") }
+                GroupTitle("收款方式（合并）")
+                if (m.byMethod.isEmpty()) Text("无收款", style = Pos.type.label, color = Pos.colors.sub)
+                m.byMethod.entries.sortedByDescending { it.value }.forEach { (k, v) -> Bar(k, v, m.revenue) }
+            }
         }
     }
 }

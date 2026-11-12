@@ -17,6 +17,7 @@ import ai.neargo.fnb.pos.core.model.Sku
 import ai.neargo.fnb.pos.core.model.StoreData
 import ai.neargo.fnb.pos.core.model.yuan
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,7 +60,13 @@ internal fun ColumnScope.CategoriesSection(store: StoreData, vm: ManageViewModel
 internal fun ColumnScope.ProductsSection(store: StoreData, vm: ManageViewModel) {
     val retail = store.profile.retail
     val cols = listOf(Col("商品", 2f), Col("分类"), Col("售价", end = true), Col("库存", 0.7f, end = true), Col(if (retail) "条码" else "餐牌", 1.4f), Col("", 0.6f, end = true))
-    PageHeader("商品资料", if (retail) "${store.products.size} 个商品；改价、价签在「商品」页签更顺手" else "${store.products.size} 个商品；只有关联已发布餐牌的商品出现在点餐页") { PosButton("新建商品", vm::newProduct, variant = BtnVariant.Primary) }
+    var bulk by remember { mutableStateOf<String?>(null) }
+    PageHeader("商品资料", if (retail) "${store.products.size} 个商品；改价、价签在「商品」页签更顺手" else "${store.products.size} 个商品；只有关联已发布餐牌的商品出现在点餐页") {
+        PosButton("批量调价", { bulk = "price" })
+        PosButton("删除商品", { bulk = "delete" })
+        PosButton("新建商品", vm::newProduct, variant = BtnVariant.Primary)
+    }
+    bulk?.let { mode -> BulkProductsDialog(store, mode, vm) { bulk = null } }
     DataTable(cols, Modifier.weight(1f)) {
         items(store.products.size) { i ->
             val p = store.products[i]
@@ -179,3 +186,37 @@ internal fun ColumnScope.MenusSection(store: StoreData, vm: ManageViewModel) {
     }
 }
 
+/**
+ * 批量整理商品（建店后常用）：勾选商品后按百分比调价，或删除（在用的不能删）。
+ * 调价按角取整、没手动改过的规格价跟着走；零售开了自动价签会进待打价签。
+ */
+@Composable
+private fun BulkProductsDialog(store: StoreData, mode: String, vm: ManageViewModel, onDismiss: () -> Unit) {
+    val price = mode == "price"
+    var ids by remember { mutableStateOf(emptySet<String>()) }
+    var pct by remember { mutableStateOf("10") }
+    val inUse = remember(store) { ai.neargo.fnb.pos.core.model.CatalogBulk.inUse(store) }
+    FormDialog(if (price) "批量调价" else "删除商品", onDismiss, { done ->
+        val p = pct.trim().toIntOrNull()
+        when {
+            ids.isEmpty() -> done("请勾选商品")
+            price && p == null -> done("调价幅度请填整数，如 10 或 -5")
+            price -> vm.save("已调价 ${ids.size} 个商品（${if (p!! > 0) "+" else ""}$p%）", { repriceProducts(ids, p).map { } }, done)
+            else -> vm.save("已删除 ${ids.size} 个商品", { deleteProducts(ids).map { } }, done)
+        }
+    }, maxWidth = 560.dp) {
+        if (price) PosTextField(pct, { pct = it.filter { c -> c.isDigit() || c == '-' }.take(4) }, "调价幅度（%）", hint = "正数涨价、负数降价，如 10 = 涨 10%；按角取整")
+        else Text("删除后不能恢复；还在未结账单里的商品不能删。", style = Pos.type.label, color = Pos.colors.sub)
+        Row(Modifier.padding(top = 8.dp)) {
+            PosButton("全选", { ids = store.products.filter { price || it.id !in inUse }.map { it.id }.toSet() }, variant = BtnVariant.Text, size = BtnSize.Small)
+            PosButton("全不选", { ids = emptySet() }, variant = BtnVariant.Text, size = BtnSize.Small)
+            Spacer(Modifier.weight(1f))
+            Text("已选 ${ids.size}", style = Pos.type.label, color = Pos.colors.sub, modifier = Modifier.padding(top = 8.dp))
+        }
+        store.products.forEach { p ->
+            val locked = !price && p.id in inUse
+            PosCheckRow(p.name + if (locked) "（在用）" else "", p.id in ids, { on -> if (!locked) ids = if (on) ids + p.id else ids - p.id },
+                trailing = if (price) pct.toIntOrNull()?.let { "${yuan(p.price)} → ${yuan(ai.neargo.fnb.pos.core.model.CatalogBulk.newPrice(p.price, it.coerceIn(-90, 300)))}" } ?: yuan(p.price) else yuan(p.displayPrice))
+        }
+    }
+}

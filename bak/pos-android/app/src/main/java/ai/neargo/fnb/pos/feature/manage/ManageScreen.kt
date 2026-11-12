@@ -236,8 +236,24 @@ private fun ColumnScope.TablesSection(store: StoreData, vm: ManageViewModel) {
     var editing by remember { mutableStateOf<DiningTable?>(null) }
     var creating by remember { mutableStateOf(false) }
     val cols = listOf(Col("桌号"), Col("区域", 1.4f), Col("座位", 0.6f), Col("状态"), Col("", 0.6f, end = true))
+    var deleting by remember { mutableStateOf(false) }
     PageHeader("桌台管理", "桌号门店内唯一，仅字母数字短横线；座位 1–30。新桌台同步到桌台工作台") {
+        PosButton("删除桌台", { deleting = true })
         PosButton("新建桌台", { creating = true }, variant = BtnVariant.Primary)
+    }
+    if (deleting) {
+        // 只能删空闲且没有预订的桌（建店后清掉用不到的演示桌台）
+        var ids by remember { mutableStateOf(emptySet<String>()) }
+        val free = store.tables.filter { t -> t.status == ai.neargo.fnb.pos.core.model.TableStatus.Idle && store.reservations.none { it.tableId == t.id && it.status == ai.neargo.fnb.pos.core.model.ReservationStatus.Booked } }.map { it.id }.toSet()
+        FormDialog("删除桌台", { deleting = false }, { done -> if (ids.isEmpty()) done("请勾选桌台") else vm.save("已删除 ${ids.size} 张桌台", { deleteTables(ids).map { } }, done) }, maxWidth = 520.dp) {
+            Text("只能删空闲且没有预订的桌台；用餐中的结账清台后再删。", style = Pos.type.label, color = Pos.colors.sub)
+            ai.neargo.fnb.pos.core.designsystem.component.PosButton("全选空闲", { ids = free }, variant = BtnVariant.Text, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Small)
+            store.tables.forEach { t ->
+                val ok = t.id in free
+                ai.neargo.fnb.pos.core.designsystem.component.PosCheckRow(t.id + if (ok) "" else "（${t.status.label}）", t.id in ids, { on -> if (ok) ids = if (on) ids + t.id else ids - t.id },
+                    trailing = "${store.areas.firstOrNull { it.id == t.areaId }?.name.orEmpty()} · ${t.seats} 座")
+            }
+        }
     }
     DataTable(cols, Modifier.weight(1f)) {
         items(store.tables.size) { i ->
