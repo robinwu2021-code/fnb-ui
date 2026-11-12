@@ -18,6 +18,11 @@ data class DisplayPrefs(
     val customerDisplay: Boolean = true,
     val customerLines: Boolean = true,
     val customerSlides: Boolean = true,
+    /** 本机电子秤（零售称重）：网口秤或串口服务器的地址；空 = 不接秤，称重弹窗手输。poll 为问答式秤的查询指令 */
+    val scaleHost: String = "",
+    val scalePort: Int = 4001,
+    val scalePoll: String = "",
+    val scaleGrams: Boolean = false,
 )
 
 /** 字体随包提供，中文按字形回退系统 Noto Sans CJK。 */

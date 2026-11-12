@@ -8,6 +8,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.KeyValue
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
 import ai.neargo.fnb.pos.core.designsystem.component.PosDialog
 import ai.neargo.fnb.pos.core.designsystem.component.PosTextField
+import ai.neargo.fnb.pos.core.designsystem.component.PosSwitch
 import ai.neargo.fnb.pos.core.designsystem.component.Tag
 import ai.neargo.fnb.pos.core.designsystem.component.Text
 import ai.neargo.fnb.pos.core.designsystem.theme.Pos
@@ -88,6 +89,7 @@ fun PrintersPanel() {
                 }
             }
         }
+        if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) ScaleSettings()
     }
     editing?.let { p ->
         var name by remember { mutableStateOf(p.name) }
@@ -114,5 +116,37 @@ fun PrintersPanel() {
                 PosButton(if (enabled) "启用" else "停用", { enabled = !enabled }, size = BtnSize.Small, selected = enabled)
             }
         }
+    }
+}
+
+/** 本机电子秤（零售称重）：网口秤或串口服务器地址、问答指令、单位；实时显示连接状态和读数。存在本机偏好，不同收银台各接各的秤 */
+@Composable
+private fun ScaleSettings() {
+    val c = appContainer()
+    val prefs by c.prefs.prefs.collectAsStateWithLifecycle(null)
+    val p = prefs ?: return
+    val state by c.scale.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var host by remember(p.scaleHost) { mutableStateOf(p.scaleHost) }
+    var port by remember(p.scalePort) { mutableStateOf(p.scalePort.toString()) }
+    var poll by remember(p.scalePoll) { mutableStateOf(p.scalePoll) }
+    var grams by remember(p.scaleGrams) { mutableStateOf(p.scaleGrams) }
+    GroupTitle("电子秤（本机）")
+    Text("网口秤，或用串口服务器把秤的串口转成 TCP；秤设成「连续输出」。问答式的秤填查询指令（如 W\\r）。地址留空 = 不接秤，称重时手输", style = Pos.type.label, color = Pos.colors.sub)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PosTextField(host, { host = it.trim() }, "IP 地址", Modifier.weight(2f))
+        PosTextField(port, { port = it.filter(Char::isDigit).take(5) }, "端口", Modifier.weight(1f))
+        PosTextField(poll, { poll = it.take(16) }, "查询指令（可不填）", Modifier.weight(1.5f))
+    }
+    KeyValue("没写单位的读数按", if (grams) "克" else "千克") { PosSwitch(grams, { grams = it }) }
+    val status = when (val st = state) {
+        ai.neargo.fnb.pos.core.hardware.ScaleState.Off -> "未接秤"
+        ai.neargo.fnb.pos.core.hardware.ScaleState.Connecting -> "连接中…"
+        is ai.neargo.fnb.pos.core.hardware.ScaleState.Error -> st.message
+        is ai.neargo.fnb.pos.core.hardware.ScaleState.Live -> st.reading?.let { "已连接 · %d.%03d kg · %s".format(it.grams / 1000, it.grams % 1000, if (it.stable) "稳定" else "称重中") } ?: "已连接，等读数"
+    }
+    KeyValue("状态", status) {
+        PosButton("保存", { scope.launch { c.prefs.update { it.copy(scaleHost = host, scalePort = port.toIntOrNull() ?: 4001, scalePoll = poll, scaleGrams = grams) }; c.messages.post(if (host.isBlank()) "已关闭电子秤" else "已保存，正在连接电子秤") } },
+            size = BtnSize.Small, variant = BtnVariant.Primary)
     }
 }

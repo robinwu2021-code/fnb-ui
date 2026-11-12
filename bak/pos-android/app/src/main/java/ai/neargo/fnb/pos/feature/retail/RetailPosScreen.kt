@@ -491,22 +491,45 @@ private fun WaitBlock(title: String, hint: String) {
 @Composable
 private fun WeighDialog(p: Product, grams: Int, onAction: (RetailPosAction) -> Unit) {
     val c = Pos.colors; val t = Pos.type
+    // 接了秤就读秤（稳定读数才能加入）；没接秤或切到手输就手输
+    val scale by appContainer().scale.state.collectAsStateWithLifecycle()
+    var manual by remember(p.id) { mutableStateOf(false) }
+    var tare by remember(p.id) { mutableStateOf(0) }
+    val live = (scale as? ai.neargo.fnb.pos.core.hardware.ScaleState.Live)?.reading
+    val useScale = scale !is ai.neargo.fnb.pos.core.hardware.ScaleState.Off && !manual
     var input by remember(p.id) { mutableStateOf(if (grams > 0) kg(grams) else "") }
-    val w = parseKg(input) ?: grams
+    val w = if (useScale) maxOf(0, (live?.grams ?: 0) - tare) else parseKg(input) ?: grams
+    val ready = if (useScale) live?.stable == true && w > 0 else w > 0
     val amount = Money.roundHalfUp(p.price * w, 1000)
     PosDialog("称重 · ${nameOf(p)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)}/kg · ${p.retail?.barcodes?.firstOrNull().orEmpty()}", footer = {
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
-        PosButton("加入 ${yuan(amount)}", { onAction(RetailPosAction.AddWeighed(p.id, w)) }, variant = BtnVariant.Primary, enabled = w > 0)
+        PosButton("加入 ${yuan(amount)}", { onAction(RetailPosAction.AddWeighed(p.id, w)) }, variant = BtnVariant.Primary, enabled = ready)
     }) {
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(Pos.metrics.card).background(c.tile).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("${kg(w)} kg", style = t.hero.copy(fontSize = 44.sp).num(), color = c.ink)
-            Text("未连接电子秤：手输重量（电子秤接入在 R8）", style = t.label, color = c.warning)
+            val (msg, color) = when {
+                !useScale && scale is ai.neargo.fnb.pos.core.hardware.ScaleState.Off -> "本机没接电子秤：手输重量（系统管理 · 终端与打印 · 电子秤）" to c.warning
+                !useScale -> "手输重量" to c.sub
+                live?.overload == true -> "超出秤的量程" to c.danger
+                scale is ai.neargo.fnb.pos.core.hardware.ScaleState.Error -> (scale as ai.neargo.fnb.pos.core.hardware.ScaleState.Error).message to c.danger
+                live == null -> "等秤的读数…" to c.sub
+                !live.stable -> "称重中，等读数稳定" to c.warning
+                else -> ("读数稳定" + (if (tare > 0) " · 已去皮 ${tare}g" else "")) to c.primary
+            }
+            Text(msg, style = t.label, color = color)
         }
-        PosTextField(input, { v -> if (Regex("^\\d{0,2}(\\.\\d{0,3})?$").matches(v)) input = v }, "重量（kg，最多 3 位小数）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            listOf(250, 500, 1000).forEach { q -> PosButton("${kg(q)} kg", { input = kg(q) }, Modifier.weight(1f), size = BtnSize.Small) }
-            PosButton("去皮 −12g", { input = kg(maxOf(0, w - 12)) }, Modifier.weight(1f), size = BtnSize.Small)
-            PosButton("归零", { input = "" }, Modifier.weight(1f), size = BtnSize.Small)
+        if (useScale) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+            PosButton("去皮", { tare = live?.grams ?: 0 }, Modifier.weight(1f), size = BtnSize.Small, enabled = live?.stable == true)
+            PosButton("清除去皮", { tare = 0 }, Modifier.weight(1f), size = BtnSize.Small, enabled = tare > 0)
+            PosButton("改为手输", { manual = true }, Modifier.weight(1f), size = BtnSize.Small)
+        } else {
+            PosTextField(input, { v -> if (Regex("^\\d{0,2}(\\.\\d{0,3})?$").matches(v)) input = v }, "重量（kg，最多 3 位小数）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                listOf(250, 500, 1000).forEach { q -> PosButton("${kg(q)} kg", { input = kg(q) }, Modifier.weight(1f), size = BtnSize.Small) }
+                PosButton("去皮 −12g", { input = kg(maxOf(0, w - 12)) }, Modifier.weight(1f), size = BtnSize.Small)
+                PosButton("归零", { input = "" }, Modifier.weight(1f), size = BtnSize.Small)
+                if (scale !is ai.neargo.fnb.pos.core.hardware.ScaleState.Off) PosButton("读秤", { manual = false }, Modifier.weight(1f), size = BtnSize.Small)
+            }
         }
         KeyValue("金额", yuan(amount))
     }

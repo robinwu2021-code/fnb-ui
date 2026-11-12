@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -91,12 +92,15 @@ class AppContainer(context: Context) {
     val messages: MessageBus = SimpleMessageBus()
     /** 本机图片库：商品图片选择后复制到应用私有目录。 */
     val media = LocalMedia(context.applicationContext)
+    /** 本机电子秤（零售称重）：按本机偏好里的地址连接 */
+    val scale = ai.neargo.fnb.pos.core.hardware.NetworkScale(appScope)
 
     init {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
         if (workspace.lanState.value.role == LanRole.Host) appScope.launch(Dispatchers.IO) { runCatching { lanHost.start() }.onFailure { messages.post("主 POS 服务启动失败：${it.message}") } }
         lanLink.start()
+        appScope.launch { prefs.prefs.collect { p -> scale.configure(p.scaleHost, p.scalePort, p.scalePoll, if (p.scaleGrams) ai.neargo.fnb.pos.core.model.ScaleRules.Unit.G else ai.neargo.fnb.pos.core.model.ScaleRules.Unit.Kg) } }
         // 网口打印网关：仅主 POS/单机领取任务（副 POS 不打印）
         ai.neargo.fnb.pos.core.print.PrintGateway(workspace).start(appScope)
         // 授权到期、会话过期随时间发生：定时重新评估
@@ -193,6 +197,10 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
         val cd = booleanPreferencesKey("customer_display")
         val cdLines = booleanPreferencesKey("customer_lines")
         val cdSlides = booleanPreferencesKey("customer_slides")
+        val scaleHost = stringPreferencesKey("scale_host")
+        val scalePort = intPreferencesKey("scale_port")
+        val scalePoll = stringPreferencesKey("scale_poll")
+        val scaleGrams = booleanPreferencesKey("scale_grams")
     }
 
     private inline fun <reified E : Enum<E>> Preferences.enum(key: Preferences.Key<String>, default: E): E =
@@ -206,6 +214,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             layout = p.enum(K.layout, d.layout), photos = p[K.photos] ?: d.photos,
             font = p.enum(K.font, d.font), lang = p.enum(K.lang, d.lang),
             customerDisplay = p[K.cd] ?: d.customerDisplay, customerLines = p[K.cdLines] ?: d.customerLines, customerSlides = p[K.cdSlides] ?: d.customerSlides,
+            scaleHost = p[K.scaleHost] ?: d.scaleHost, scalePort = p[K.scalePort] ?: d.scalePort, scalePoll = p[K.scalePoll] ?: d.scalePoll, scaleGrams = p[K.scaleGrams] ?: d.scaleGrams,
         )
     }
 
@@ -216,6 +225,7 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             it[K.panel] = n.panelShape.name; it[K.button] = n.buttonShape.name; it[K.layout] = n.layout.name
             it[K.photos] = n.photos; it[K.font] = n.font.name; it[K.lang] = n.lang.name
             it[K.cd] = n.customerDisplay; it[K.cdLines] = n.customerLines; it[K.cdSlides] = n.customerSlides
+            it[K.scaleHost] = n.scaleHost; it[K.scalePort] = n.scalePort; it[K.scalePoll] = n.scalePoll; it[K.scaleGrams] = n.scaleGrams
         }
     }
 }
