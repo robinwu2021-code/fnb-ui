@@ -37,9 +37,12 @@ enum class Section(val group: String, val label: String) {
 }
 
 /** 按门店业态裁剪菜单：零售没有桌台、餐牌、厨房档口，库存走「库存」页签；餐饮没有零售设置 */
-fun Section.visibleFor(biz: ai.neargo.fnb.pos.core.model.BizType) = when (biz) {
-    ai.neargo.fnb.pos.core.model.BizType.Retail -> this !in setOf(Section.Tables, Section.Areas, Section.Menus, Section.Stations, Section.Stock)
-    ai.neargo.fnb.pos.core.model.BizType.Dining -> this != Section.Retail
+fun Section.visibleFor(biz: ai.neargo.fnb.pos.core.model.BizType) = visibleFor(ai.neargo.fnb.pos.core.model.BizProfile.of(biz))
+fun Section.visibleFor(p: ai.neargo.fnb.pos.core.model.BizProfile) = when (this) {
+    Section.Tables, Section.Areas, Section.Menus, Section.Stations -> p.tables
+    Section.Stock -> p.manageStock
+    Section.Retail -> p.retail
+    else -> true
 }
 
 /** 图片状态：empty → reading → ready / error（v3.4）。 */

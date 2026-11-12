@@ -50,7 +50,7 @@ object CustomerDisplayRules {
         val store = s?.settings?.shortName.orEmpty()
         if (s == null) return CustomerView.Idle(store, emptyList())
         if (stage is CustomerStage.Paid && now - stage.at in 0 until PAID_HOLD_MS) return CustomerView.Paid(store, stage.amount, stage.change, stage.method)
-        if (s.biz == BizType.Retail) {
+        if (s.profile.retail) {
             if (stage is CustomerStage.Retail && (stage.cart.lines.isNotEmpty() || stage.cart.credit > 0)) return CustomerView.Retail(store, stage.cart, showLines)
             return CustomerView.Idle(store, if (!slides) emptyList() else slidesOf(s))
         }
@@ -72,7 +72,7 @@ object CustomerDisplayRules {
 
     /** 轮播菜品：有图优先、排除沽清，最多 8 道。零售门店：有促销 / 会员价的商品排前面，标出优惠。 */
     fun slidesOf(s: StoreData): List<CustomerSlide> {
-        val retail = s.biz == BizType.Retail
+        val retail = s.profile.retail
         fun note(p: Product) = if (!retail) "" else p.retail?.promo?.label ?: p.retail?.memberPrice?.takeIf { it < p.price }?.let { "会员价 ${yuan(it)}" } ?: ""
         return s.products
             // 餐饮沿用原来的沽清判断；零售有规格的看各规格合计

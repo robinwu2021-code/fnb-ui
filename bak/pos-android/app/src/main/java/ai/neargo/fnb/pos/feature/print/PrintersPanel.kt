@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.print
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.app.appContainer
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
@@ -60,7 +62,7 @@ fun PrintersPanel() {
         // 厨房按档口路由：默认档口未设置时兼容旧「厨房」路由；其他档口未设置时跟随默认档口
         val kitchen = s.kdsStations.ifEmpty { listOf("厨房") }.map { it to "送厨单、退菜单" }
         // 零售门店多一条「标签机」路由：价签按 TSPL 发给它（标签机不打小票）
-        val label = if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) listOf("标签机" to "价签（TSPL）") else emptyList()
+        val label = if (s.profile.retail) listOf("标签机" to "价签（TSPL）") else emptyList()
         (kitchen + ("前台" to "预结单、结账单、交班单") + label).forEach { (station, use) ->
             val current = s.printRoutes[station]
             val follower = station != "前台" && station != "标签机" && station != default
@@ -89,7 +91,7 @@ fun PrintersPanel() {
                 }
             }
         }
-        if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) ScaleSettings()
+        if (s.profile.retail) ScaleSettings()
     }
     editing?.let { p ->
         var name by remember { mutableStateOf(p.name) }

@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.customer
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.app.appContainer
 import ai.neargo.fnb.pos.core.designsystem.component.GroupTitle
 import ai.neargo.fnb.pos.core.designsystem.component.KeyValue
@@ -309,7 +311,7 @@ fun CustomerDisplayPanel() {
             val factor = maxWidth.value / 1280f
             CompositionLocalProvider(LocalDensity provides Density(d.density * factor, d.fontScale)) { CustomerScreen(view, now) }
         }
-        val retail = c.config.current.collectAsStateWithLifecycle().value?.biz == ai.neargo.fnb.pos.core.model.BizType.Retail
+        val retail = c.config.current.collectAsStateWithLifecycle().value?.profile?.retail == true
         Text(if (retail) "跟随收银台购物车：扫码时显示刚扫的商品、逐行明细、已省与合计，收款时显示应付与找零，换货显示补差价或退差价；收款成功后显示致谢页 ${CustomerDisplayRules.PAID_HOLD_MS / 1000} 秒。空闲时优先轮播特惠商品。"
             else "跟随收银员当前桌台：点单时显示明细与合计，结账时显示应付、收款方式与找零，收款成功后显示致谢页 ${CustomerDisplayRules.PAID_HOLD_MS / 1000} 秒。", style = Pos.type.label, color = Pos.colors.sub)
     }

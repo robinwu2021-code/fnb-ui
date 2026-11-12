@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.manage
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.feature.retail.RetailSettingsPage
 
 import ai.neargo.fnb.pos.app.posViewModel
@@ -79,7 +81,7 @@ fun ManageRoute(onDisplay: () -> Unit, onSwitchStore: () -> Unit) {
 fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Unit, onSwitchStore: () -> Unit) {
     val store = state.store ?: return
     val layout = LocalPosLayout.current
-    val sections = Section.entries.filter { it.visibleFor(store.biz) }
+    val sections = Section.entries.filter { it.visibleFor(store.profile) }
     // 切到另一业态的门店时，原来选的页可能不在菜单里：落到第一项
     val section = if (state.section in sections) state.section else sections.first()
     val content: @Composable (Modifier) -> Unit = { m ->
@@ -301,7 +303,7 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
         PosTextField(hours, { hours = it }, "营业时段（示例说明）")
         PosTextField(footer, { footer = it }, "小票页脚", singleLine = false)
         Block("计价与会员") {
-            if (store.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) {
+            if (!store.profile.serviceFee) {
                 Text("零售不收服务费；会员优惠按各商品的会员价（在「商品」页签设置），不用整单折扣", style = Pos.type.label, color = Pos.colors.sub)
             } else {
                 PosTextField(service, { service = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, "服务费率（%，0–20）")

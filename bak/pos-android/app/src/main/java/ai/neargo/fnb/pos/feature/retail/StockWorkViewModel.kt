@@ -45,7 +45,7 @@ data class StockWorkUiState(
     val storeId: String = "",
 ) {
     fun storeName(id: String) = stores.firstOrNull { it.id == id }?.name ?: id
-    val transferTargets get() = stores.filter { it.biz == ai.neargo.fnb.pos.core.model.BizType.Retail && it.id != storeId }
+    val transferTargets get() = stores.filter { ai.neargo.fnb.pos.core.model.BizProfile.of(it.biz).retail && it.id != storeId }
     fun product(id: String) = products.firstOrNull { it.id == id }
     val shown get() = docs.filter { it.kind == view.kind && when (filter) { DocFilter.All -> true; DocFilter.Open -> it.open; DocFilter.Done -> !it.open } }
     val current get() = docs.firstOrNull { it.no == selected && it.kind == view.kind } ?: shown.firstOrNull()

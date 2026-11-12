@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.shift
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -59,7 +61,7 @@ data class ShiftUiState(val shift: ShiftState = ShiftState(), val summary: Shift
 class ShiftViewModel(config: StoreConfigRepository, session: SessionRepository, private val shift: ShiftRepository, private val messages: MessageBus) : ViewModel() {
     val state = combine(config.current, session.session) { s, ss ->
         val st = s?.shift ?: ShiftState()
-        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st, s?.adjustments.orEmpty()), ss.staff, retail = s?.biz == ai.neargo.fnb.pos.core.model.BizType.Retail)
+        ShiftUiState(st, ShiftRules.summary(s?.payments.orEmpty(), st, s?.adjustments.orEmpty()), ss.staff, retail = s?.profile?.tables == false)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShiftUiState())
 
     /** 交班：实盘金额（元）校验后生成交班记录与交班单，开启新班次。 */

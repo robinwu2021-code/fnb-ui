@@ -183,6 +183,7 @@ fun PosApp(shell: ShellViewModel) {
     if (staffState.locked) { ai.neargo.fnb.pos.feature.staff.StaffLockScreen(session.store, onLogout = shell::logout); return }
     val notice: (String) -> Unit = shell.messages::post
     // 系统管理：需设置、员工、设备或会员相关权限（服务员不可进入）
+    val profile = ai.neargo.fnb.pos.core.model.BizProfile.of(session.biz)
     val manageAllowed = staffState.perms.any { it in setOf(ai.neargo.fnb.pos.core.model.Perm.Settings, ai.neargo.fnb.pos.core.model.Perm.Staff, ai.neargo.fnb.pos.core.model.Perm.Device, ai.neargo.fnb.pos.core.model.Perm.Member, ai.neargo.fnb.pos.core.model.Perm.Recharge) }
     val onManage = { if (manageAllowed) nav.goTop(ManageRoute) else shell.messages.post("${staffState.current?.name.orEmpty()}没有进入系统管理的权限") }
     // 换人后若当前页面超出新员工权限（系统管理 / 报表 / 交班），回到桌台
@@ -190,25 +191,23 @@ fun PosApp(shell: ShellViewModel) {
         val denied = (dest?.hasRoute<ManageRoute>() == true && !manageAllowed) ||
             (dest?.hasRoute<ai.neargo.fnb.pos.navigation.ReportsRoute>() == true && ai.neargo.fnb.pos.core.model.Perm.Reports !in staffState.perms) ||
             (dest?.hasRoute<ShiftRoute>() == true && ai.neargo.fnb.pos.core.model.Perm.Shift !in staffState.perms)
-        if (denied) nav.goTop(if (session.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) ai.neargo.fnb.pos.navigation.RetailPosRoute else TablesRoute)
+        if (denied) nav.goTop(ai.neargo.fnb.pos.navigation.homeRoute(profile))
     }
     val go: (TopLevel) -> Unit = { nav.goTop(when (it) { TopLevel.Tables -> TablesRoute; TopLevel.Order -> OrderRoute; TopLevel.Manage -> ManageRoute
         TopLevel.RetailPos -> ai.neargo.fnb.pos.navigation.RetailPosRoute; TopLevel.RetailOrders -> ai.neargo.fnb.pos.navigation.RetailOrdersRoute; TopLevel.Goods -> ai.neargo.fnb.pos.navigation.GoodsRoute
         TopLevel.StockWork -> ai.neargo.fnb.pos.navigation.StockWorkRoute }) }
-    // 按门店业态分流（同一个 App）：切到零售门店进收银，切回餐饮门店进点餐；当前页已属于该业态（或是共用页）就不动
-    val retail = session.biz == ai.neargo.fnb.pos.core.model.BizType.Retail
+    // 按门店业态分流（唯一切换点：BizProfile）：当前页不属于这个业态的页签就回到业态首页；共用页（系统管理、交班等）不动
     androidx.compose.runtime.LaunchedEffect(session.storeId, session.biz) {
-        val inRetail = current in setOf(TopLevel.RetailPos, TopLevel.RetailOrders, TopLevel.Goods, TopLevel.StockWork)
-        val inDining = dest == null || current in setOf(TopLevel.Tables, TopLevel.Order)
-        if (retail && inDining) nav.goTop(ai.neargo.fnb.pos.navigation.RetailPosRoute)
-        if (!retail && inRetail) nav.goTop(OrderRoute)
+        val bizTabs = TopLevel.entries.filter { it != TopLevel.Manage }
+        val mine = ai.neargo.fnb.pos.navigation.topTabs(profile)
+        if (dest == null || (current in bizTabs && current !in mine)) nav.goTop(if (profile.tables) OrderRoute else ai.neargo.fnb.pos.navigation.homeRoute(profile))
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Pos.colors.canvas)) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, dining = session.biz != ai.neargo.fnb.pos.core.model.BizType.Retail, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
+                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, dining = profile.tables, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
                     onLock = { lockScope.launch { container.staff.signOutStaff() } }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang)
                 if (layout.wide) Header(session, current, go, onManage, actions)
                 else CompactHeader(session, actions)

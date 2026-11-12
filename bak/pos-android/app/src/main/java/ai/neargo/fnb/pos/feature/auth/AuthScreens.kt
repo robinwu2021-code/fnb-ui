@@ -174,7 +174,7 @@ fun StorePicker(stores: List<StoreSummary>, current: String?, onPick: (String) -
                                 Text(s.biz.label, style = t.body, color = c.primary)
                                 Spacer(Modifier.width(12.dp))
                                 // 零售门店没有桌台，只显示业态
-                                if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Dining) {
+                                if (ai.neargo.fnb.pos.core.model.BizProfile.of(s.biz).tables) {
                                     Text("${s.tables} 张桌台", style = t.body, color = c.ink)
                                     Spacer(Modifier.width(12.dp))
                                     Text("用餐中 ${s.dining}", style = t.body, color = c.primary)

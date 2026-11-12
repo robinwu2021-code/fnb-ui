@@ -92,6 +92,8 @@ class AppContainer(context: Context) {
     val messages: MessageBus = SimpleMessageBus()
     /** 本机图片库：商品图片选择后复制到应用私有目录。 */
     val media = LocalMedia(context.applicationContext)
+    /** 运行期能力：第一期全离线（线上平台订单、云同步关闭） */
+    val runtime = ai.neargo.fnb.pos.core.model.RuntimeProfile.Phase1Offline
     /** 本机电子秤（零售称重）：按本机偏好里的地址连接 */
     val scale = ai.neargo.fnb.pos.core.hardware.NetworkScale(appScope)
 

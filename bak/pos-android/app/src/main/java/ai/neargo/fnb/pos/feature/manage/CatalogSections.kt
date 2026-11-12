@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.manage
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
 import ai.neargo.fnb.pos.core.designsystem.component.PosButton
@@ -55,7 +57,7 @@ internal fun ColumnScope.CategoriesSection(store: StoreData, vm: ManageViewModel
 /** 商品资料：列表 + 新建 / 编辑（六分区编辑器）。未关联已发布餐牌的商品不进入点餐。 */
 @Composable
 internal fun ColumnScope.ProductsSection(store: StoreData, vm: ManageViewModel) {
-    val retail = store.biz == ai.neargo.fnb.pos.core.model.BizType.Retail
+    val retail = store.profile.retail
     val cols = listOf(Col("商品", 2f), Col("分类"), Col("售价", end = true), Col("库存", 0.7f, end = true), Col(if (retail) "条码" else "餐牌", 1.4f), Col("", 0.6f, end = true))
     PageHeader("商品资料", if (retail) "${store.products.size} 个商品；改价、价签在「商品」页签更顺手" else "${store.products.size} 个商品；只有关联已发布餐牌的商品出现在点餐页") { PosButton("新建商品", vm::newProduct, variant = BtnVariant.Primary) }
     DataTable(cols, Modifier.weight(1f)) {

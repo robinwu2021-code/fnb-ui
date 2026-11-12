@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.ops
 
+import ai.neargo.fnb.pos.core.model.profile
+
 import ai.neargo.fnb.pos.app.appContainer
 import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
@@ -142,7 +144,7 @@ fun ReportsRoute() {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // 零售门店：零售分区（零售单、退货、渠道、商品）+ 共用的收款方式与时段；餐饮照旧
-                    if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) RetailReportBody(ai.neargo.fnb.pos.core.model.RetailReportRules.build(s, from, to), r) else ReportBody(r)
+                    if (s.profile.retail) RetailReportBody(ai.neargo.fnb.pos.core.model.RetailReportRules.build(s, from, to), r) else ReportBody(r)
                 }
                 Column(Modifier.width(300.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     GroupTitle("历史日结（${s.dayCloses.size}）")
@@ -167,7 +169,7 @@ fun ReportsRoute() {
         }) {
             if (block != null) Text(block, style = Pos.type.body, color = Pos.colors.danger, modifier = Modifier.padding(bottom = 8.dp))
             KeyValue("营业额", yuan(today.revenue))
-            if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) {
+            if (s.profile.retail) {
                 val x = ai.neargo.fnb.pos.core.model.RetailReportRules.build(s, dayStart, now + 1)
                 KeyValue("销售单数 / 件数", "${x.sales} / ${x.pieces}"); KeyValue("退款", "${x.refundCount} 笔 · ${yuan(x.refund)}")
             } else { KeyValue("单数 / 客数", "${today.orders} / ${today.guests}"); KeyValue("优惠", yuan(today.discount)) }

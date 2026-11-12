@@ -172,7 +172,7 @@ const val ONLINE_PAY = "线上支付"
 const val EXCHANGE = "换货抵扣"
 
 /** 换货抵扣：原单号、抵扣金额、退回件数、原收款方式（退差价时退回这个方式） */
-@Serializable data class ExchangeCredit(val no: String, val amount: Long, val pieces: Int, val method: String)
+@Serializable data class ExchangeCredit(val no: String, val amount: Long, val pieces: Int, val method: String, /** 原单会员：退差价到储值卡时退回这个会员 */ val memberId: String = "")
 
 /** 无单退货 */
 @Serializable

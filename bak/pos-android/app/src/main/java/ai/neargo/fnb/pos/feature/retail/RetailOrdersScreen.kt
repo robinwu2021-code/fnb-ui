@@ -63,7 +63,7 @@ fun RetailOrdersRoute(onExchange: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
     LaunchedEffect(vm) { vm.toPos.collect { onExchange() } }
-    RetailOrdersScreen(state, vm::onAction, prefs?.layout?.bill ?: BillSide.Right)
+    RetailOrdersScreen(state, vm::onAction, prefs?.layout?.bill ?: BillSide.Right, appContainer().runtime.onlineOrders)
 }
 
 private val hhmm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
@@ -81,9 +81,10 @@ private fun StatusTag(s: ReturnRules.SaleStatus) { val (bg, fg) = statusColors(s
 
 /** 零售订单（原型 RetailOrdersWB.tsx）：列表（状态筛选、搜索）· 详情（商品、优惠、收款、退货记录 · 补打 / 换货 / 退货） */
 @Composable
-fun RetailOrdersScreen(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit, side: BillSide = BillSide.Right) {
+fun RetailOrdersScreen(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit, side: BillSide = BillSide.Right, onlineOrders: Boolean = true) {
     val layout = LocalPosLayout.current
-    if (state.onlineView) {
+    // 第一期全离线：没有线上平台，订单页只有门店订单
+    if (state.onlineView && onlineOrders) {
         Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> state.onlineCurrent?.let { OnlineDetail(state, it, onAction, m) } ?: Panel(m) { EmptyState("没有线上订单", Modifier.padding(16.dp)) } }) { m ->
             OnlineList(state, onAction, m)
         }
@@ -91,17 +92,17 @@ fun RetailOrdersScreen(state: RetailOrdersUiState, onAction: (RetailOrdersAction
         return
     }
     Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> state.current?.let { SaleDetail(state, it, onAction, m) } ?: Panel(m) { EmptyState("没有订单", Modifier.padding(16.dp)) } }) { m ->
-        SaleList(state, onAction, m)
+        SaleList(state, onAction, m, onlineOrders)
     }
     state.flow?.let { ReturnDialog(state, it, onAction) }
 }
 
 @Composable
-private fun SaleList(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit, modifier: Modifier) {
+private fun SaleList(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit, modifier: Modifier, onlineOrders: Boolean) {
     val c = Pos.colors; val t = Pos.type
     Panel(modifier) {
         Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ViewSwitch(state, onAction)
+            if (onlineOrders) ViewSwitch(state, onAction)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SearchField(state.query, { onAction(RetailOrdersAction.Search(it)) }, "搜索单号 / 会员", Modifier.weight(1f))
                 PosButton("退货", { onAction(RetailOrdersAction.Open(ReturnMode.Return, null)) }, variant = BtnVariant.Soft)
