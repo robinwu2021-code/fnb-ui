@@ -356,7 +356,7 @@ class RetailPosViewModel(
 
     /** 改价、打折的授权：当班员工有权限直接用他的名字；否则校验主管账号 / PIN */
     private fun approve(who: String, secret: String, ok: (String) -> Unit) = viewModelScope.launchStorage(messages) {
-        if (s().canAdjust) { ok(staff?.staff?.value?.current?.name ?: "当班"); return@launchStorage }
+        if (s().canAdjust) { ok(staff?.staff?.value?.current?.name ?: retail.actor()); return@launchStorage }
         retail.authorize(who, secret).onSuccess(ok).onFailure { messages.post(it.message ?: "授权失败") }
     }
 

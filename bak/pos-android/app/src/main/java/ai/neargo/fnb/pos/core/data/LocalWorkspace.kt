@@ -1073,6 +1073,8 @@ class LocalWorkspace(
     private fun today() = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun nowTime() = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
 
+    override fun actor(): String = actorName(state.value)
+
     override suspend fun authorize(who: String, secret: String): Result<String> = supervisorAuth(state.value, who, secret)
 
     override suspend fun checkoutRetail(lines: List<CartLine>, member: Boolean, method: String, received: Long, online: Boolean, extras: CheckoutExtras): Result<RetailSale> {

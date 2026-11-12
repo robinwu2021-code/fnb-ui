@@ -275,6 +275,8 @@ interface RetailRepository {
     suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings): Result<Unit>
     suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean,
                                extras: ai.neargo.fnb.pos.core.model.CheckoutExtras = ai.neargo.fnb.pos.core.model.CheckoutExtras()): Result<ai.neargo.fnb.pos.core.model.RetailSale>
+    /** 当前操作人（员工姓名；没有员工时是登录账号），记在单据和授权说明里 */
+    fun actor(): String
     /** 主管授权（改价、整单折扣用）：通过返回授权人 */
     suspend fun authorize(who: String, secret: String): Result<String>
 }
