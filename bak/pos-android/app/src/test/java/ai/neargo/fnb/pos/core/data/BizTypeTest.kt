@@ -36,7 +36,7 @@ class BizTypeTest {
         // 模拟旧版本快照：去掉所有 biz 字段和零售演示门店
         val json = kotlinx.serialization.json.Json.parseToJsonElement(disk.data!!)
         fun strip(e: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement = when (e) {
-            is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(e.filterKeys { it != "biz" && it != DemoCatalog.RETAIL_STORE_ID }.mapValues { strip(it.value) })
+            is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(e.filterKeys { it != "biz" && it != DemoCatalog.RETAIL_STORE_ID && it != DemoCatalog.RETAIL_STORE2_ID }.mapValues { strip(it.value) })
             is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(e.map { strip(it) })
             else -> e
         }
@@ -46,6 +46,7 @@ class BizTypeTest {
         val byId = restored.stores.value.associateBy { it.id }
         assertEquals(BizType.Dining, byId.getValue("s-main").biz)
         assertEquals(BizType.Retail, byId.getValue(DemoCatalog.RETAIL_STORE_ID).biz)
+        assertEquals(BizType.Retail, byId.getValue(DemoCatalog.RETAIL_STORE2_ID).biz)
     }
 
     @Test fun tabsFollowBiz() {

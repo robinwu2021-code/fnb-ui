@@ -66,10 +66,10 @@ data class RetailSale(
 /** 挂起的购物车 */
 @Serializable data class RetailHeld(val no: String, val at: Long, val lines: List<CartLine>, val member: String? = null, val why: String = "")
 
-@Serializable enum class StockDocKind(val label: String, val prefix: String) { Receive("入库", "RK"), Count("盘点", "PD"), Loss("报损", "BS") }
+@Serializable enum class StockDocKind(val label: String, val prefix: String) { Receive("入库", "RK"), Count("盘点", "PD"), Loss("报损", "BS"), Transfer("调拨", "DB") }
 
 /** 单据状态：入库 / 报损 草稿 → 已过账；盘点 盘点中 → 待审批 → 已完成 / 有差异；草稿可作废 */
-@Serializable enum class StockDocState(val label: String) { Draft("草稿"), Counting("盘点中"), Pending("待审批"), Posted("已过账"), Variance("有差异"), Void("已作废") }
+@Serializable enum class StockDocState(val label: String) { Draft("草稿"), Counting("盘点中"), Pending("待审批"), Posted("已过账"), Variance("有差异"), Void("已作废"), InTransit("在途") }
 
 @Serializable enum class LossReason(val label: String) { Expired("过期"), Damaged("破损"), Return("退货不回库") }
 
@@ -81,6 +81,8 @@ data class StockDoc(
     val lines: List<StockDocLine> = emptyList(), val supplier: String = "", val scope: String = "", val ref: String = "",
     /** 盘点提交时冻结的账面快照：之后卖出不影响这张单的差异 */
     val snapshot: Map<String, Long> = emptyMap(), val gain: Long = 0, val loss: Long = 0,
+    /** 调拨：调出单记目标门店，调入单（在途）记来源门店 */
+    val toStore: String = "", val fromStore: String = "",
 ) {
     val editable get() = state == StockDocState.Draft || state == StockDocState.Counting
 }

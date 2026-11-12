@@ -175,7 +175,7 @@ class RoutedRetail(private val ws: LocalWorkspace, private val link: LanLink) : 
     override suspend fun reprintSale(no: String): Result<Unit> = if (link.isSecondary) link.submit(I.RetailReprint(no), "补打 $no").unit() else ws.reprintSale(no)
 
     // 管理类：只能在主 POS
-    override suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String, scope: String) = if (link.isSecondary) hostOnly() else ws.newStockDoc(kind, supplier, scope)
+    override suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String, scope: String, toStore: String) = if (link.isSecondary) hostOnly() else ws.newStockDoc(kind, supplier, scope, toStore)
     override suspend fun setStockDocLines(no: String, lines: List<ai.neargo.fnb.pos.core.model.StockDocLine>) = if (link.isSecondary) hostOnly() else ws.setStockDocLines(no, lines)
     override suspend fun advanceStockDoc(no: String) = if (link.isSecondary) hostOnly() else ws.advanceStockDoc(no)
     override suspend fun voidStockDoc(no: String) = if (link.isSecondary) hostOnly() else ws.voidStockDoc(no)

@@ -229,11 +229,13 @@ class LocalWorkspace(
             // R0 时补进来的是空的零售门店（没有商品和零售数据）：换成完整的演示目录
             val emptyMart = migrated.stores[DemoCatalog.RETAIL_STORE_ID]?.let { it.biz == BizType.Retail && it.products.isEmpty() && it.retail == RetailData() } == true
             val withRetail = if ((DemoCatalog.RETAIL_STORE_ID !in migrated.stores || emptyMart) && demo.containsKey(DemoCatalog.RETAIL_STORE_ID)) migrated.copy(stores = migrated.stores + (DemoCatalog.RETAIL_STORE_ID to demo.getValue(DemoCatalog.RETAIL_STORE_ID))) else migrated
-            val restored = withRetail.copy(
-                deviceId = withRetail.deviceId.ifBlank { state.value.deviceId },
+            // 第二家零售演示门店（调拨用）：旧数据里没有就补上
+            val withRetail2 = if (DemoCatalog.RETAIL_STORE2_ID !in withRetail.stores && demo.containsKey(DemoCatalog.RETAIL_STORE2_ID)) withRetail.copy(stores = withRetail.stores + (DemoCatalog.RETAIL_STORE2_ID to demo.getValue(DemoCatalog.RETAIL_STORE2_ID))) else withRetail
+            val restored = withRetail2.copy(
+                deviceId = withRetail2.deviceId.ifBlank { state.value.deviceId },
                 // 旧数据（N4 前）首次由本机加载时绑定本机密钥
-                deviceKeyThumbprint = withRetail.deviceKeyThumbprint.ifBlank { thumb },
-                stores = withRetail.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
+                deviceKeyThumbprint = withRetail2.deviceKeyThumbprint.ifBlank { thumb },
+                stores = withRetail2.stores.mapValues { upgradeStates(assignOrderIds(ReservationRules.importLegacy(it.value, clock()), "legacy-v3")) },
             )
             withContext(NonCancellable) {
                 store.save(json.encodeToString(Vault.serializer(), restored))
@@ -967,14 +969,48 @@ class LocalWorkspace(
         }.map { h }
     }
 
-    override suspend fun newStockDoc(kind: StockDocKind, supplier: String, scope: String): Result<String> {
+    override suspend fun newStockDoc(kind: StockDocKind, supplier: String, scope: String, toStore: String): Result<String> {
         var no = ""
         val actor = actorName(state.value)
-        return storeOp(event = retailEvent("StockDocCreated", """{"kind":"$kind"}"""), check = { s -> retailOnly(s) ?: need(Perm.Settings) }) { s ->
+        return storeOp(event = retailEvent("StockDocCreated", """{"kind":"$kind"}"""), check = { s ->
+            val to = state.value.stores[toStore]
+            when {
+                kind == StockDocKind.Transfer && (to == null || to.id == s.id) -> "请选择调入门店"
+                kind == StockDocKind.Transfer && to!!.biz != BizType.Retail -> "只能调到零售门店"
+                else -> retailOnly(s) ?: need(Perm.Settings)
+            }
+        }) { s ->
             no = "%s%04d".format(kind.prefix, s.retail.docSeq)
             val st = if (kind == StockDocKind.Count) StockDocState.Counting else StockDocState.Draft
-            s.withRetail { it.copy(docSeq = it.docSeq + 1, stockDocs = listOf(StockDoc(no, kind, st, clock(), actor, supplier = supplier.trim().take(30), scope = scope.trim().take(30))) + it.stockDocs) }
+            s.withRetail { it.copy(docSeq = it.docSeq + 1, stockDocs = listOf(StockDoc(no, kind, st, clock(), actor, supplier = supplier.trim().take(30), scope = scope.trim().take(30),
+                toStore = if (kind == StockDocKind.Transfer) toStore else "")) + it.stockDocs) }
         }.map { no }
+    }
+
+    /**
+     * 调拨发出：本店按单扣库存（单据变「已过账」），同时在调入门店生成一张「在途」调入单（商品按 ID 对，对不上按条码对）；
+     * 调入门店确认收货时才加库存。两家店在同一次写入里改，不会只改一边。
+     */
+    private suspend fun transferOut(no: String): Result<StockDocState> {
+        val actor = actorName(state.value)
+        return persistenceResult {
+            transaction(retailEvent("StockDocPosted", """{"no":"$no","transfer":true}""")) { v ->
+                val s = v.store ?: return@transaction v to Result.failure<StockDocState>(IllegalStateException("请先选择门店"))
+                val d = s.retail.stockDocs.firstOrNull { it.no == no } ?: return@transaction v to Result.failure(IllegalStateException("单据不存在"))
+                val to = v.stores[d.toStore] ?: return@transaction v to Result.failure(IllegalStateException("调入门店不存在"))
+                (retailOnly(s) ?: need(Perm.Settings) ?: if (d.lines.isEmpty()) "单据里还没有商品" else null)?.let { return@transaction v to Result.failure(IllegalStateException(it)) }
+                // 调入门店的商品：先按 ID，再按第一个条码
+                fun target(pid: String) = to.products.firstOrNull { it.id == pid } ?: s.product(pid)?.retail?.barcodes?.firstOrNull()?.let { code -> to.products.firstOrNull { p -> p.retail?.barcodes?.contains(code) == true } }
+                d.lines.firstOrNull { target(it.productId) == null }?.let { l -> return@transaction v to Result.failure(IllegalStateException("${s.product(l.productId)?.name ?: l.productId} 在${to.settings.shortName}没有建档")) }
+                var from = s
+                d.lines.forEach { l -> from = from.setBook(l.productId, l.sku, from.bookOf(l.productId, l.sku) - l.qty, "调拨发出 $no → ${to.settings.shortName}", actor) }
+                from = from.withRetail { r -> r.copy(stockDocs = r.stockDocs.map { if (it.no == no) it.copy(state = StockDocState.Posted) else it }) }
+                val inNo = "DR%04d".format(to.retail.docSeq)
+                val incoming = StockDoc(inNo, StockDocKind.Transfer, StockDocState.InTransit, clock(), actor, d.lines.map { l -> l.copy(productId = target(l.productId)!!.id) }, ref = no, fromStore = s.id)
+                val dest = to.copy(retail = to.retail.copy(docSeq = to.retail.docSeq + 1, stockDocs = listOf(incoming) + to.retail.stockDocs))
+                v.copy(stores = v.stores + (s.id to from) + (to.id to dest)) to Result.success(StockDocState.Posted)
+            }
+        }
     }
 
     override suspend fun setStockDocLines(no: String, lines: List<StockDocLine>): Result<Unit> =
@@ -991,6 +1027,7 @@ class LocalWorkspace(
 
     override suspend fun advanceStockDoc(no: String): Result<StockDocState> {
         val actor = actorName(state.value)
+        state.value.store?.retail?.stockDocs?.firstOrNull { it.no == no }?.let { d -> if (d.kind == StockDocKind.Transfer && d.state == StockDocState.Draft) return transferOut(no) }
         var next = StockDocState.Draft
         return storeOp(event = EventSpec { b, a ->
             val d = a.retail.stockDocs.first { it.no == no }
@@ -1000,7 +1037,7 @@ class LocalWorkspace(
             when {
                 d == null -> "单据不存在"
                 d.lines.isEmpty() -> "单据里还没有商品"
-                d.state !in setOf(StockDocState.Draft, StockDocState.Counting, StockDocState.Pending) -> "单据已${d.state.label}"
+                d.state !in setOf(StockDocState.Draft, StockDocState.Counting, StockDocState.Pending, StockDocState.InTransit) -> "单据已${d.state.label}"
                 else -> retailOnly(s) ?: need(Perm.Settings)
             }
         }) { s0 ->
@@ -1009,6 +1046,8 @@ class LocalWorkspace(
             var s = s0
             val updated: StockDoc = when {
                 d.kind == StockDocKind.Receive -> { d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, s.bookOf(l.productId, l.sku) + l.qty, "入库 ${d.no}", actor) }; d.copy(state = StockDocState.Posted) }
+                // 调入：确认收货，加库存
+                d.kind == StockDocKind.Transfer -> { d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, s.bookOf(l.productId, l.sku) + l.qty, "调拨收货 ${d.no}（${d.ref}）", actor) }; d.copy(state = StockDocState.Posted) }
                 d.kind == StockDocKind.Loss -> { d.lines.forEach { l -> s = s.setBook(l.productId, l.sku, s.bookOf(l.productId, l.sku) - l.qty, "报损 ${d.no} · ${l.reason?.label ?: "其他"}", actor) }; d.copy(state = StockDocState.Posted) }
                 d.state == StockDocState.Counting -> {
                     // 提交：冻结账面快照，算差异，等审批

@@ -26,8 +26,8 @@ import java.time.LocalDate
 enum class StockView(val label: String) { Receive("入库"), Count("盘点"), Loss("报损"), Transfer("调拨"), Low("低库存"), Near("临期") }
 enum class DocFilter(val label: String) { All("全部"), Open("进行中"), Done("已完成") }
 
-val StockView.kind get() = when (this) { StockView.Receive -> StockDocKind.Receive; StockView.Count -> StockDocKind.Count; StockView.Loss -> StockDocKind.Loss; else -> null }
-val StockDoc.open get() = state in setOf(StockDocState.Draft, StockDocState.Counting, StockDocState.Pending)
+val StockView.kind get() = when (this) { StockView.Receive -> StockDocKind.Receive; StockView.Count -> StockDocKind.Count; StockView.Loss -> StockDocKind.Loss; StockView.Transfer -> StockDocKind.Transfer; else -> null }
+val StockDoc.open get() = state in setOf(StockDocState.Draft, StockDocState.Counting, StockDocState.Pending, StockDocState.InTransit)
 
 data class StockWorkUiState(
     val view: StockView = StockView.Receive,
@@ -40,7 +40,12 @@ data class StockWorkUiState(
     /** 新建单据弹窗：供应商 / 盘点范围 */
     val creating: StockDocKind? = null,
     val busy: Boolean = false,
+    /** 账号下其他零售门店（调拨目标、来源名称） */
+    val stores: List<ai.neargo.fnb.pos.core.model.StoreSummary> = emptyList(),
+    val storeId: String = "",
 ) {
+    fun storeName(id: String) = stores.firstOrNull { it.id == id }?.name ?: id
+    val transferTargets get() = stores.filter { it.biz == ai.neargo.fnb.pos.core.model.BizType.Retail && it.id != storeId }
     fun product(id: String) = products.firstOrNull { it.id == id }
     val shown get() = docs.filter { it.kind == view.kind && when (filter) { DocFilter.All -> true; DocFilter.Open -> it.open; DocFilter.Done -> !it.open } }
     val current get() = docs.firstOrNull { it.no == selected && it.kind == view.kind } ?: shown.firstOrNull()
@@ -56,6 +61,7 @@ data class StockWorkUiState(
             StockDocKind.Receive -> low
             StockDocKind.Loss -> near
             StockDocKind.Count -> products.filter { !it.hasSpec }
+            StockDocKind.Transfer -> products.filter { !it.hasSpec && StockWork.book(it) > 0 }
         }.filter { it.id !in has }.take(if (d.kind == StockDocKind.Count) 8 else 6)
     }
 }
@@ -79,12 +85,12 @@ sealed interface StockWorkAction {
 }
 
 /** 库存作业（原型 StockWB.tsx）：入库、盘点（提交 → 审批过账）、报损、预警；调拨未实现 */
-class StockWorkViewModel(config: StoreConfigRepository, private val retail: RetailRepository, private val messages: MessageBus) : ViewModel() {
+class StockWorkViewModel(config: StoreConfigRepository, private val retail: RetailRepository, private val messages: MessageBus, session: ai.neargo.fnb.pos.core.data.SessionRepository? = null) : ViewModel() {
     private data class Local(val view: StockView = StockView.Receive, val filter: DocFilter = DocFilter.All, val selected: String? = null, val creating: StockDocKind? = null, val busy: Boolean = false)
     private val local = MutableStateFlow(Local())
 
-    val state: StateFlow<StockWorkUiState> = combine(config.current, local) { s, l ->
-        StockWorkUiState(l.view, l.filter, l.selected, s?.retail?.stockDocs.orEmpty(), s?.products.orEmpty(), LocalDate.now(), s?.retail?.settings?.expiryDays ?: 3, l.creating, l.busy)
+    val state: StateFlow<StockWorkUiState> = combine(config.current, local, session?.stores ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList())) { s, l, stores ->
+        StockWorkUiState(l.view, l.filter, l.selected, s?.retail?.stockDocs.orEmpty(), s?.products.orEmpty(), LocalDate.now(), s?.retail?.settings?.expiryDays ?: 3, l.creating, l.busy, stores, s?.id.orEmpty())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, StockWorkUiState())
 
     private fun cur() = state.value.current
@@ -114,7 +120,7 @@ class StockWorkViewModel(config: StoreConfigRepository, private val retail: Reta
             is StockWorkAction.Create -> {
                 val k = st.creating ?: return
                 viewModelScope.launchStorage(messages) {
-                    retail.newStockDoc(k, supplier = if (k == StockDocKind.Receive) a.text else "", scope = if (k == StockDocKind.Count) a.text else "")
+                    retail.newStockDoc(k, supplier = if (k == StockDocKind.Receive) a.text else "", scope = if (k == StockDocKind.Count) a.text else "", toStore = if (k == StockDocKind.Transfer) a.text else "")
                         .onSuccess { no -> local.update { it.copy(creating = null, selected = no, filter = DocFilter.All) }; messages.post("已新建${k.label}单 $no") }
                         .onFailure { messages.post(it.message ?: "新建失败") }
                 }

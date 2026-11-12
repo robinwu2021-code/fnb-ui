@@ -251,7 +251,7 @@ interface RetailRepository {
     val retail: StateFlow<ai.neargo.fnb.pos.core.model.RetailData>
     suspend fun holdCart(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: String?, why: String): Result<String>
     suspend fun recallHeld(no: String): Result<ai.neargo.fnb.pos.core.model.RetailHeld>
-    suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String = "", scope: String = ""): Result<String>
+    suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String = "", scope: String = "", toStore: String = ""): Result<String>
     suspend fun setStockDocLines(no: String, lines: List<ai.neargo.fnb.pos.core.model.StockDocLine>): Result<Unit>
     /** 入库 / 报损：过账；盘点：盘点中 → 提交（冻结账面）→ 再调一次为审批过账 */
     suspend fun advanceStockDoc(no: String): Result<ai.neargo.fnb.pos.core.model.StockDocState>

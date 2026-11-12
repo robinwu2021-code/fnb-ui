@@ -72,7 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun StockWorkRoute() {
-    val vm = posViewModel { c, _ -> StockWorkViewModel(c.config, c.retail, c.messages) }
+    val vm = posViewModel { c, _ -> StockWorkViewModel(c.config, c.retail, c.messages, c.session) }
     val state by vm.state.collectAsStateWithLifecycle()
     StockWorkScreen(state, vm::onAction)
 }
@@ -88,6 +88,7 @@ private fun docTag(s: StockDocState) {
         StockDocState.Posted -> c.tint to c.primary
         StockDocState.Variance -> c.dangerBg to c.danger
         StockDocState.Void -> c.control to c.sub
+        StockDocState.InTransit -> c.control to c.warning
     }
     Tag(s.label, bg = bg, fg = fg)
 }
@@ -103,13 +104,6 @@ fun StockWorkScreen(state: StockWorkUiState, onAction: (StockWorkAction) -> Unit
     Row(Modifier.fillMaxSize().hidScanner(root, { fieldFocused || state.creating != null }) { onAction(StockWorkAction.Scan(it)) }.padding(gap), horizontalArrangement = Arrangement.spacedBy(gap)) {
         Panel(Modifier.width(140.dp).fillMaxHeight()) { Rail(state, onAction) }
         when (state.view) {
-            StockView.Transfer -> Panel(Modifier.weight(1f).fillMaxHeight()) {
-                Column(Modifier.padding(24.dp)) {
-                    Text("调拨", style = Pos.type.title)
-                    Tag("未实现", fg = Pos.colors.warning)
-                    EmptyState("门店之间调拨要等多门店库存同步接入后再做")
-                }
-            }
             StockView.Low, StockView.Near -> Panel(Modifier.weight(1f).fillMaxHeight()) { Alerts(state, onAction) }
             else -> {
                 Panel(Modifier.weight(1f).fillMaxHeight()) { DocList(state, onAction) }
@@ -119,17 +113,16 @@ fun StockWorkScreen(state: StockWorkUiState, onAction: (StockWorkAction) -> Unit
             }
         }
     }
-    state.creating?.let { NewDocDialog(it, onAction) }
+    state.creating?.let { NewDocDialog(state, it, onAction) }
 }
 
 @Composable
 private fun Rail(state: StockWorkUiState, onAction: (StockWorkAction) -> Unit) {
     val c = Pos.colors
     Column(Modifier.padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        listOf(StockView.Receive, StockView.Count, StockView.Loss).forEach { v ->
+        listOf(StockView.Receive, StockView.Count, StockView.Loss, StockView.Transfer).forEach { v ->
             RailItem(v.label, state.openCount(v.kind!!).takeIf { it > 0 }, state.view == v, { onAction(StockWorkAction.View(v)) })
         }
-        RailItem(StockView.Transfer.label, null, state.view == StockView.Transfer, { onAction(StockWorkAction.View(StockView.Transfer)) })
         Text("预警", style = Pos.type.label, color = c.sub, modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 4.dp))
         RailItem(StockView.Low.label, state.low.size, state.view == StockView.Low, { onAction(StockWorkAction.View(StockView.Low)) })
         RailItem(StockView.Near.label, state.near.size, state.view == StockView.Near, { onAction(StockWorkAction.View(StockView.Near)) })
@@ -180,7 +173,8 @@ private fun DocPanel(state: StockWorkUiState, d: StockDoc, onAction: (StockWorkA
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Text(d.no, style = t.title.num(), color = c.ink, modifier = Modifier.weight(1f)); docTag(d.state) }
-            Text(listOfNotNull(d.supplier.ifBlank { null }?.let { "供应商 · $it" }, d.scope.ifBlank { null }?.let { "范围 · $it" }, d.ref.ifBlank { null }?.let { "关联 $it" }, "${d.actor} · ${mmdd.format(java.util.Date(d.at))}").joinToString(" · "),
+            Text(listOfNotNull(d.supplier.ifBlank { null }?.let { "供应商 · $it" }, d.scope.ifBlank { null }?.let { "范围 · $it" }, d.toStore.ifBlank { null }?.let { "调往 ${state.storeName(it)}" },
+                d.fromStore.ifBlank { null }?.let { "来自 ${state.storeName(it)}" }, d.ref.ifBlank { null }?.let { "关联 $it" }, "${d.actor} · ${mmdd.format(java.util.Date(d.at))}").joinToString(" · "),
                 style = t.label.num(), color = c.sub)
             if (d.editable) Row(Modifier.fillMaxWidth().height(44.dp).clip(Pos.metrics.button).background(c.tile).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.QrCodeScanner, null, tint = c.sub, modifier = Modifier.size(18.dp))
@@ -223,6 +217,7 @@ private fun DocLineRow(state: StockWorkUiState, d: StockDoc, l: StockDocLine, on
                     StockDocKind.Receive -> listOfNotNull("进价 ${yuan(StockWork.cost(p))}${if (StockWork.weighed(p)) "/kg" else ""}", "账面 ${StockWork.qtyText(p, book)}", if (StockWork.low(p)) "低库存" else null)
                     StockDocKind.Count -> listOfNotNull("账面 ${StockWork.qtyText(p, book)}", (l.qty - book).takeIf { it != 0L && d.state != StockDocState.Posted && d.state != StockDocState.Variance }?.let { "差异 ${if (it > 0) "+" else ""}${if (StockWork.weighed(p)) StockWork.qtyText(p, it) else it}" })
                     StockDocKind.Loss -> listOfNotNull("账面 ${StockWork.qtyText(p, book)}", if (!d.editable) l.reason?.label ?: "破损" else null)
+                    StockDocKind.Transfer -> listOf("本店账面 ${StockWork.qtyText(p, book)}")
                 }
                 Text(meta.joinToString(" · "), style = t.label.num(), color = if (d.kind == StockDocKind.Count && l.qty < book) c.danger else c.sub)
             }
@@ -256,7 +251,7 @@ private fun DocFoot(state: StockWorkUiState, d: StockDoc, onAction: (StockWorkAc
         when {
             d.state == StockDocState.Draft -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PosButton("作废", { onAction(StockWorkAction.Void) }, variant = BtnVariant.Text)
-                PosButton(if (d.kind == StockDocKind.Receive) "确认入库" else "确认报损", { onAction(StockWorkAction.Advance) }, Modifier.weight(1f), variant = BtnVariant.Primary, size = BtnSize.Large,
+                PosButton(when (d.kind) { StockDocKind.Receive -> "确认入库"; StockDocKind.Transfer -> "确认发出 → ${state.storeName(d.toStore)}"; else -> "确认报损" }, { onAction(StockWorkAction.Advance) }, Modifier.weight(1f), variant = BtnVariant.Primary, size = BtnSize.Large,
                     enabled = d.lines.isNotEmpty() && !state.busy, loading = state.busy)
             }
             d.state == StockDocState.Counting -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -266,6 +261,10 @@ private fun DocFoot(state: StockWorkUiState, d: StockDoc, onAction: (StockWorkAc
             d.state == StockDocState.Pending -> {
                 Text("账面已冻结在提交时；审批通过后按差异调整账面（提交后的入库、销售照常算），盘盈盘亏记入流水", style = t.label, color = c.warning)
                 PosButton("审批过账", { onAction(StockWorkAction.Advance) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !state.busy, loading = state.busy)
+            }
+            d.state == StockDocState.InTransit -> {
+                Text("${state.storeName(d.fromStore)} 已发出（${d.ref}），清点无误后确认收货，库存才加上", style = t.label, color = c.warning)
+                PosButton("确认收货", { onAction(StockWorkAction.Advance) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !state.busy, loading = state.busy)
             }
             else -> Text("单据${d.state.label}，只读", style = t.label, color = c.sub)
         }
@@ -301,20 +300,28 @@ private fun Alerts(state: StockWorkUiState, onAction: (StockWorkAction) -> Unit)
 }
 
 @Composable
-private fun NewDocDialog(k: StockDocKind, onAction: (StockWorkAction) -> Unit) {
+private fun NewDocDialog(state: StockWorkUiState, k: StockDocKind, onAction: (StockWorkAction) -> Unit) {
     var text by remember { mutableStateOf("") }
     PosDialog("新建${k.label}单", { onAction(StockWorkAction.CancelNew) }, subtitle = when (k) {
         StockDocKind.Receive -> "供应商送货入库，确认后加到账面"
         StockDocKind.Count -> "数完提交，主管审批后实盘覆盖账面"
         StockDocKind.Loss -> "过期、破损的商品，确认后从账面扣掉"
+        StockDocKind.Transfer -> "调到同账号下的另一家零售门店：发出时本店扣库存，对方确认收货后加库存"
     }, footer = {
         PosButton("取消", { onAction(StockWorkAction.CancelNew) }, variant = BtnVariant.Text)
-        PosButton("新建", { onAction(StockWorkAction.Create(text.trim())) }, variant = BtnVariant.Primary)
+        PosButton("新建", { onAction(StockWorkAction.Create(text.trim())) }, variant = BtnVariant.Primary, enabled = k != StockDocKind.Transfer || text.isNotBlank())
     }) {
         when (k) {
             StockDocKind.Receive -> PosTextField(text, { if (it.length <= 30) text = it }, "供应商（可不填）")
             StockDocKind.Count -> PosTextField(text, { if (it.length <= 30) text = it }, "盘点范围（如：饮品货架，可不填）")
             StockDocKind.Loss -> Text("报损单不需要填写额外信息", style = Pos.type.body, color = Pos.colors.sub, modifier = Modifier.padding(vertical = 8.dp))
+            StockDocKind.Transfer -> {
+                Text("调入门店", style = Pos.type.label, color = Pos.colors.sub, modifier = Modifier.padding(top = 8.dp))
+                if (state.transferTargets.isEmpty()) Text("账号下没有其他零售门店", style = Pos.type.body, color = Pos.colors.warning, modifier = Modifier.padding(vertical = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                    state.transferTargets.forEach { s -> PosChip(s.name, text == s.id, { text = s.id }) }
+                }
+            }
         }
     }
 }

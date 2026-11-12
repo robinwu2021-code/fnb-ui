@@ -76,7 +76,16 @@ internal object DemoCatalog {
         Menu("m2", "午市套餐", "Lunch sets", listOf("15"), published = false),
     )
 
-    fun stores(now: Long): Map<String, StoreData> = listOf(main(now), coast(), mart(now)).associateBy { it.id }
+    fun stores(now: Long): Map<String, StoreData> = listOf(main(now), coast(), mart(now), mart2(now)).associateBy { it.id }
+
+    /** 第二家零售演示门店（门店间调拨用）：同一套商品目录，库存减半，没有历史单 */
+    const val RETAIL_STORE2_ID = "s-mart2"
+    private fun mart2(now: Long): StoreData = mart(now).let { m ->
+        m.copy(id = RETAIL_STORE2_ID, name = "虹选便利 · 海岸城店", code = "HX002", address = "深圳市南山区海岸城 B1",
+            settings = m.settings.copy(shortName = "虹选便利 · 海岸城店"),
+            products = m.products.map { p -> p.copy(stock = p.stock?.let { it / 2 }, skus = p.skus.map { k -> k.copy(stock = k.stock / 2) }) },
+            members = emptyList(), retail = RetailData(saleSeq = 1, docSeq = 1), shift = ShiftState(start = now))
+    }
 
     /** 零售演示门店的 ID（旧数据升级时补上这一家） */
     const val RETAIL_STORE_ID = "s-mart"
