@@ -35,6 +35,14 @@ object EscPos {
     }
 }
 
+/**
+ * 标签机指令（TSPL，203 dpi）：价签任务的正文就是 TSPL 指令行，按行加 CRLF，中文用 GB18030（TSS24.BF2 字体要求）。
+ * 标签机一般不回 ESC/POS 状态，发送时不查状态。
+ */
+object Tspl {
+    fun encode(lines: List<String>): ByteArray = lines.joinToString("\r\n", postfix = "\r\n").toByteArray(EscPos.CHARSET)
+}
+
 /** 一次发送尝试的结果（分级）：没发出 / 已发出且状态正常 / 结果未知。 */
 sealed interface SendOutcome {
     /** 确定未发出（连接失败、发送前缺纸或脱机）：可安全自动重试。 */

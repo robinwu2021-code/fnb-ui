@@ -1303,7 +1303,10 @@ class LocalWorkspace(
         }) { s ->
             val program = productIds.flatMap { LabelRules.tspl(s.product(it)!!, tpl) }
             n = productIds.size
-            s.withRetail { r -> r.copy(labelQueue = r.labelQueue.filterNot { it.productId in productIds }, labelPrints = (listOf(LabelPrint(clock(), tpl, productIds, actor, program)) + r.labelPrints).take(50)) }
+            // 进打印队列：路由「标签机」配了打印机就发过去（TSPL）；没配就是模拟打印，记录照样保留
+            val job = PrintJob(newId("L"), PrintKind.Label, "价签 ${productIds.size} 张（${tpl.label}）", program, clock())
+            s.copy(printJobs = s.printJobs + job)
+                .withRetail { r -> r.copy(labelQueue = r.labelQueue.filterNot { it.productId in productIds }, labelPrints = (listOf(LabelPrint(clock(), tpl, productIds, actor, program)) + r.labelPrints).take(50)) }
         }.map { n }
     }
 

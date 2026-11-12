@@ -49,6 +49,8 @@ data class GoodsUiState(
     val printed: Int = 0,
     val today: LocalDate = LocalDate.now(),
     val expiryDays: Int = 3,
+    /** 「标签机」路由的打印机名（没配 = 模拟打印） */
+    val labelPrinter: String? = null,
 ) {
     fun product(id: String?) = products.firstOrNull { it.id == id }
     fun stateOf(p: Product) = when {
@@ -106,7 +108,8 @@ class GoodsViewModel(config: StoreConfigRepository, private val retail: RetailRe
         val products = s?.products.orEmpty()
         GoodsUiState(l.sub, l.cat, l.query, l.selected, l.filter, l.unpicked, l.tpl ?: s?.retail?.settings?.labelTpl ?: LabelTpl.L60x40, l.focus, products,
             s?.categories.orEmpty().filter { c -> products.any { it.categoryId == c.id } }, s?.retail?.labelQueue.orEmpty(), s?.stockMovements.orEmpty(),
-            s?.retail?.labelPrints?.sumOf { it.productIds.size } ?: 0, LocalDate.now(), s?.retail?.settings?.expiryDays ?: 3)
+            s?.retail?.labelPrints?.sumOf { it.productIds.size } ?: 0, LocalDate.now(), s?.retail?.settings?.expiryDays ?: 3,
+            s?.printers?.firstOrNull { it.id == s.printRoutes["标签机"] && it.enabled }?.let { "${it.name}（${it.host}:${it.port}）" })
     }.stateIn(viewModelScope, SharingStarted.Eagerly, GoodsUiState())
 
     fun onAction(a: GoodsAction) {

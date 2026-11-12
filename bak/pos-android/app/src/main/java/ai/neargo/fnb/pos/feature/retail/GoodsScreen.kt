@@ -309,7 +309,7 @@ private fun LabelPreviewPanel(state: GoodsUiState, onAction: (GoodsAction) -> Un
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("价签预览", style = t.title, color = c.ink)
-            Text("标签机：未接入（型号待定），先生成 TSPL 指令并记录", style = t.label, color = c.warning)
+            Text(state.labelPrinter?.let { "标签机：$it · TSPL 203 dpi" } ?: "标签机：未设置（系统管理 · 终端与打印 · 档口路由「标签机」），现在是模拟打印", style = t.label, color = if (state.labelPrinter != null) c.sub else c.warning)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { LabelTpl.entries.forEach { tp -> PosChip(tp.label, state.tpl == tp, { onAction(GoodsAction.Tpl(tp)) }) } }
             Box(Modifier.fillMaxWidth().heightIn(min = 200.dp).clip(Pos.metrics.card).background(c.control).padding(16.dp), contentAlignment = Alignment.Center) {
                 state.preview?.let { PriceLabel(it, state.tpl) } ?: Text("选一个商品看预览", style = t.label, color = c.sub)

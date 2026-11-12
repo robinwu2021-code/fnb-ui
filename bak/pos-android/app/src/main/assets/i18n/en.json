@@ -1909,5 +1909,10 @@
   "供应商": "Supplier",
   "范围": "Scope",
   "本店有货的商品": "In stock here",
-  "{0} 已发出，本店已扣库存，等{1}确认收货": "{0} sent; stock deducted here, waiting for {1} to confirm receipt"
+  "{0} 已发出，本店已扣库存，等{1}确认收货": "{0} sent; stock deducted here, waiting for {1} to confirm receipt",
+  "标签机：{0} · TSPL 203 dpi": "Label printer: {0} · TSPL 203 dpi",
+  "标签机：未设置（系统管理 · 终端与打印 · 档口路由「标签机」），现在是模拟打印": "Label printer not set (Settings · Terminals & printing · route \"Label printer\"); printing is simulated",
+  "标签机": "Label printer",
+  "价签（TSPL）": "Price labels (TSPL)",
+  "价签 {0} 张（{1}）": "{0} price labels ({1})"
 }
