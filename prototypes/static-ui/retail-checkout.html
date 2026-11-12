@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>零售收银页 · 静态原型</title>
+<link rel="stylesheet" href="proto.css">
+<style>
+  .scan { flex: 1; padding: 1cqw; gap: .7cqw; }
+  .scanbox { display: flex; align-items: center; gap: .7cqw; background: var(--tile); border-radius: var(--r-card); padding: .9cqw 1.1cqw; }
+  .scanbox .ph { flex: 1; color: var(--sub); }
+  .tag { padding: .15cqw .6cqw; border-radius: 6px; background: var(--surface); color: var(--success); font-size: .85em !important; }
+  .strip { background: var(--tile); border-radius: var(--r-card); padding: .7cqw 1.1cqw; display: flex; align-items: center; gap: .8cqw; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .7cqw; }
+  .item { background: var(--tile); border-radius: var(--r-card); padding: .8cqw; min-height: 7.5cqw; display: flex; flex-direction: column; position: relative; }
+  .item b { font-weight: 600; }
+  .item .grow { flex: 1; }
+  .item .cnt { position: absolute; top: .5cqw; right: .5cqw; background: var(--primary); color: #fff; border-radius: 1cqw; min-width: 1.8cqw; text-align: center; font-weight: 700; }
+  .item.hot { box-shadow: inset 0 0 0 2px var(--tint); }
+  .cart { width: 31cqw; }
+  .cart .head { padding: 1cqw 1.1cqw .5cqw; }
+  .cart .head b { font-size: 1.4em !important; }
+  .acts { display: flex; gap: .4cqw; padding: 0 1.1cqw .5cqw; flex-wrap: wrap; }
+  .member { margin: 0 1.1cqw .5cqw; background: var(--tint); border-radius: var(--r-card); padding: .6cqw .9cqw; display: flex; align-items: center; gap: .6cqw; }
+  .lines { flex: 1; overflow: hidden; padding: 0 1.1cqw; }
+  .line { padding: .6cqw .4cqw; border-bottom: 1px solid var(--divider); }
+  .line.last { background: var(--tint); border-radius: 6px; }
+  .line b { font-weight: 600; }
+  .step { display: flex; align-items: center; gap: .4cqw; }
+  .step span { width: 2.1cqw; height: 2.1cqw; border-radius: 50%; background: var(--surface); display: grid; place-items: center; }
+  .offers { background: var(--tile); border-radius: var(--r-card); padding: .6cqw .9cqw; margin: .5cqw 0; }
+  .offers .row { padding: .2cqw 0; }
+  .foot { background: var(--control); padding: .9cqw 1.1cqw; border-radius: 0 0 var(--r-card) var(--r-card); }
+  .foot .due { font-size: 1.9em !important; font-weight: 700; }
+  .quick { display: grid; grid-template-columns: 1fr 1fr; gap: .5cqw; margin: .6cqw 0; }
+  .fkeys { display: flex; gap: .4cqw; flex-wrap: wrap; }
+  .fk { border: 1px solid var(--divider); background: var(--surface); border-radius: 5px; padding: .1cqw .45cqw; font-size: .78em !important; color: var(--sub); }
+  .fk b { color: var(--ink); }
+  /* 收款页 */
+  .pay { flex: 1; padding: 1.2cqw; gap: 1cqw; }
+  .methods { display: grid; grid-template-columns: repeat(4, 1fr); gap: .6cqw; }
+  .method { background: var(--tile); border-radius: var(--r-card); padding: 1.2cqw; text-align: center; font-weight: 600; }
+  .method.on { background: var(--tint); color: var(--primary); box-shadow: inset 0 0 0 2px var(--primary); }
+  .pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: .6cqw; }
+  .pad span { background: var(--tile); border-radius: var(--r-card); padding: 1.1cqw; text-align: center; font-size: 1.2em !important; font-weight: 600; }
+  .pad .q { background: var(--tint); color: var(--primary); font-size: 1em !important; }
+  .amount { background: var(--tile); border-radius: var(--r-card); padding: 1cqw 1.2cqw; display: flex; justify-content: space-between; align-items: baseline; }
+  .amount b { font-size: 2em !important; }
+  .switch { display: flex; gap: 12px; align-items: center; }
+  body.hyb-on .cart { width: 28cqw; }
+  body.hyb-on .grid { grid-template-columns: repeat(4, 1fr); }
+  body.hyb-on .line.last { box-shadow: inset 3px 0 0 var(--primary); }
+  body.rail-on .cart { width: 25cqw; }
+  body.rail-on .grid { grid-template-columns: repeat(4, 1fr); }
+  body.rail-on .line.last { box-shadow: inset 3px 0 0 var(--primary); }
+  .seg { display: inline-flex; background: #fff; border-radius: var(--r-btn); padding: .2cqw; }
+  .seg span { padding: .4cqw .9cqw; border-radius: 8px; cursor: pointer; }
+  .seg .on { background: var(--tint); color: var(--primary); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div>
+    <div class="switch" style="margin-bottom:12px">
+      <span class="sidebtn"><span class="on" data-s="right">购物车在右（现状）</span><span data-s="left">购物车在左</span></span>
+      <span class="layout"><span class="on" data-l="scatter">布局：分散（现状）</span><span data-l="rail">布局：中间竖条</span><span data-l="hybrid">布局：混合（建议）</span></span>
+      <span class="seg" id="seg"><span class="on" data-v="scan">扫码加购</span><span data-v="pay">收款</span></span>
+    </div>
+    <div class="device">
+      <div class="hdr">
+        <div class="store mk" data-n="1"><b>虹选便利 · 科技园店</b><span>林晓 · 1号收银台</span></div>
+        <div class="tabs"><span class="tab on">收银</span><span class="tab">订单</span><span class="tab">商品</span><span class="tab">库存</span><span class="tab">⚙</span></div>
+        <div class="icons">
+          <span class="ic">☁</span><span class="ic">📊</span><span class="ic">🔔</span><span class="ic">🖨</span><span class="ic mk" data-n="2">💰</span><span class="ic">⇄</span><span class="ic">🔒</span><span class="ic">文</span><span class="ic f">☰</span>
+        </div>
+      </div>
+
+      <div class="body">
+        <!-- 左：扫码区 -->
+        <div class="panel scan" id="v-scan">
+          <div class="scanbox mk" data-n="3"><span>▦</span><span class="ph">扫码或输入条码 / PLU，回车加入　<span class="muted small">输入 3* 再扫 = 3 件</span></span><span class="tag">扫码枪</span></div>
+          <div class="strip mk" data-n="4">
+            <span class="muted">刚扫</span><b>可口可乐 330ml</b><span class="muted">× 3</span><span class="price">¥10.50</span>
+            <span class="grow"></span><span class="muted small">共 7 件</span><span class="btn txt">撤销</span><span class="btn">再来一件</span>
+          </div>
+          <div class="row">
+            <span class="chip on mk new" data-n="5">常用 · 按销量</span><span class="chip">散称</span><span class="chip">烘焙</span><span class="chip">饮品</span><span class="chip">零食</span><span class="chip">日用</span>
+            <span class="grow"></span>
+            <span class="row scatter" style="gap:.5cqw"><span class="row mk" data-n="6"><span class="chip">× 2</span><span class="chip on">× 3</span><span class="chip">× 5</span></span>
+            <span class="chip mk" data-n="7">查价</span><span class="btn mk hscatter" data-n="8">临时商品</span></span>
+          </div>
+          <div class="grid">
+            <div class="item hot"><b>购物袋（中）</b><span class="muted small">000001</span><span class="grow"></span><span class="price">¥0.30</span></div>
+            <div class="item"><b>农夫山泉 550ml</b><span class="muted small">509256</span><span class="grow"></span><span class="price">¥2.00</span></div>
+            <div class="item"><span class="cnt">3</span><b>可口可乐 330ml</b><span class="muted small">423579</span><span class="grow"></span><span class="price">¥3.50</span></div>
+            <div class="item"><b>纯牛奶 250ml × 12</b><span class="muted small">500133</span><span class="grow"></span><div class="row"><span class="price">¥39.90</span><span class="grow"></span><span class="small" style="color:var(--warning)">仅剩 4</span></div></div>
+            <div class="item"><b>薯片 原味 70g</b><span class="muted small">915763</span><span class="grow"></span><span class="price">¥7.90</span></div>
+            <div class="item mk" data-n="9"><b>富士苹果</b><span class="muted small">⚖ PLU 1001</span><span class="grow"></span><span class="price">¥12.80/kg</span></div>
+            <div class="item"><b>牛角包</b><span class="muted small">100012 · 临期 8 折</span><span class="grow"></span><span class="price">¥4.80</span></div>
+          </div>
+          <div class="grow"></div>
+          <div class="fkeys mk new" data-n="10"><span class="fk"><b>F1</b> 收款</span><span class="fk"><b>F2</b> 挂单</span><span class="fk"><b>F3</b> 取单</span><span class="fk"><b>F4</b> 查价</span><span class="fk"><b>F5</b> 会员</span><span class="fk"><b>Del</b> 删最后一行</span><span class="fk"><b>Esc</b> 返回</span></div>
+        </div>
+
+        <!-- 左：收款区（切换显示） -->
+        <div class="panel pay" id="v-pay" hidden>
+          <div class="row"><b style="font-size:1.35em">收款</b><span class="grow"></span><span class="btn txt">← 返回加购</span></div>
+          <div class="methods mk" data-n="18"><span class="method on">现金</span><span class="method">扫码</span><span class="method">银行卡</span><span class="method">储值卡<br><span class="small muted">余额 ¥520.00</span></span></div>
+          <div class="amount"><span class="muted">实收</span><b class="price">¥60.00</b></div>
+          <div class="row"><span class="muted">找零</span><span class="grow"></span><b class="price" style="font-size:1.4em">¥4.30</b></div>
+          <div class="pad mk" data-n="19">
+            <span>1</span><span>2</span><span>3</span><span class="q">刚好</span>
+            <span>4</span><span>5</span><span>6</span><span class="q">¥60</span>
+            <span>7</span><span>8</span><span>9</span><span class="q">¥100</span>
+            <span>.</span><span>0</span><span>⌫</span><span class="q mk new" data-n="20">抹零到元</span>
+          </div>
+          <div class="grow"></div>
+          <div class="btn pri" style="padding:1.1cqw;font-size:1.15em">确认收款 ¥55.70</div>
+        </div>
+
+        <!-- 中间竖条：所有快捷按钮集中一列（布局切到「中间竖条」时显示） -->
+        <div class="panel rail">
+          <div class="grp">选中行 · 可口可乐</div>
+          <div class="two mk" data-n="16"><span class="rb"><i>＋</i>加一件</span><span class="rb"><i>－</i>减一件</span></div>
+          <div class="two mk" data-n="23"><span class="rb"><i>¥</i>改价</span><span class="rb"><i>✎</i>备注</span></div>
+          <div class="two"><span class="rb"><i>🎁</i>赠送</span><span class="rb"><i>✕</i>删除</span></div>
+          <div class="sep"></div>
+          <div class="grp">加购</div>
+          <div class="two mk" data-n="6"><span class="rb"><i>×2</i></span><span class="rb soft"><i>×3</i></span></div>
+          <div class="two"><span class="rb"><i>×5</i></span><span class="rb mk" data-n="7"><i>🔍</i>查价</span></div>
+          <div class="two"><span class="rb mk" data-n="8"><i>＋</i>临时商品</span><span class="rb mk" data-n="14"><i>🛍</i>购物袋</span></div>
+          <div class="sep"></div>
+          <div class="grp">整单</div>
+          <div class="two"><span class="rb mk" data-n="12"><i>👤</i>会员</span><span class="rb mk" data-n="17"><i>％</i>折扣 / 活动</span></div>
+          <div class="two"><span class="rb mk" data-n="13"><i>⏸</i>挂单</span><span class="rb"><i>⏵</i>取单 · 2</span></div>
+          <div class="two"><span class="rb mk" data-n="24"><i>⌫</i>清空</span><span class="rb mk new" data-n="11"><i>⎙</i>最近一单</span></div>
+          <span class="rb mk" data-n="2"><i>💰</i>开钱箱</span>
+          <div style="flex:1"></div>
+          <div class="two mk" data-n="21"><span class="rb soft" style="min-height:3.8cqw"><i>¥</i>现金刚好</span><span class="rb soft" style="min-height:3.8cqw"><i>▦</i>扫码收款</span></div>
+        </div>
+
+        <!-- 混合（建议）：只放「当前选中行 / 当前单」的高频操作；扫码修饰留在扫码区，收款留在金额旁 -->
+        <div class="panel rail2">
+          <div class="grp">选中 · 可口可乐</div>
+          <div class="qty mk" data-n="16"><span>－</span><span class="n">3</span><span>＋</span></div>
+          <span class="rb">删除</span>
+          <span class="rb mk" data-n="23">改价</span>
+          <span class="rb">备注</span>
+          <span class="rb">赠送</span>
+          <span class="rb dis">规格</span>
+          <span class="rb mk" data-n="8">临时商品</span>
+          <div style="flex:1"></div>
+          <span class="rb moreb">更多 ›</span>
+          <div class="more hyb-only" style="bottom:0">
+            <span class="muted small">更多（低频）</span>
+            <span class="mk new" data-n="11" style="color:var(--new)">⎙ 最近一单：补打 / 撤销</span><span>↩ 退货（去订单页）</span><span class="mk" data-n="2">💰 开钱箱</span>
+          </div>
+        </div>
+
+        <!-- 右：购物车 -->
+        <div class="panel cart">
+          <div class="head row"><b>购物车</b><span class="muted small">单号 #R0161</span><span class="grow"></span><span class="btn mk new scatter hscatter" data-n="11" title="补打 / 撤销最近一单">⋯ 最近一单</span></div>
+          <div class="hicons hyb-only"><span class="mk" data-n="12"><i>👤</i>会员</span><span class="mk" data-n="13"><i>⏸</i>挂单</span><span><i>⏵</i>取单 · 2</span><span class="mk" data-n="24"><i>⌫</i>清空</span><span class="mk" data-n="17"><i>％</i>折扣 / 活动</span></div>
+          <div class="acts scatter hscatter"><span class="btn mk" data-n="12">会员</span><span class="btn mk" data-n="13">挂单</span><span class="btn">取单 · 2</span><span class="btn mk" data-n="14">+ 袋（中）¥0.30</span></div>
+          <div class="member mk new" data-n="15"><b>王女士</b><span class="small muted">尾号 1234 · 储值 ¥520.00 · 积分 860</span><span class="grow"></span><span class="btn txt small" style="padding:0">换</span></div>
+          <div class="lines">
+            <div class="line last"><div class="row"><b>可口可乐 330ml</b><span class="grow"></span><span class="price">¥10.50</span></div><div class="row"><span class="muted small">¥3.50/件</span><span class="grow"></span><span class="step mk hstep" data-n="16"><span>−</span>3<span>+</span></span></div></div>
+            <div class="line"><div class="row"><b>富士苹果</b><span class="grow"></span><span class="price">¥8.09</span></div><div class="row"><span class="muted small">0.632 kg × ¥12.80/kg</span></div></div>
+            <div class="line"><div class="row"><b>纯牛奶 250ml × 12</b><span class="grow"></span><span class="price">¥36.90</span></div><div class="row"><span class="small" style="color:var(--primary)">会员价 −¥3.00</span><span class="grow"></span><span class="step hstep"><span>−</span>1<span>+</span></span></div></div>
+            <div class="line"><div class="row"><b>购物袋（中）</b><span class="grow"></span><span class="price">¥0.30</span></div></div>
+            <div class="offers mk" data-n="17">
+              <div class="small muted">整单优惠（点行可选）</div>
+              <div class="row small"><span class="muted">会员价</span><span class="grow"></span><span style="color:var(--primary)">−¥3.00</span></div>
+              <div class="row small"><span class="muted">优惠活动</span><span class="grow"></span><span class="muted">选择 ›</span></div>
+              <div class="row small"><span class="muted">整单折扣（主管授权）</span><span class="grow"></span><span class="muted">选择 ›</span></div>
+              <div class="row small"><span class="muted">抹零（到角）</span><span class="grow"></span><span style="color:var(--primary)">−¥0.09</span></div>
+            </div>
+          </div>
+          <div class="foot">
+            <div class="row"><span class="muted small">应收 · 共 6 件</span><span class="grow"></span><span class="due price">¥55.70</span></div>
+            <div class="row hyb-only" style="margin-top:.5cqw;gap:.5cqw"><span class="btn small mk" data-n="14">+ 袋（中）¥0.30</span><span class="btn small">打印预结</span></div>
+            <div class="quick mk scatter" data-n="21"><span class="btn">现金刚好 ¥55.70</span><span class="btn">扫码收款</span></div>
+            <div class="btn pri mk" data-n="22" style="padding:1cqw;font-size:1.1em">收款 ¥55.70</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <a class="back" href="index.html">← 原型目录</a>
+    <h1>零售 · 收银（商品购买）页</h1>
+    <p>平板横屏 1280×800dp，会员王女士正在结 6 件商品。按当前 Android App 画；<b>绿色编号</b>是已有的快捷功能，<b style="color:var(--new)">紫色虚线</b>是建议补充（未实现）。上方可切到「收款」画面。</p>
+    <div class="legend"><span><i style="background:var(--primary)"></i>已有</span><span><i style="background:var(--new)"></i>建议补充</span><button class="toggle" id="toggle">隐藏标注</button></div>
+    <h2>页头</h2>
+    <ol>
+      <li data-n="1"><span class="num">1</span><div><b>切换门店</b><span>点门店名回选店页</span></div></li>
+      <li data-n="2"><span class="num">2</span><div><b>开钱箱</b><span>手动弹钱箱；现金收款、退款自动弹</span></div></li>
+    </ol>
+    <h2>加商品</h2>
+    <ol>
+      <li data-n="3"><span class="num">3</span><div><b>扫码枪直扫</b><span>不用先点框；认商品码、店内码、PLU、称重码、会员码、价签码；同码多品弹出选择。建议加「3*」前缀定数量</span></div></li>
+      <li data-n="4"><span class="num">4</span><div><b>刚扫 · 撤销 / 再来一件</b><span>误扫立刻撤，同一件再加一次</span></div></li>
+      <li data-n="5"><span class="num new">5</span><div><b>常用按销量排</b><span>建议：现在常用是固定配置，改为按近期销量自动排</span></div></li>
+      <li data-n="6"><span class="num">6</span><div><b>× 2 / × 3 / × 5</b><span>先点倍数再扫，一次加多件</span></div></li>
+      <li data-n="7"><span class="num">7</span><div><b>查价</b><span>只看价格和库存，不进购物车</span></div></li>
+      <li data-n="8"><span class="num">8</span><div><b>临时商品</b><span>未建档商品手输名称和价格</span></div></li>
+      <li data-n="9"><span class="num">9</span><div><b>称重</b><span>接电子秤自动读数，稳定才能加；未接秤手输或快捷重量</span></div></li>
+      <li data-n="10"><span class="num new">10</span><div><b>实体键盘快捷键</b><span>建议：F1 收款、F2 挂单、F3 取单、F4 查价、F5 会员、Del、Esc</span></div></li>
+    </ol>
+    <h2>购物车</h2>
+    <ol>
+      <li data-n="11"><span class="num new">11</span><div><b>最近一单</b><span>建议：补打或撤销刚收的一单（撤销要授权）</span></div></li>
+      <li data-n="12"><span class="num">12</span><div><b>会员</b><span>扫会员码或输手机号，可当场新建</span></div></li>
+      <li data-n="15"><span class="num new">15</span><div><b>手机尾号识别</b><span>建议：输后四位，多人重名再选</span></div></li>
+      <li data-n="13"><span class="num">13</span><div><b>挂单 / 取单</b><span>取单时当前车自动挂起；重启后购物车草稿恢复</span></div></li>
+      <li data-n="14"><span class="num">14</span><div><b>购物袋</b><span>一点加袋</span></div></li>
+      <li data-n="16"><span class="num">16</span><div><b>行操作</b><span>− / +；点行可改价（授权）、备注、赠送、删除</span></div></li>
+      <li data-n="17"><span class="num">17</span><div><b>整单优惠</b><span>会员价、活动、整单折扣（授权）、抹零到角；收款页也能改</span></div></li>
+      <li data-n="21"><span class="num">21</span><div><b>现金刚好 / 扫码收款</b><span>不进收款页直接收</span></div></li>
+      <li data-n="22"><span class="num">22</span><div><b>收款</b><span>进收款页选方式</span></div></li>
+      <li data-n="23"><span class="num">23</span><div><b>改价 / 备注 / 赠送 / 删除</b><span>现状点购物车行展开；竖条里对选中行（默认最后扫的一行）直接点</span></div></li>
+      <li data-n="24"><span class="num">24</span><div><b>清空</b><span>现状在购物车「⋯」里，竖条里提到一级（要二次确认）</span></div></li>
+    </ol>
+    <div class="cmph">
+      <h2>混合布局（参考实机）：每个操作放哪</h2>
+      <p style="margin:4px 0 6px"><span class="tagz z-in">就地</span> 作用对象就在眼前　<span class="tagz z-rail">竖条</span> 只放「选中的这一行」的操作　<span class="tagz z-foot">购物车</span> 整单操作：头部小图标、底部　<span class="tagz z-more">更多</span> 低频、有风险</p>
+      <table>
+        <tr><th>操作</th><th>放哪</th><th>理由</th></tr>
+        <tr><td>扫码框、撤销 / 再来一件</td><td><span class="tagz z-in">就地</span></td><td>针对刚扫的一件，眼睛在扫码区</td></tr>
+        <tr><td>× 2 / × 3 / × 5、查价</td><td><span class="tagz z-in">就地</span></td><td>修饰「下一次扫码」，不是某一行，留在扫码框旁</td></tr>
+        <tr><td>− 数量 +</td><td><span class="tagz z-rail">竖条顶</span></td><td>扫完默认选中最后一行，改数量手不用找行；购物车行更紧凑</td></tr>
+        <tr><td>删除、改价、备注、赠送、规格</td><td><span class="tagz z-rail">竖条</span></td><td>只对选中行；改价要授权，位置固定；不适用的置灰（无规格商品「规格」灰）</td></tr>
+        <tr><td>临时商品</td><td><span class="tagz z-rail">竖条</span></td><td>新增一行，和行操作在一起（实机同此）</td></tr>
+        <tr><td>会员、挂单、取单、清空、折扣 / 活动</td><td><span class="tagz z-foot">购物车头</span></td><td>作用于整单，跟购物车放在一起；小图标不占竖条</td></tr>
+        <tr><td>购物袋、打印预结</td><td><span class="tagz z-foot">购物车底</span></td><td>收尾前最后一步</td></tr>
+        <tr><td>现金刚好、扫码收款、收款</td><td><span class="tagz z-foot">购物车底</span></td><td>看着应收金额点</td></tr>
+        <tr><td>最近一单补打 / 撤销、退货、开钱箱</td><td><span class="tagz z-more">更多</span></td><td>竖条底「更多 ›」；低频、有风险</td></tr>
+      </table>
+      <p style="margin-top:8px">和上一版的区别：整单操作移出竖条，竖条只剩一种对象；数量步进移到竖条顶。实体键盘可按竖条顺序对应 F1–F8。</p>
+    </div>
+    <div class="cmp">
+      <h2>两种布局对照</h2>
+      <table>
+        <tr><th></th><th>分散（现状）</th><th>中间竖条</th></tr>
+        <tr><td>找按钮</td><td>加购按钮在商品区，整单按钮在购物车头</td><td>固定一列，位置不变，熟手盲按</td></tr>
+        <tr><td>扫码节奏</td><td>扫码为主时差别不大</td><td>扫完一件，改数量、改价就在购物车旁边</td></tr>
+        <tr><td>行操作</td><td>点行展开再选</td><td>默认选中最后扫的行，一按即生效</td></tr>
+        <tr><td>占地</td><td>不额外占宽</td><td>约 84dp：商品格子 5 列变 4 列、购物车略窄</td></tr>
+        <tr><td>实体键盘</td><td>F 键提示放在底部</td><td>竖条按钮顺序可直接对应 F1–F12</td></tr>
+        <tr><td>适合</td><td>无码商品多、靠点格子的小店</td><td>扫码为主、客流大的收银台</td></tr>
+      </table>
+      <p style="margin-top:8px">建议：做成「界面显示」里的布局选项（默认分散），竖条按钮按权限显示、可在设置里排序。</p>
+    </div>
+    <h2>收款</h2>
+    <ol>
+      <li data-n="18"><span class="num">18</span><div><b>收款方式</b><span>现金、扫码、银行卡、储值卡（显示余额）</span></div></li>
+      <li data-n="19"><span class="num">19</span><div><b>快捷实收</b><span>刚好、¥60、¥100 + 数字键盘，自动算找零</span></div></li>
+      <li data-n="20"><span class="num new">20</span><div><b>抹零到元</b><span>建议：小店常见，一点抹掉角分（记授权或按设置）</span></div></li>
+    </ol>
+  </aside>
+</div>
+<script src="proto.js"></script>
+<script>
+  document.querySelectorAll('#seg span').forEach(s => s.addEventListener('click', () => {
+    document.querySelectorAll('#seg span').forEach(x => x.classList.toggle('on', x === s));
+    document.getElementById('v-scan').hidden = s.dataset.v !== 'scan';
+    document.getElementById('v-pay').hidden = s.dataset.v !== 'pay';
+  }));
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>静态 UI 原型</title>
+<link rel="stylesheet" href="proto.css">
+<style>
+  main { max-width: 720px; margin: 40px auto; padding: 0 16px; display: grid; gap: 12px; }
+  h1 { margin: 0; font-size: 22px; } p { margin: 0 0 8px; color: var(--sub); line-height: 1.6; }
+  a.card { display: block; padding: 16px 18px; border-radius: 10px; background: var(--surface); color: inherit; text-decoration: none; box-shadow: inset 0 0 0 1px var(--divider); }
+  a.card:hover { box-shadow: inset 0 0 0 1px var(--primary); }
+  a.card b { display: block; font-size: 16px; margin-bottom: 4px; } a.card span { color: var(--sub); }
+</style>
+</head>
+<body>
+<main>
+  <h1>静态 UI 原型</h1>
+  <p>按 Android App（同一个 App，按门店业态分餐饮 / 零售）当前界面画的静态页，用来对齐快捷功能。绿色编号 = 已有，紫色虚线 = 建议补充。两页都能切换「布局：分散（现状）/ 中间竖条」，对照快捷按钮集中放在菜单和购物车之间的效果。清单原文见分支 android-phase2b 的 docs/android/常用快捷功能清单-2026-11-12.md。</p>
+  <a class="card" href="dining-order.html"><b>餐饮 · 点餐页</b><span>用餐中的桌：分类、搜索、菜品卡片、账单（新加 / 已下单）、送厨、结账；可切到规格 / 份数弹窗</span></a>
+  <a class="card" href="retail-checkout.html"><b>零售 · 收银（商品购买）页</b><span>扫码加购、倍数、称重、会员、整单优惠、快捷收款；可切到收款画面</span></a>
+</main>
+</body>
+</html>

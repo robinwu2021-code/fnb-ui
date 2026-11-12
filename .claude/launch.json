@@ -2,6 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     { "name": "pos-react", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--prefix", "prototypes/pos-react"], "port": 5178 },
-    { "name": "pos-react-retail", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--prefix", "prototypes/pos-react", "--", "--port", "5188"], "port": 5188 }
+    { "name": "pos-react-retail", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--prefix", "prototypes/pos-react", "--", "--port", "5188"], "port": 5188 },
+    { "name": "static-ui", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "prototypes/static-ui"], "port": 8765 }
   ]
 }

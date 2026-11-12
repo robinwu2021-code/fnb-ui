@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>餐饮点餐页 · 静态原型</title>
+<link rel="stylesheet" href="proto.css">
+<style>
+  .cats { width: 8.5cqw; padding: .4cqw; gap: .2cqw; }
+  .cat { padding: .8cqw 1cqw; border-radius: var(--r-btn); display: flex; justify-content: space-between; }
+  .cat.on { background: var(--tint); color: var(--primary); font-weight: 600; box-shadow: inset 3px 0 0 var(--primary); }
+  .menu { flex: 1; padding: 1cqw; gap: .8cqw; }
+  .search { flex: 1; background: var(--tile); border-radius: var(--r-btn); padding: .7cqw 1cqw; color: var(--sub); }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .8cqw; }
+  .dish { background: var(--tile); border-radius: var(--r-card); overflow: hidden; position: relative; }
+  .dish .img { aspect-ratio: 16/10.5; background: linear-gradient(135deg, #e9d8c4, #c99a6b); }
+  .dish:nth-child(3n+2) .img { background: linear-gradient(135deg, #f1c7a4, #b8572f); }
+  .dish:nth-child(3n) .img { background: linear-gradient(135deg, #e6e2c9, #8a9d5c); }
+  .dish .t { padding: .55cqw .7cqw; line-height: 1.35; }
+  .dish .t b { display: block; font-weight: 600; }
+  .dish .badge { position: absolute; top: .5cqw; right: .5cqw; background: var(--primary); color: #fff; border-radius: 1cqw; min-width: 1.8cqw; text-align: center; font-weight: 700; padding: 0 .3cqw; }
+  .dish.out { opacity: .5; }
+  .bill { width: 28cqw; }
+  .bill .head { padding: 1cqw 1.1cqw .4cqw; }
+  .bill .head b { font-size: 1.4em !important; }
+  .acts { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4cqw; padding: .4cqw 1.1cqw; }
+  .lines { flex: 1; overflow: hidden; padding: 0 1.1cqw; }
+  .grp { background: var(--tile); border-radius: 6px; padding: .45cqw .7cqw; margin: .5cqw 0 .2cqw; display: flex; justify-content: space-between; color: var(--sub); }
+  .line { padding: .6cqw 0; border-bottom: 1px solid var(--divider); }
+  .line .row b { font-weight: 600; }
+  .step { display: flex; align-items: center; gap: .4cqw; }
+  .step span { width: 2.2cqw; height: 2.2cqw; border-radius: 50%; background: var(--control); display: grid; place-items: center; }
+  .notechips { display: flex; gap: .3cqw; margin-top: .35cqw; flex-wrap: wrap; }
+  .notechips .chip { padding: .2cqw .6cqw; font-size: .82em !important; }
+  .foot { background: var(--control); padding: .9cqw 1.1cqw; border-radius: 0 0 var(--r-card) var(--r-card); }
+  .foot .due { font-size: 1.9em !important; font-weight: 700; }
+  /* 规格弹窗 */
+  .scrim { position: absolute; inset: 0; background: rgba(12,14,18,.4); display: grid; place-items: center; z-index: 10; }
+  .dlg { width: 40cqw; background: var(--surface); border-radius: 12px; overflow: hidden; }
+  .dlg .h { padding: 1.2cqw 1.4cqw .6cqw; display: flex; justify-content: space-between; }
+  .dlg .h b { font-size: 1.35em !important; }
+  .dlg .c { padding: 0 1.4cqw 1cqw; display: grid; gap: .8cqw; }
+  .opts { display: flex; gap: .5cqw; flex-wrap: wrap; }
+  .dlg .f { background: var(--control); padding: .9cqw 1.4cqw; display: flex; justify-content: flex-end; gap: .6cqw; align-items: center; }
+  .switch { display: flex; gap: 12px; align-items: center; }
+  body.hyb-on .selrow { background: var(--tint); box-shadow: inset 3px 0 0 var(--primary); border-radius: 6px; padding-left: .6cqw; padding-right: .6cqw; }
+  body.hyb-on .grid { grid-template-columns: repeat(4, 1fr); }
+  body.hyb-on .bill { width: 26cqw; }
+  body.rail-on .selrow { background: var(--tint); box-shadow: inset 3px 0 0 var(--primary); border-radius: 6px; padding-left: .6cqw; padding-right: .6cqw; }
+  body.rail-on .bill { width: 24cqw; }
+  body.rail-on .grid { grid-template-columns: repeat(4, 1fr); }
+  .seg { display: inline-flex; background: var(--control); border-radius: var(--r-btn); padding: .2cqw; }
+  .seg span { padding: .4cqw .9cqw; border-radius: 8px; }
+  .seg .on { background: var(--surface); color: var(--primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div>
+    <div class="switch" style="margin-bottom:12px">
+      <span class="sidebtn"><span class="on" data-s="right">账单在右（现状）</span><span data-s="left">账单在左</span></span>
+      <span class="layout"><span class="on" data-l="scatter">布局：分散（现状）</span><span data-l="rail">布局：中间竖条</span><span data-l="hybrid">布局：混合（建议）</span></span>
+      <span class="seg"><span class="on" onclick="document.getElementById('dlg').hidden=true">点餐页</span><span onclick="document.getElementById('dlg').hidden=false">点开菜品（规格 / 份数）</span></span>
+    </div>
+    <div class="device">
+      <!-- 页头 -->
+      <div class="hdr">
+        <div class="store mk" data-n="1"><b>南山小馆 · 海岸店</b><span>王店长 · 1号收银台</span></div>
+        <div class="tabs"><span class="tab">桌台</span><span class="tab on">点餐</span><span class="tab">⚙</span></div>
+        <div class="icons">
+          <span class="ic">☁</span><span class="ic mk" data-n="2">🛎</span><span class="ic">📊</span><span class="ic">🔔</span><span class="ic">🖨</span><span class="ic mk" data-n="3">💰</span><span class="ic">⇄</span><span class="ic">🔒</span><span class="ic">文</span><span class="ic f">☰</span>
+        </div>
+      </div>
+
+      <div class="body">
+        <!-- 分类 -->
+        <div class="panel cats">
+          <div class="cat on mk" data-n="4"><span>热销</span><span>3</span></div>
+          <div class="cat"><span>招牌</span></div><div class="cat"><span>凉菜</span></div><div class="cat"><span>热菜</span><span>1</span></div>
+          <div class="cat"><span>主食</span></div><div class="cat"><span>汤羹</span></div><div class="cat"><span>饮品</span></div>
+          <div class="cat mk new" data-n="5"><span>套餐</span></div><div class="cat"><span>甜品</span></div>
+        </div>
+
+        <!-- 菜品区 -->
+        <div class="panel menu">
+          <div class="row">
+            <b style="font-size:1.35em">点餐</b><span class="muted">A06 · 4 人 / 堂食</span>
+            <span class="grow"></span><span class="btn txt mk scatter hscatter" data-n="6">换桌</span>
+            <span class="btn txt mk new scatter hscatter" data-n="7">复制上一单</span>
+          </div>
+          <div class="row">
+            <div class="search mk" data-n="8">🔍 搜索菜名、拼音首字母、英文或编号　例：mpdf</div>
+            <span class="chip on">全部</span><span class="chip mk" data-n="9">辣味</span><span class="chip">素食</span>
+            <span class="chip mk" data-n="10">▤</span>
+          </div>
+          <div class="small muted">8 道菜 · 点卡片加一份；长按改份数、半份</div>
+          <div class="grid">
+            <div class="dish mk" data-n="11"><div class="img"></div><span class="badge">2</span><div class="t"><b>宫保鸡丁</b><span class="muted small">可选规格</span><div class="row"><span class="price">¥48.00 起</span><span class="grow"></span><span class="small muted">有货</span></div></div></div>
+            <div class="dish"><div class="img"></div><div class="t"><b>水煮鱼</b><span class="muted small">可选规格</span><div class="row"><span class="price">¥88.00 起</span><span class="grow"></span><span class="small muted">有货</span></div></div></div>
+            <div class="dish"><div class="img"></div><div class="t"><b>小炒黄牛肉</b><span class="muted small">门店现制</span><div class="row"><span class="price">¥68.00</span><span class="grow"></span><span class="small muted">有货</span></div></div></div>
+            <div class="dish"><div class="img"></div><span class="badge">1</span><div class="t"><b>麻婆豆腐</b><span class="muted small">辣</span><div class="row"><span class="price">¥26.00</span><span class="grow"></span><span class="small muted">有货</span></div></div></div>
+            <div class="dish"><div class="img"></div><div class="t"><b>酸菜鱼</b><span class="muted small">门店现制</span><div class="row"><span class="price">¥78.00</span><span class="grow"></span><span class="small" style="color:var(--warning)">仅剩 5</span></div></div></div>
+            <div class="dish"><div class="img"></div><div class="t"><b>夫妻肺片</b><span class="muted small">门店现制</span><div class="row"><span class="price">¥38.00</span><span class="grow"></span><span class="small muted">有货</span></div></div></div>
+            <div class="dish"><div class="img"></div><div class="t"><b>米饭</b><span class="muted small">门店现制</span><div class="row"><span class="price">¥3.00</span><span class="grow"></span><span class="small muted">有货</span></div></div></div>
+            <div class="dish out"><div class="img"></div><div class="t"><b>酸梅汤</b><span class="muted small">新品</span><div class="row"><span class="price">¥12.00</span><span class="grow"></span><span class="small" style="color:var(--danger)">沽清</span></div></div></div>
+          </div>
+        </div>
+
+        <!-- 中间竖条：所有快捷按钮集中一列（布局切到「中间竖条」时显示） -->
+        <div class="panel rail">
+          <div class="grp">选中行 · 宫保鸡丁</div>
+          <div class="two mk" data-n="17"><span class="rb"><i>＋</i>加一份</span><span class="rb"><i>－</i>减一份</span></div>
+          <div class="two"><span class="rb mk new" data-n="25"><i>#</i>改份数</span><span class="rb mk new" data-n="18"><i>✎</i>口味备注</span></div>
+          <div class="two mk" data-n="26"><span class="rb dis"><i>↺</i>退菜</span><span class="rb dis"><i>🎁</i>赠送</span></div>
+          <div class="two"><span class="rb dis mk" data-n="20"><i>⏱</i>催菜</span><span class="rb dis"><i>✓</i>上菜</span></div>
+          <div class="sep"></div>
+          <div class="grp">整单</div>
+          <div class="two"><span class="rb mk" data-n="12"><i>👤</i>会员</span><span class="rb mk" data-n="13"><i>％</i>优惠</span></div>
+          <div class="two"><span class="rb mk" data-n="14"><i>✎</i>整单备注</span><span class="rb mk" data-n="16"><i>⌫</i>清空新加</span></div>
+          <div class="two"><span class="rb mk" data-n="15"><i>⏸</i>挂单</span><span class="rb"><i>⏵</i>取单</span></div>
+          <div class="sep"></div>
+          <div class="grp">桌台</div>
+          <div class="two"><span class="rb mk" data-n="6"><i>⇄</i>换桌</span><span class="rb mk" data-n="27"><i>⧉</i>并台 / 拆单</span></div>
+          <div class="two"><span class="rb mk" data-n="28"><i>🧾</i>预结单</span><span class="rb mk new" data-n="7"><i>⎘</i>复制上一单</span></div>
+          <div style="flex:1"></div>
+          <span class="rb soft mk" data-n="21" style="min-height:3.8cqw"><i>🍳</i>送厨 · 3</span>
+        </div>
+
+        <!-- 混合（建议）：只放「当前选中行 / 当前单」的高频操作，就地操作留在原处 -->
+        <div class="panel rail2">
+          <div class="grp">选中 · 宫保鸡丁</div>
+          <div class="qty mk" data-n="17"><span>－</span><span class="n">2</span><span>＋</span></div>
+          <span class="rb">删除</span>
+          <span class="rb mk" data-n="23">规格做法</span>
+          <span class="rb mk new" data-n="18">口味备注</span>
+          <span class="rb mk new" data-n="29">单品打包</span>
+          <span class="rb mk" data-n="26">赠菜</span>
+          <span class="rb dis">退菜</span>
+          <span class="rb dis mk" data-n="20">催菜 / 上菜</span>
+          <span class="rb mk new" data-n="30">临时菜</span>
+          <div style="flex:1"></div>
+          <span class="rb moreb">更多 ›</span>
+          <div class="more hyb-only" style="bottom:0">
+            <span class="muted small">更多（低频 · 桌台级）</span>
+            <span class="mk" data-n="6">⇄ 换桌</span><span class="mk" data-n="27">⧉ 并台 / 拆单</span><span class="mk new" data-n="7" style="color:var(--new)">⎘ 复制上一单</span><span>☑ 批量上菜 / 催菜</span>
+          </div>
+        </div>
+
+        <!-- 账单 -->
+        <div class="panel bill">
+          <div class="head row"><b>A06</b><span class="small" style="color:var(--success)">● 用餐中</span><span class="grow"></span><span class="btn txt">加菜</span><span class="btn">⋯</span></div>
+          <div class="muted small" style="padding:0 1.1cqw">4 人 · 堂食 · 单号 #30A06 · 32 分钟</div>
+          <div class="hicons hyb-only"><span class="mk" data-n="15"><i>⏸</i>挂单</span><span><i>⏵</i>取单</span><span class="mk" data-n="16"><i>⌫</i>清空</span><span class="mk" data-n="14"><i>✎</i>整单备注</span><span class="mk" data-n="12"><i>👤</i>会员</span><span class="mk" data-n="13"><i>％</i>优惠</span></div>
+          <div class="acts scatter hscatter"><span class="btn mk" data-n="12">会员</span><span class="btn mk" data-n="13">优惠</span><span class="btn mk" data-n="14">备注</span><span class="btn mk" data-n="15">挂单</span></div>
+          <div class="lines">
+            <div class="grp"><span>新加 · 待送厨 · 3 份</span><span class="btn txt small mk scatter hscatter" data-n="16" style="padding:0">清空</span></div>
+            <div class="line selrow">
+              <div class="row"><b>宫保鸡丁</b><span class="grow"></span><span class="price">¥96.00</span></div>
+              <div class="row"><span class="muted small">大份 · 微辣</span><span class="grow"></span><span class="step mk hstep" data-n="17"><span>−</span>2<span>+</span></span></div>
+              <div class="notechips mk new scatter hscatter" data-n="18"><span class="chip">少辣</span><span class="chip">不要葱</span><span class="chip">打包</span><span class="chip">+ 备注</span></div>
+            </div>
+            <div class="line">
+              <div class="row"><b>麻婆豆腐</b><span class="grow"></span><span class="price">¥26.00</span></div>
+              <div class="row"><span class="muted small">标准做法 · 备注：少辣</span><span class="grow"></span><span class="step hstep"><span>−</span>1<span>+</span></span></div>
+            </div>
+            <div class="grp"><span>已下单 · 2 份</span><span class="btn txt small mk scatter hscatter" data-n="19" style="padding:0">批量</span></div>
+            <div class="line">
+              <div class="row"><b>小炒黄牛肉</b><span class="grow"></span><span class="price">¥68.00</span></div>
+              <div class="row"><span class="small" style="color:var(--success)">已下单 · ×1</span><span class="grow"></span><span class="scatter hscatter"><span class="btn txt small mk" data-n="20" style="padding:0 .4cqw">催菜</span><span class="btn txt small" style="padding:0 .4cqw">已上菜</span></span></div>
+            </div>
+            <div class="line">
+              <div class="row"><b>米饭</b><span class="grow"></span><span class="price">¥12.00</span></div>
+              <div class="row"><span class="small" style="color:var(--success)">已上菜 · ×4</span></div>
+            </div>
+          </div>
+          <div class="foot">
+            <div class="row"><span class="muted small">应收 · 明细 +</span><span class="grow"></span><span class="due price">¥202.10</span></div>
+            <div class="row small"><span class="muted">含服务费 ¥10.10</span><span class="grow"></span><span style="color:var(--primary)">满 200 减 10 −¥10.00</span></div>
+            <div class="row hyb-only" style="margin-top:.5cqw;gap:.5cqw"><span class="btn small mk new" data-n="31">全单打包</span><span class="btn small mk" data-n="28">打印预结单</span></div>
+            <div class="row" style="margin-top:.6cqw;gap:.6cqw">
+              <span class="btn soft grow mk scatter hscatter" data-n="21" style="padding:.9cqw">送厨 · 3</span><span class="btn soft grow mk hyb-only" data-n="21" style="padding:.9cqw;justify-content:center">送厨 · 3</span>
+              <span class="btn pri grow mk" data-n="22" style="padding:.9cqw">结账</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 规格 / 份数弹窗 -->
+      <div class="scrim" id="dlg" hidden>
+        <div class="dlg">
+          <div class="h"><div><b>宫保鸡丁</b><div class="muted small">¥48.00 起 · 招牌热菜</div></div><span class="btn">✕</span></div>
+          <div class="c">
+            <div><div class="muted small" style="margin-bottom:.4cqw">份量</div><div class="opts mk" data-n="23"><span class="chip on">大份 +¥10</span><span class="chip">标准</span><span class="chip mk new" data-n="24">半份 ¥28</span></div></div>
+            <div><div class="muted small" style="margin-bottom:.4cqw">辣度</div><div class="opts"><span class="chip">不辣</span><span class="chip on">微辣</span><span class="chip">中辣</span><span class="chip">特辣</span></div></div>
+            <div><div class="muted small" style="margin-bottom:.4cqw">常用备注</div><div class="opts mk new" data-n="18"><span class="chip">少辣</span><span class="chip on">不要葱</span><span class="chip">少油</span><span class="chip">打包</span><span class="chip">先上</span></div></div>
+            <div class="row"><span class="muted small">份数</span><span class="grow"></span><span class="step mk new" data-n="25"><span>−</span><b style="font-size:1.2em">2</b><span>+</span></span><span class="chip">×3</span><span class="chip">×5</span></div>
+          </div>
+          <div class="f"><span class="muted">合计 <b class="price" style="color:var(--ink)">¥116.00</b></span><span class="grow"></span><span class="btn">取消</span><span class="btn pri">加入账单</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <a class="back" href="index.html">← 原型目录</a>
+    <h1>餐饮 · 点餐页</h1>
+    <p>平板横屏 1280×800dp，用餐中的 A06。按当前 Android App 画；<b>绿色编号</b>是已有的快捷功能，<b style="color:var(--new)">紫色虚线</b>是建议补充（未实现）。点下面的条目，画面上对应位置会闪一下；上方可切到「点开菜品」弹窗。</p>
+    <div class="legend"><span><i style="background:var(--primary)"></i>已有</span><span><i style="background:var(--new)"></i>建议补充</span><button class="toggle" id="toggle">隐藏标注</button></div>
+    <h2>页头</h2>
+    <ol>
+      <li data-n="1"><span class="num">1</span><div><b>切换门店</b><span>点门店名直接回选店页</span></div></li>
+      <li data-n="2"><span class="num">2</span><div><b>出菜看板</b><span>待上菜、超时、催菜中分组</span></div></li>
+      <li data-n="3"><span class="num">3</span><div><b>开钱箱</b><span>手动弹钱箱，记操作人；现金结账自动弹</span></div></li>
+    </ol>
+    <h2>找菜、加菜</h2>
+    <ol>
+      <li data-n="4"><span class="num">4</span><div><b>热销分类</b><span>常点菜放最前，分类旁显示已点数</span></div></li>
+      <li data-n="5"><span class="num new">5</span><div><b>套餐一键下单</b><span>建议：套餐作为分类，点一下整套进账单</span></div></li>
+      <li data-n="8"><span class="num">8</span><div><b>搜索</b><span>菜名、拼音、英文、编号；建议加拼音首字母（mpdf）</span></div></li>
+      <li data-n="9"><span class="num">9</span><div><b>口味筛选</b><span>辣味 / 素食</span></div></li>
+      <li data-n="10"><span class="num">10</span><div><b>摆放切换</b><span>卡片 / 列表</span></div></li>
+      <li data-n="11"><span class="num">11</span><div><b>点卡片加一份</b><span>角标显示已点数；有规格弹规格；沽清置灰</span></div></li>
+      <li data-n="23"><span class="num">23</span><div><b>规格一次选完</b><span>份量、辣度在一个弹窗里</span></div></li>
+      <li data-n="24"><span class="num new">24</span><div><b>半份</b><span>建议：常见菜支持半份价</span></div></li>
+      <li data-n="25"><span class="num new">25</span><div><b>长按改份数</b><span>建议：长按卡片直接出份数，×3 / ×5 快捷</span></div></li>
+    </ol>
+    <h2>账单</h2>
+    <ol>
+      <li data-n="6"><span class="num">6</span><div><b>换桌</b><span>不回桌台页；更多操作里还有拆单、并台</span></div></li>
+      <li data-n="7"><span class="num new">7</span><div><b>复制上一单</b><span>建议：团餐、熟客按上一单一键加</span></div></li>
+      <li data-n="12"><span class="num">12</span><div><b>会员</b><span>绑会员享折扣、储值</span></div></li>
+      <li data-n="13"><span class="num">13</span><div><b>优惠</b><span>满减活动</span></div></li>
+      <li data-n="14"><span class="num">14</span><div><b>整单备注</b><span>随单送厨</span></div></li>
+      <li data-n="15"><span class="num">15</span><div><b>挂单 / 取单</b><span>新加菜先挂起，取到任意在用桌</span></div></li>
+      <li data-n="16"><span class="num">16</span><div><b>清空新加</b><span>撤掉还没送厨的菜</span></div></li>
+      <li data-n="17"><span class="num">17</span><div><b>加减份数</b><span>行内 − / +</span></div></li>
+      <li data-n="18"><span class="num new">18</span><div><b>常用备注</b><span>建议：少辣、不要葱、打包一点即加，不用手输</span></div></li>
+      <li data-n="19"><span class="num">19</span><div><b>批量上菜 / 催菜</b><span>勾选多道一次处理</span></div></li>
+      <li data-n="20"><span class="num">20</span><div><b>催菜</b><span>已下单行上直接催</span></div></li>
+      <li data-n="21"><span class="num">21</span><div><b>送厨</b><span>新加菜一次送出，按档口拆单；离线也出单</span></div></li>
+      <li data-n="22"><span class="num">22</span><div><b>结账</b><span>进结账页：刚好 / ¥20 / ¥50 / ¥100 快捷实收</span></div></li>
+      <li data-n="26"><span class="num">26</span><div><b>退菜 / 赠送</b><span>主管授权；竖条里对选中行直接操作（已送厨的行才可用）</span></div></li>
+      <li data-n="27"><span class="num">27</span><div><b>并台 / 拆单</b><span>现状在「更多操作」里，竖条里提到一级</span></div></li>
+      <li data-n="29"><span class="num new">29</span><div><b>单品打包</b><span>建议：堂食里某道菜打包，出单标「打包」</span></div></li>
+      <li data-n="30"><span class="num new">30</span><div><b>临时菜</b><span>建议：菜单没有的菜手输名称和价格（零售已有临时商品）</span></div></li>
+      <li data-n="31"><span class="num new">31</span><div><b>全单打包</b><span>建议：整单改外带打包</span></div></li>
+      <li data-n="28"><span class="num">28</span><div><b>预结单</b><span>现状在桌台页、结账页，竖条里点餐页也能打</span></div></li>
+    </ol>
+    <div class="cmph">
+      <h2>混合布局（参考实机）：每个操作放哪</h2>
+      <p style="margin:4px 0 6px"><span class="tagz z-in">就地</span> 作用对象就在眼前　<span class="tagz z-rail">竖条</span> 只放「选中的这道菜」的操作　<span class="tagz z-foot">账单</span> 整单操作：账单头小图标、账单底　<span class="tagz z-more">更多</span> 低频、桌台级</p>
+      <table>
+        <tr><th>操作</th><th>放哪</th><th>理由</th></tr>
+        <tr><td>分类、搜索、点卡片加菜</td><td><span class="tagz z-in">就地</span></td><td>改的是菜单，眼睛正看着菜单</td></tr>
+        <tr><td>− 数量 +</td><td><span class="tagz z-rail">竖条顶</span></td><td>加完菜手顺势落在竖条顶；账单行只留名称、份数、金额，一屏能多看几行</td></tr>
+        <tr><td>删除、规格做法、口味备注、单品打包</td><td><span class="tagz z-rail">竖条</span></td><td>都只对选中的那道菜；新加的菜默认选中，一按即生效</td></tr>
+        <tr><td>赠菜、退菜、催菜 / 上菜</td><td><span class="tagz z-rail">竖条</span></td><td>对选中行；按菜的状态置灰（没送厨不能退、不能催），授权类位置固定不易误点</td></tr>
+        <tr><td>临时菜</td><td><span class="tagz z-rail">竖条</span></td><td>新增一行，和行操作在一起（实机同此）</td></tr>
+        <tr><td>挂单、取单、清空、整单备注、会员、优惠</td><td><span class="tagz z-foot">账单头</span></td><td>作用于整单，跟账单放在一起；用小图标不占竖条</td></tr>
+        <tr><td>全单打包、打印预结单</td><td><span class="tagz z-foot">账单底</span></td><td>收尾前看着金额用</td></tr>
+        <tr><td>送厨、结账</td><td><span class="tagz z-foot">账单底</span></td><td>最大的两个按钮，收尾动作</td></tr>
+        <tr><td>换桌、并台 / 拆单、复制上一单、批量上菜</td><td><span class="tagz z-more">更多</span></td><td>竖条底「更多 ›」，一桌最多一两次</td></tr>
+      </table>
+      <p style="margin-top:8px">和上一版的区别：整单操作移出竖条（竖条只剩一种对象，按钮含义不会混）；数量步进移到竖条顶。账单左右可切换：实机多是账单在左、菜单在右（右手点菜）；App 现状账单在右，已有「账单在左 / 右」显示设置。</p>
+    </div>
+    <div class="cmp">
+      <h2>两种布局对照</h2>
+      <table>
+        <tr><th></th><th>分散（现状）</th><th>中间竖条</th></tr>
+        <tr><td>找按钮</td><td>跟着对象走：行操作在行上，整单在账单头</td><td>固定一列，位置不变，熟手盲按</td></tr>
+        <tr><td>手的路径</td><td>菜单 → 账单头 / 行尾 / 底部，来回跨</td><td>菜单与账单之间，左右手都近</td></tr>
+        <tr><td>行操作</td><td>直接点行上的 − / + / 催菜</td><td>先选中行，再点竖条（多一步，但一组按钮通用）</td></tr>
+        <tr><td>占地</td><td>不额外占宽</td><td>约 84dp：菜品从 5 列变 4 列、账单略窄</td></tr>
+        <tr><td>可放下的按钮</td><td>受各区域空间限制，次要操作进「更多」</td><td>约 20 个一级按钮，退菜、并台、预结单不用再进「更多」</td></tr>
+        <tr><td>适合</td><td>新手、触屏为主、桌少单简单</td><td>高峰快餐 / 收银为主、熟练员工</td></tr>
+      </table>
+      <p style="margin-top:8px">建议：做成「界面显示」里的布局选项（默认分散），竖条按钮按权限显示、可在设置里排序。</p>
+    </div>
+  </aside>
+</div>
+<script src="proto.js"></script>
+</body>
+</html>
