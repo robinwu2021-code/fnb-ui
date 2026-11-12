@@ -84,7 +84,7 @@ class AppContainer(context: Context) {
     val sync: SyncRepository = RoutedSync(workspace, lanLink)
     val print: PrintRepository = RoutedPrint(workspace, lanLink)
     val shift: ShiftRepository = RoutedShift(workspace, lanLink)
-    val ops: OperationsRepository = RoutedOps(workspace, lanLink)
+    val ops: OperationsRepository = RoutedOps(workspace, lanLink) { cloud.dayCloseBlock() }
     /** 零售（R3 起）：先只走本机；副 POS 经主机仲裁放在后面做。 */
     val retail: RetailRepository = RoutedRetail(workspace, lanLink)
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
@@ -132,6 +132,8 @@ class AppContainer(context: Context) {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
         cloud.start(appScope)
+        // 进店 / 换店：刷新本店的需处理与价差
+        appScope.launch { workspace.current.map { it?.id }.distinctUntilChanged().collect { cloud.refreshLocal() } }
         cloudPush.start(appScope, combine(cloud.state, device.status) { c, d ->
             if (c.settings.configured && c.uploader && d.online) "${c.settings.baseUrl}@${c.settings.storeNo}" else null
         })

@@ -52,10 +52,27 @@ data class OrderUiState(
     val held: List<HeldTicket> = emptyList(),
     val tables: List<DiningTable> = emptyList(),
     val audits: List<ai.neargo.fnb.pos.core.model.AdjustmentAudit> = emptyList(),
+    /** 本单的云端提示：上传被拒（需处理）、服务端金额与本机不一致；null = 没有 */
+    val cloudNote: CloudNote? = null,
 ) {
     val canOrder get() = table?.status == TableStatus.Dining
     /** 某商品关联的规格组（按 ID 排序，与 SKU 生成顺序一致）。 */
     fun groupsOf(p: Product) = specGroups.filter { it.id in p.specGroupIds }.sortedBy { it.id }
+}
+
+/** 本单云端提示：issues = 本单需处理条数；diffMinor = 服务端金额 − 本机金额（分，0 = 一致） */
+data class CloudNote(val issues: Int, val localMinor: Long, val remoteMinor: Long) {
+    val diffMinor get() = remoteMinor - localMinor
+}
+
+/** 按本单订单号（需处理的聚合）与送厨批次（价差）汇总 */
+fun cloudNoteOf(order: TableOrder, cloud: ai.neargo.fnb.pos.core.cloud.CloudState): CloudNote? {
+    if (order.orderId.isBlank()) return null
+    val issues = cloud.issues.count { it.aggregateId == "order:${order.orderId}" }
+    val batches = order.lines.mapNotNull { it.batchId }.toSet()
+    val diffs = cloud.priceDiffs.filter { it.batchId in batches }
+    if (issues == 0 && diffs.isEmpty()) return null
+    return CloudNote(issues, diffs.sumOf { it.localMinor }, diffs.sumOf { it.remoteMinor })
 }
 
 sealed interface OrderAction {
@@ -102,6 +119,7 @@ class OrderViewModel(
     private val device: DeviceRepository,
     private val messages: MessageBus,
     private val saved: SavedStateHandle,
+    cloud: kotlinx.coroutines.flow.Flow<ai.neargo.fnb.pos.core.cloud.CloudState> = kotlinx.coroutines.flow.flowOf(ai.neargo.fnb.pos.core.cloud.CloudState()),
 ) : ViewModel() {
 
     private val filter = combine(
@@ -109,7 +127,7 @@ class OrderViewModel(
         saved.getStateFlow<String?>(KEY_TAG, null), saved.getStateFlow(KEY_ARRANGE, Arrange.Top.name),
     ) { c, q, t, a -> MenuFilter(c, q, t, Arrange.valueOf(a)) }
 
-    val state: StateFlow<OrderUiState> = combine(config.current, prefs.prefs, filter, device.status) { store, p, f, d ->
+    val state: StateFlow<OrderUiState> = combine(config.current, prefs.prefs, filter, device.status, cloud) { store, p, f, d, cs ->
         if (store == null) return@combine OrderUiState(prefs = p)
         val order = store.orders[store.currentTableId] ?: TableOrder()
         val visible = store.visibleProducts
@@ -134,6 +152,7 @@ class OrderViewModel(
             held = store.held,
             tables = store.tables,
             audits = store.adjustments.filter { it.tableId == store.currentTableId },
+            cloudNote = cloudNoteOf(order, cs),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrderUiState())
 

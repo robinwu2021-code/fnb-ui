@@ -162,7 +162,8 @@ fun ReportsRoute() {
         }
     }
     if (closing) {
-        val block = ReportRules.closeBlock(s)
+        // 本机条件（未结账桌、打印结果未知）与云端离线时限（超过 72 小时连不上云端）一起列出
+        val block = listOfNotNull(ReportRules.closeBlock(s), c.cloud.dayCloseBlock()).joinToString("\n").ifBlank { null }
         val today = ReportRules.build(s, dayStart, now + 1)
         PosDialog("日结", { closing = false }, subtitle = "营业日 ${time(dayStart)} 起", footer = {
             PosButton("取消", { closing = false }, size = BtnSize.Large)

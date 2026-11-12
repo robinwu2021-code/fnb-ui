@@ -61,7 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 /** 路由入口：取 ViewModel，订阅状态，交给无状态内容。 */
 @Composable
 fun OrderRoute(onCheckout: (String) -> Unit, onChangeTable: () -> Unit) {
-    val vm = posViewModel { c, h -> OrderViewModel(c.session, c.config, c.orders, c.floor, c.print, c.prefs, c.device, c.messages, h) }
+    val vm = posViewModel { c, h -> OrderViewModel(c.session, c.config, c.orders, c.floor, c.print, c.prefs, c.device, c.messages, h, c.cloud.state) }
     val state by vm.state.collectAsStateWithLifecycle()
     OrderScreen(state, vm::onAction, onCheckout = { state.table?.let { onCheckout(it.id) } }, onChangeTable = onChangeTable)
 }

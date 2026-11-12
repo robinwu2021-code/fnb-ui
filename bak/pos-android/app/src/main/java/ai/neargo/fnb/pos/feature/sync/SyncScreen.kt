@@ -271,6 +271,15 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
         if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (if (cs.tables > 0) " · 桌台 ${cs.tables} 张" else ""))
         KeyValue("待上传事件", "${state.stats.unackedEvents} 条（其中旧版 ${state.stats.legacyUnacked} 条，旧版不上传）")
         KeyValue("最早未上传", time(state.stats.oldestUnackedAt))
+        if (cs.settings.configured && cs.uploader) KeyValue("最近连上云端", time(cs.lastOnlineAt))
+        when (val lim = cs.limit) {
+            is ai.neargo.fnb.pos.core.cloud.CloudLimit.Block -> KeyValue("离线时限", lim.message, valueColor = c.danger)
+            is ai.neargo.fnb.pos.core.cloud.CloudLimit.Warn -> KeyValue("离线时限", lim.message, valueColor = c.warning)
+            else -> {}
+        }
+        if (cs.priceDiffs.isNotEmpty()) KeyValue("价差", cs.priceDiffs.takeLast(3).joinToString("；") { d ->
+            "${d.batchId.takeLast(8)} 服务端 ${ai.neargo.fnb.pos.core.model.yuan(d.remoteMinor)} / 本机 ${ai.neargo.fnb.pos.core.model.yuan(d.localMinor)}"
+        } + (if (cs.priceDiffs.size > 3) " 等 ${cs.priceDiffs.size} 批" else "") + "（联网结账以服务端为准）", valueColor = c.warning)
         cs.lastRound?.let { r ->  KeyValue("最近一次上传", "${time(cs.lastSyncAt)} · 上传 ${r.uploaded} 条 · 本机事件 ${r.local} 条 · 等服务端接口 ${r.waiting} 条" + (r.stoppedBy?.let { " · 中断：${it.message}" } ?: "")) }
         if (cs.settings.configured && cs.uploader) KeyValue("门店推送", state.push.let { p ->
             (if (p.connected) "已连接" else "未连接" + (if (p.lastError.isNotBlank()) "（${p.lastError}）" else "")) +

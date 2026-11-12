@@ -401,7 +401,11 @@ private fun StatusIcon(a: HeaderActions) {
     val (icon, cloudText, tint) = when (val b = a.cloud) {
         is ai.neargo.fnb.pos.core.cloud.CloudBadge.Online -> Triple(Icons.Outlined.CloudDone, if (b.pending > 0) "云端在线 · 待上传 ${b.pending} 条" else "云端在线 · 已全部上传", c.primary)
         is ai.neargo.fnb.pos.core.cloud.CloudBadge.Syncing -> Triple(Icons.Outlined.CloudSync, "正在上传云端 ${b.done}/${b.total}", c.primary)
-        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Offline -> Triple(Icons.Outlined.CloudOff, "云端离线 · ${b.pending} 条在本机" + (if (b.reason.isNotBlank()) "（${b.reason}）" else ""), c.warning)
+        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Offline -> when (val lim = b.limit) {
+            is ai.neargo.fnb.pos.core.cloud.CloudLimit.Block -> Triple(Icons.Outlined.CloudOff, lim.message, c.danger)
+            is ai.neargo.fnb.pos.core.cloud.CloudLimit.Warn -> Triple(Icons.Outlined.CloudOff, lim.message, c.warning)
+            else -> Triple(Icons.Outlined.CloudOff, "云端离线 · ${b.pending} 条在本机" + (if (b.reason.isNotBlank()) "（${b.reason}）" else ""), c.warning)
+        }
         is ai.neargo.fnb.pos.core.cloud.CloudBadge.NeedsAction -> Triple(Icons.Outlined.CloudOff, "云端 ${b.count} 条需处理", c.danger)
         ai.neargo.fnb.pos.core.cloud.CloudBadge.ViaHost -> Triple(if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, "副 POS · 云端由主 POS 上传", if (online) c.primary else c.warning)
         ai.neargo.fnb.pos.core.cloud.CloudBadge.NotConfigured -> Triple(if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, "云端未设置 · ${a.cloudPending} 条事件在本机", if (online) c.primary else c.warning)
@@ -412,8 +416,9 @@ private fun StatusIcon(a: HeaderActions) {
         add(cloudText)
     }
     val needs = (a.cloud as? ai.neargo.fnb.pos.core.cloud.CloudBadge.NeedsAction)?.count ?: 0
+    val overdue = (a.cloud as? ai.neargo.fnb.pos.core.cloud.CloudBadge.Offline)?.limit.let { it != null && it != ai.neargo.fnb.pos.core.cloud.CloudLimit.None }
     val attention = a.kitchenAction + a.pending + needs
-    ToolIcon(icon, parts.joinToString(" · "), badge = attention.takeIf { it > 0 }, tint = if (a.kitchenAction > 0 && tint == c.primary) c.warning else tint, dot = needs > 0, onClick = a.onSync)
+    ToolIcon(icon, parts.joinToString(" · "), badge = attention.takeIf { it > 0 }, tint = if (a.kitchenAction > 0 && tint == c.primary) c.warning else tint, dot = needs > 0 || overdue, onClick = a.onSync)
 }
 
 /** 打印机：正常为默认色，缺纸为危险色并带圆点。 */

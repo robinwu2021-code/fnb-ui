@@ -31,7 +31,7 @@ data class CloudHealth(val online: Boolean = false, val okStreak: Int = 0, val f
 sealed interface CloudBadge {
     data object NotConfigured : CloudBadge
     data class Online(val pending: Int) : CloudBadge
-    data class Offline(val pending: Int, val reason: String) : CloudBadge
+    data class Offline(val pending: Int, val reason: String, val limit: CloudLimit = CloudLimit.None) : CloudBadge
     data class Syncing(val done: Int, val total: Int) : CloudBadge
     data class NeedsAction(val count: Int) : CloudBadge
     /** 副 POS：不直连云端，由主 POS 上传 */
@@ -41,6 +41,8 @@ sealed interface CloudBadge {
 /** 本机 id ↔ 服务端号 的映射（方案 §4.1：订单 → checkNo、桌台 → tableNo；带服务端 version） */
 interface CloudRefs {
     fun get(kind: String, localId: String): CloudRef?
+    /** 某类映射全部（用于价差等列表） */
+    fun all(kind: String): List<CloudRef>
     fun put(ref: CloudRef)
     /** 需人工处理的上传（业务拒绝 / 冲突重试后仍失败） */
     fun issues(): List<CloudIssue>
@@ -53,6 +55,7 @@ interface CloudRefs {
 class MemoryCloudRefs : CloudRefs {
     private val refs = LinkedHashMap<String, CloudRef>(); private val list = mutableListOf<CloudIssue>()
     override fun get(kind: String, localId: String) = refs["$kind/$localId"]
+    override fun all(kind: String) = refs.values.filter { it.kind == kind }
     override fun put(ref: CloudRef) { refs["${ref.kind}/${ref.localId}"] = ref }
     override fun issues() = list.toList()
     override fun addIssue(issue: CloudIssue) { list.removeAll { it.eventId == issue.eventId }; list += issue }
