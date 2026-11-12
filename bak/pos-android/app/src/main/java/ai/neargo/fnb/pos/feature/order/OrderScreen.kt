@@ -52,6 +52,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -84,8 +87,24 @@ fun OrderScreen(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout
         Catalog(state, side, onAction, onDish, { detailDish = it }, onChangeTable, m)
     }
 
+    // 编辑布局时按草稿显示（拖动即时生效，「完成」才写回）
+    val editor = ai.neargo.fnb.pos.app.appContainer().layoutEditor
+    val draft by editor.draft.collectAsStateWithLifecycle()
+    val p = draft ?: state.prefs
+    val editing = draft != null
+    val hybrid = p.diningMode == ai.neargo.fnb.pos.core.model.ActionMode.Hybrid
+    val ui = remember(state.table?.id) { DockUi() }
     if (layout.wide) {
-        Workbench(state.prefs.layout.bill, layout.dockW, aside = { m -> OrderDock(state, onAction, onCheckout, m) }) { m -> catalog(m, state.prefs.layout.cat) }
+        val base = layout.dockW.value.toInt()
+        Workbench(p.layout.bill, ai.neargo.fnb.pos.core.model.ActionLayout.billWidth(p.billWidth, base).dp, aside = { m -> OrderDock(state, onAction, onCheckout, m, ui = ui, hybrid = hybrid) },
+            rail = if (!hybrid) null else ({ m ->
+                if (editing) ai.neargo.fnb.pos.feature.common.RailEditor(m, ai.neargo.fnb.pos.core.model.BizType.Dining, p.railOf(ai.neargo.fnb.pos.core.model.BizType.Dining),
+                    { editor.rail(ai.neargo.fnb.pos.core.model.BizType.Dining, it) }, { onAction(OrderAction.Notice(it)) })
+                else DiningRail(state, onAction, ui, p.railOf(ai.neargo.fnb.pos.core.model.BizType.Dining), m)
+            }),
+            railWidth = (if (editing) 120 else ai.neargo.fnb.pos.core.model.ActionLayout.railWidth(p.railWidth)).dp,
+            editing = editing, onSideWidth = { editor.widenBill(it, base) }, onRailWidth = { editor.widenRail(it) }, onSide = { editor.billSide(it) },
+        ) { m -> if (editing) CatalogWithMove(m, { s -> editor.catSide(s) }) { mm -> catalog(mm, p.layout.cat) } else catalog(m, p.layout.cat) }
     } else {
         CompactOrder(state, onAction, onCheckout) { m -> catalog(m, CatSide.Top) }
     }
@@ -228,5 +247,63 @@ private fun CompactOrder(state: OrderUiState, onAction: (OrderAction) -> Unit, o
         PosSheet(onDismiss = { dockOpen = false }, showHandle = false) {
             OrderDock(state, onAction, onCheckout = { dockOpen = false; onCheckout() }, Modifier.fillMaxWidth().fillMaxHeight(0.92f), onClose = { dockOpen = false })
         }
+    }
+}
+
+/**
+ * 混合模式的中间竖条（餐饮）：选中行的数量步进 + 按配置顺序的行操作（不适用的置灰）+「更多」里的桌台级操作。
+ * 选中行：账单里点哪行选哪行，默认是最近加的一行。
+ */
+@Composable
+private fun DiningRail(state: OrderUiState, onAction: (OrderAction) -> Unit, ui: DockUi, cfg: ai.neargo.fnb.pos.core.model.RailConfig, modifier: Modifier) {
+    val sel = ui.selectedLine(state.order)
+    val isNew = sel?.status == ai.neargo.fnb.pos.core.model.LineStatus.New
+    val sent = sel != null && !isNew && sel.status != ai.neargo.fnb.pos.core.model.LineStatus.Queued
+    val can = state.canOrder
+    fun item(id: String): ai.neargo.fnb.pos.feature.common.RailItem? {
+        val label = ai.neargo.fnb.pos.core.model.ActionLayout.spec(ai.neargo.fnb.pos.core.model.BizType.Dining, id)?.label ?: return null
+        return when (id) {
+            "line.delete" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can && isNew) { sel?.let { onAction(OrderAction.ChangeQty(it.uid, -it.qty)) } }
+            "line.note" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can && isNew) { ui.noteLine = sel }
+            "line.gift", "line.void" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can && sent) { ui.dialog = "adjust" }
+            "line.rush" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, sel?.status == ai.neargo.fnb.pos.core.model.LineStatus.Sent) { sel?.let { onAction(OrderAction.Advance(it.uid, ai.neargo.fnb.pos.core.model.LineStatus.Rushing)) } }
+            "line.serve" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, sel?.status == ai.neargo.fnb.pos.core.model.LineStatus.Sent || sel?.status == ai.neargo.fnb.pos.core.model.LineStatus.Rushing) {
+                sel?.let { onAction(OrderAction.Advance(it.uid, ai.neargo.fnb.pos.core.model.LineStatus.Served)) } }
+            "table.adjust" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can && state.order.lines.isNotEmpty()) { ui.dialog = "adjust" }
+            "table.change" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can) { ui.dialog = "change" }
+            "table.merge" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can) { ui.dialog = "merge" }
+            "table.split" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, can && state.order.lines.size > 1) { ui.dialog = "split" }
+            "table.prebill" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, state.order.lines.isNotEmpty()) { onAction(OrderAction.PreBill) }
+            "table.batch" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, state.order.sent.isNotEmpty()) { ui.dialog = "batch" }
+            else -> null
+        }
+    }
+    ai.neargo.fnb.pos.feature.common.ActionRail(
+        modifier, title = sel?.let { "选中 · ${it.name}" } ?: "未选中",
+        qty = sel?.qty, onQty = if (can && isNew) ({ d -> sel?.let { onAction(OrderAction.ChangeQty(it.uid, d)) } }) else null,
+        items = cfg.rail.mapNotNull(::item), more = cfg.more.mapNotNull(::item),
+    )
+}
+
+/** 编辑布局时，分类 + 菜单面板上方的移动把手：拖到哪条边，分类栏就贴哪边 */
+@Composable
+private fun CatalogWithMove(modifier: Modifier, onCat: (ai.neargo.fnb.pos.core.model.CatSide) -> Unit, content: @Composable (Modifier) -> Unit) {
+    var box by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var drag by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    Box(modifier.onGloballyPositioned { box = it.boundsInWindow() }) {
+        content(Modifier.fillMaxSize())
+        drag?.let { p ->
+            val side = ai.neargo.fnb.pos.core.model.ActionLayout.catDrop(p.x - box.left, p.y - box.top, box.width, box.height)
+            val zone = when (side) {
+                CatSide.Left -> Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(0.18f)
+                CatSide.Right -> Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.18f)
+                CatSide.Top -> Modifier.align(Alignment.TopCenter).fillMaxWidth().fillMaxHeight(0.16f)
+                CatSide.Bottom -> Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.16f)
+            }
+            ai.neargo.fnb.pos.core.designsystem.component.DropZone(zone, "分类放到${side.label}边")
+        }
+        ai.neargo.fnb.pos.core.designsystem.component.MoveHandle("拖动分类栏", onMove = { drag = it },
+            onDrop = { p -> onCat(ai.neargo.fnb.pos.core.model.ActionLayout.catDrop(p.x - box.left, p.y - box.top, box.width, box.height)) },
+            modifier = Modifier.align(Alignment.Center))
     }
 }

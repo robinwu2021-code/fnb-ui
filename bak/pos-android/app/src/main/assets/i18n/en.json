@@ -1951,5 +1951,21 @@
   "全选空闲": "Select all idle",
   "请勾选商品": "Select products",
   "请勾选桌台": "Select tables",
-  "只能删空闲且没有预订的桌台；用餐中的结账清台后再删。": "Only idle tables with no booking can be deleted; settle and clear occupied tables first."
+  "只能删空闲且没有预订的桌台；用餐中的结账清台后再删。": "Only idle tables with no booking can be deleted; settle and clear occupied tables first.",
+  "分散": "Spread",
+  "混合": "Rail",
+  "点餐页操作布局": "Order page action layout",
+  "收银页操作布局": "Checkout action layout",
+  "编辑收银页布局（拖动）": "Edit layout (drag)",
+  "需要「门店设置」权限": "Requires Store settings permission",
+  "当前屏幕太窄，不支持编辑布局": "Screen too narrow to edit the layout",
+  "长按拖动": "Long-press to drag",
+  "— 以下在「更多」 —": "— Below: in More —",
+  "更多 ›": "More ›",
+  "未选中": "None selected",
+  "拖到左 / 右": "Drag left / right",
+  "拖动分类栏": "Drag categories",
+  "布局已保存（本机）": "Layout saved (this device)",
+  "赠菜": "Comp",
+  "批量上菜 / 催菜": "Batch serve / rush"
 }

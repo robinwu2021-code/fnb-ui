@@ -236,6 +236,17 @@ fun PosApp(shell: ShellViewModel) {
             }
             ToastHost(shell.messages, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = if (layout.wide) 24.dp else 72.dp))
             if (displayOpen) DisplaySheetRoute(onDismiss = { displayOpen = false })
+            // 编辑收银页布局：顶上一条操作栏（完成 / 恢复默认 / 取消）
+            val layoutDraft by container.layoutEditor.draft.collectAsStateWithLifecycle()
+            if (layoutDraft != null) Row(Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 6.dp)
+                .clip(Pos.metrics.card).background(Pos.colors.ink).padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("编辑布局：拖把手调宽度 · 拖「✥」换位置 · 长按竖条按钮排序", style = Pos.type.label, color = Pos.colors.surface)
+                PosButton("恢复默认", { container.layoutEditor.reset(session.biz) }, variant = ai.neargo.fnb.pos.core.designsystem.component.BtnVariant.Text, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Small)
+                PosButton("取消", { container.layoutEditor.cancel() }, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Small)
+                PosButton("完成", { lockScope.launch { container.layoutEditor.done(); shell.messages.post("布局已保存（本机）") } },
+                    variant = ai.neargo.fnb.pos.core.designsystem.component.BtnVariant.Primary, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Small)
+            }
             // 商户自己的新门店还没有员工：先设店长（没有员工时任何人都有全部权限）
             val store by container.config.current.collectAsStateWithLifecycle()
             var later by rememberSaveable(session.storeId) { mutableStateOf(false) }

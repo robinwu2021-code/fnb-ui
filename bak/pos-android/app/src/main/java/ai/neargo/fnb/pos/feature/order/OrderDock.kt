@@ -55,22 +55,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
+/** 账单坞的界面状态：弹窗、备注中的行、混合模式下选中的行。提到点餐页，竖条也能打开同样的弹窗 */
+class DockUi {
+    var dialog by mutableStateOf<String?>(null)
+    var noteLine by mutableStateOf<OrderLine?>(null)
+    var selected by mutableStateOf<Long?>(null)
+    /** 选中行：选过的还在就用它，否则最近加的一行 */
+    fun selectedLine(o: ai.neargo.fnb.pos.core.model.TableOrder) = o.lines.firstOrNull { it.uid == selected } ?: o.lines.maxByOrNull { it.uid }
+}
+
 /**
  * OrderDock：桌台身份 → 快捷入口 → 按状态分组的菜品清单（优先占空间）→ 金额与主次操作。
  * 结账为唯一实心主操作，送厨为次操作（主题浅底）。
  */
 @Composable
-fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: () -> Unit, modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
+fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: () -> Unit, modifier: Modifier = Modifier, onClose: (() -> Unit)? = null,
+              ui: DockUi = remember(state.table?.id) { DockUi() }, hybrid: Boolean = false) {
     val c = Pos.colors
     val t = Pos.type
     val tb = state.table ?: return
     val totals = state.totals
     var detail by rememberSaveable { mutableStateOf(false) }
-    var dialog by remember(tb.id) { mutableStateOf<String?>(null) }
-    var noteLine by remember(tb.id) { mutableStateOf<OrderLine?>(null) }
+    var dialog by ui::dialog
+    var noteLine by ui::noteLine
     var more by remember { mutableStateOf(false) }
     DockDialogs(state, dialog, { dialog = null }, onAction)
     noteLine?.let { l -> NoteDialog("${l.name} 备注", l.note, DishNoteTags, { noteLine = null }) { n, done -> onAction(OrderAction.LineNote(l.uid, n, done)) } }
+    val sel = if (hybrid) ui.selectedLine(state.order)?.uid else null
+    val pick: (OrderLine) -> (() -> Unit)? = { l -> if (hybrid) ({ ui.selected = l.uid }) else null }
 
     Panel(modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -82,7 +94,8 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                     Spacer(Modifier.weight(1f))
                     PosButton("加菜", { onClose?.invoke() }, variant = BtnVariant.Text, size = BtnSize.Small)
                     if (onClose != null) PosIconButton(Icons.Rounded.Close, "关闭账单", onClose, size = 36.dp)
-                    Box {
+                    // 混合模式：低频操作在竖条底「更多」，这里不重复
+                    if (!hybrid) Box {
                         PosIconButton(Icons.Rounded.MoreHoriz, "更多操作", { more = true }, size = 36.dp)
                         DropdownMenu(more, { more = false }, containerColor = c.surface, shadowElevation = 2.dp) {
                             val item: @Composable (String, Boolean, () -> Unit) -> Unit = { label, enabled, act ->
@@ -101,7 +114,15 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                 Text("${tb.guests} 人 · 堂食 · 单号 #30${tb.id}", style = t.label.num(), color = c.sub)
                 if (state.order.note.isNotBlank()) Text("整单备注：${state.order.note}", style = t.label, color = c.warning, maxLines = 2)
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // 混合模式：整单操作做成账单头一行小按钮（竖条只放选中行的操作）
+            if (hybrid) ai.neargo.fnb.pos.feature.common.OrderIcons(listOf(
+                ai.neargo.fnb.pos.feature.common.RailItem("order.hold", "挂单", state.canOrder && state.order.pending.isNotEmpty()) { onAction(OrderAction.Hold) },
+                ai.neargo.fnb.pos.feature.common.RailItem("order.retrieve", if (state.held.isEmpty()) "取单" else "取单 ${state.held.size}", state.canOrder && state.held.isNotEmpty()) { dialog = "retrieve" },
+                ai.neargo.fnb.pos.feature.common.RailItem("order.clear", "清空", state.order.pending.isNotEmpty()) { onAction(OrderAction.ClearNew) },
+                ai.neargo.fnb.pos.feature.common.RailItem("order.note", "备注", state.canOrder) { dialog = "note" },
+                ai.neargo.fnb.pos.feature.common.RailItem("order.member", if (state.order.memberName.isNotBlank()) state.order.memberName else "会员", state.canOrder) { dialog = "member" },
+                ai.neargo.fnb.pos.feature.common.RailItem("order.promo", "优惠", state.canOrder) { dialog = "promo" },
+            )) else Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val m = Modifier.weight(1f)
                 PosButton(if (state.order.memberName.isNotBlank()) state.order.memberName else "会员", { dialog = "member" }, m, size = BtnSize.Small, selected = state.order.member, textStyle = t.label, enabled = state.canOrder)
                 PosButton(if (state.order.promotions.isNotEmpty()) "优惠 ${state.order.promotions.size}" else "优惠", { dialog = "promo" }, m, size = BtnSize.Small, textStyle = t.label, selected = state.order.promotions.isNotEmpty() || state.order.coupon, enabled = state.canOrder)
@@ -118,16 +139,16 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
                 val queued = state.order.queued
                 val sent = state.order.sent.filter { it.status != LineStatus.Queued }
                 if (pending.isNotEmpty()) {
-                    item(key = "g-new") { GroupTitle("新加 · 待送厨 · ${pending.sumOf { it.qty }} 份", action = "清空") { onAction(OrderAction.ClearNew) } }
-                    items(pending, key = { it.uid }) { l -> OrderLineRow(l, { onAction(OrderAction.ChangeQty(l.uid, it)) }, null, onNote = { noteLine = l }) }
+                    item(key = "g-new") { if (hybrid) GroupTitle("新加 · 待送厨 · ${pending.sumOf { it.qty }} 份") else GroupTitle("新加 · 待送厨 · ${pending.sumOf { it.qty }} 份", action = "清空") { onAction(OrderAction.ClearNew) } }
+                    items(pending, key = { it.uid }) { l -> OrderLineRow(l, { onAction(OrderAction.ChangeQty(l.uid, it)) }, null, onNote = { noteLine = l }, selected = l.uid == sel, onSelect = pick(l)) }
                 }
                 if (queued.isNotEmpty()) {
                     item(key = "g-queued") { GroupTitle("待同步 · ${queued.sumOf { it.qty }} 份 · ${if (state.online) "正在补发" else "联网后自动送厨"}") }
-                    items(queued, key = { it.uid }) { l -> OrderLineRow(l, {}, null) }
+                    items(queued, key = { it.uid }) { l -> OrderLineRow(l, {}, null, selected = l.uid == sel, onSelect = pick(l)) }
                 }
                 if (sent.isNotEmpty()) {
-                    item(key = "g-sent") { GroupTitle("已下单 · ${sent.sumOf { it.qty }} 份", action = "批量") { dialog = "batch" } }
-                    items(sent, key = { it.uid }) { l -> OrderLineRow(l, {}, { to -> onAction(OrderAction.Advance(l.uid, to)) }) }
+                    item(key = "g-sent") { if (hybrid) GroupTitle("已下单 · ${sent.sumOf { it.qty }} 份") else GroupTitle("已下单 · ${sent.sumOf { it.qty }} 份", action = "批量") { dialog = "batch" } }
+                    items(sent, key = { it.uid }) { l -> OrderLineRow(l, {}, { to -> onAction(OrderAction.Advance(l.uid, to)) }, selected = l.uid == sel, onSelect = pick(l)) }
                 }
                 if (state.order.lines.isEmpty()) {
                     item { EmptyState(if (state.canOrder) "还没有点菜。点菜品卡片加入" else "${tb.id} ${tb.status.label}，请先在桌台开台") }
@@ -164,7 +185,7 @@ fun OrderDock(state: OrderUiState, onAction: (OrderAction) -> Unit, onCheckout: 
 
 /** 账单坞弹窗：整单备注、换桌、并台、拆单、取单。 */
 @Composable
-private fun DockDialogs(state: OrderUiState, dialog: String?, close: () -> Unit, onAction: (OrderAction) -> Unit) {
+internal fun DockDialogs(state: OrderUiState, dialog: String?, close: () -> Unit, onAction: (OrderAction) -> Unit) {
     val tb = state.table ?: return
     val store = ai.neargo.fnb.pos.app.appContainer().config.current.value
     when (dialog) {
