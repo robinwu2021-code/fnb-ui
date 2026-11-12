@@ -40,10 +40,11 @@ object BarcodeRules {
         return WeighCode(c.substring(1, 7), c.substring(7, 12).toLong(), c.substring(12, 17).toInt())
     }
 
-    /** 按码找商品（忽略空格） */
+    /** 按码找商品（忽略空格）；扫到的是 13 位码时，也认价签上印的 EAN-13（店内码、PLU 打价签时转成了 13 位） */
     fun <T> findByCode(items: List<T>, raw: String, codesOf: (T) -> List<String>): T? {
         val c = clean(raw)
         return items.firstOrNull { item -> codesOf(item).any { clean(it) == c } }
+            ?: if (c.length == 13 && c.all(Char::isDigit)) items.firstOrNull { item -> codesOf(item).any { it.any(Char::isDigit) && toEan13(it) == c } } else null
     }
 
     /** EAN-13 校验位（前 12 位） */

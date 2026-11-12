@@ -1172,6 +1172,48 @@ class LocalWorkspace(
         s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no（补打）", saleReceipt(s, x), clock(), reprint = true)))
     }
 
+    override suspend fun setRetailPrice(productId: String, price: Long): Result<Unit> = storeOp(event = retailEvent("RetailPriceChanged", """{"product":"$productId","price":$price}"""), check = { s ->
+        val p = s.product(productId)
+        when {
+            p == null -> "商品不存在"
+            price <= 0 || !Money.withinBill(price) -> "售价要大于 0"
+            price == p.price -> "售价没有变化"
+            else -> retailOnly(s) ?: need(Perm.Settings)
+        }
+    }) { s ->
+        val p = s.product(productId)!!
+        // 规格价没手动改过的跟着基础价走
+        val np = p.copy(price = price, skus = p.skus.map { if (it.manualPrice) it else it.copy(price = price) })
+        s.copy(products = s.products.map { if (it.id == productId) np else it }).withRetail { r ->
+            val had = r.labelQueue.firstOrNull { it.productId == productId }
+            val job = LabelJob(productId, LabelWhy.Price, had?.oldPrice ?: p.price)
+            r.copy(labelQueue = listOf(job) + r.labelQueue.filterNot { it.productId == productId })
+        }
+    }
+
+    override suspend fun queueLabel(productId: String): Result<Unit> = storeOp(event = retailEvent("LabelQueued", """{"product":"$productId"}"""), check = { s ->
+        retailOnly(s) ?: if (s.product(productId) == null) "商品不存在" else need(Perm.Settings)
+    }) { s ->
+        if (s.retail.labelQueue.any { it.productId == productId }) s
+        else s.withRetail { it.copy(labelQueue = listOf(LabelJob(productId, LabelWhy.Manual)) + it.labelQueue) }
+    }
+
+    override suspend fun printLabels(productIds: List<String>, tpl: LabelTpl): Result<Int> {
+        val actor = actorName(state.value)
+        var n = 0
+        return storeOp(event = retailEvent("LabelsPrinted", """{"count":${productIds.size},"tpl":"$tpl"}"""), check = { s ->
+            when {
+                productIds.isEmpty() -> "请选择要打的价签"
+                productIds.any { s.product(it) == null } -> "商品不存在"
+                else -> retailOnly(s) ?: need(Perm.Settings)
+            }
+        }) { s ->
+            val program = productIds.flatMap { LabelRules.tspl(s.product(it)!!, tpl) }
+            n = productIds.size
+            s.withRetail { r -> r.copy(labelQueue = r.labelQueue.filterNot { it.productId in productIds }, labelPrints = (listOf(LabelPrint(clock(), tpl, productIds, actor, program)) + r.labelPrints).take(50)) }
+        }.map { n }
+    }
+
     override suspend fun voidStockDoc(no: String): Result<Unit> =
         storeOp(event = retailEvent("StockDocVoided", """{"no":"$no"}"""), check = { s ->
             val d = s.retail.stockDocs.firstOrNull { it.no == no }

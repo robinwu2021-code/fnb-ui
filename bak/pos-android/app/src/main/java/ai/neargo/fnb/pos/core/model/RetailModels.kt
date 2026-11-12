@@ -79,6 +79,12 @@ data class StockDoc(
 @Serializable enum class LabelWhy(val label: String) { Price("改价"), New("新品"), Manual("手动加入") }
 @Serializable data class LabelJob(val productId: String, val why: LabelWhy, val oldPrice: Long? = null)
 
+/** 价签模板：纸张宽 × 高（毫米） */
+@Serializable enum class LabelTpl(val label: String, val wMm: Int, val hMm: Int) { L60x40("60×40 标准", 60, 40), L40x30("40×30 小签", 40, 30), Shelf("货架条 85×24", 85, 24) }
+
+/** 一次价签打印：模板、商品、生成的标签机指令（TSPL）。标签机接入后按这份指令发送 */
+@Serializable data class LabelPrint(val at: Long, val tpl: LabelTpl, val productIds: List<String>, val actor: String, val program: List<String>)
+
 /** 门店的全部零售数据 */
 @Serializable
 data class RetailData(
@@ -92,6 +98,8 @@ data class RetailData(
     val looseReturns: List<LooseReturn> = emptyList(),
     /** 换货抵扣：订单页换货确认后记在这里，收银页下一单结算时用掉（存盘，重启不丢） */
     val credit: ExchangeCredit? = null,
+    /** 价签打印记录（最近的在前） */
+    val labelPrints: List<LabelPrint> = emptyList(),
 )
 
 /** 零售单收款里「换货抵扣」这一笔的方式名（不是真的收款方式，不进收款记录） */

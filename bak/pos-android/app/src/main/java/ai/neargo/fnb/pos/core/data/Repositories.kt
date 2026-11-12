@@ -261,5 +261,11 @@ interface RetailRepository {
     suspend fun returnRetail(req: ai.neargo.fnb.pos.core.model.ReturnRequest, online: Boolean): Result<ai.neargo.fnb.pos.core.model.SaleReturn>
     /** 补打零售小票 */
     suspend fun reprintSale(no: String): Result<Unit>
+    /** 改售价：收银立即按新价算，商品进「待打价签」（已在队列里的保留最早的原价） */
+    suspend fun setRetailPrice(productId: String, price: Long): Result<Unit>
+    /** 手动把商品加进待打价签 */
+    suspend fun queueLabel(productId: String): Result<Unit>
+    /** 打印选中的价签：生成标签机指令并记录，打完从队列移走；返回张数 */
+    suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int>
     suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale>
 }

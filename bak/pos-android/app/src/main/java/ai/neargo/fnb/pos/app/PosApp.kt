@@ -239,7 +239,7 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<ai.neargo.fnb.pos.navigation.ReportsRoute> { ai.neargo.fnb.pos.feature.ops.ReportsRoute() }
         composable<ai.neargo.fnb.pos.navigation.RetailPosRoute> { ai.neargo.fnb.pos.feature.retail.RetailPosRoute() }
         composable<ai.neargo.fnb.pos.navigation.RetailOrdersRoute> { ai.neargo.fnb.pos.feature.retail.RetailOrdersRoute { nav.goTop(ai.neargo.fnb.pos.navigation.RetailPosRoute) } }
-        composable<ai.neargo.fnb.pos.navigation.GoodsRoute> { ai.neargo.fnb.pos.feature.retail.RetailPlaceholder(ai.neargo.fnb.pos.feature.retail.RetailPage.Goods) }
+        composable<ai.neargo.fnb.pos.navigation.GoodsRoute> { ai.neargo.fnb.pos.feature.retail.GoodsRoute { nav.goTop(ai.neargo.fnb.pos.navigation.StockWorkRoute) } }
         composable<ai.neargo.fnb.pos.navigation.StockWorkRoute> { ai.neargo.fnb.pos.feature.retail.StockWorkRoute() }
     }
 }

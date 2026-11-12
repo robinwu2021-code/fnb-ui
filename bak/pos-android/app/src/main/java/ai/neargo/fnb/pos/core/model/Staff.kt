@@ -53,7 +53,9 @@ object StaffRules {
         "CategoryCreated", "SpecGroupCreated", "ProductCreated", "ProductUpdated", "MenuCreated", "MenuUpdated",
         "MenuPublished", "MenuUnpublished", "TablePositionChanged", "KitchenStationsSaved", "KitchenDeliveryPolicySaved", "KitchenDispatchSaved",
         // 零售库存作业（入库 / 盘点 / 报损的建单、修改、过账、作废）
-        "StockDocCreated", "StockDocUpdated", "StockDocSubmitted", "StockDocPosted", "StockDocVoided" -> Perm.Settings
+        "StockDocCreated", "StockDocUpdated", "StockDocSubmitted", "StockDocPosted", "StockDocVoided",
+        // 零售商品：改价、价签
+        "RetailPriceChanged", "LabelQueued", "LabelsPrinted" -> Perm.Settings
         "DishVoided", "DishGifted", "OrderDiscounted" -> null
         // 厨房屏操作：由已配对工位设备授权
         "KdsTicketAdvanced", "KdsTicketReleased" -> null
