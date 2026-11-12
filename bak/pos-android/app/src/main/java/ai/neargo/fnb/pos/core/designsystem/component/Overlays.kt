@@ -23,6 +23,12 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -42,14 +48,12 @@ fun PosDialog(
 ) {
     val c = Pos.colors
     val t = Pos.type
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // 弹窗窗口随软键盘缩小：底部按钮留在键盘上方，内容区自己滚动（不然「保存」被键盘挡住）
-        val view = androidx.compose.ui.platform.LocalView.current
-        androidx.compose.runtime.SideEffect {
-            (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        }
+    // 弹窗铺满窗口、按系统栏和软键盘让位后居中：键盘弹出时卡片缩到键盘上方，底部按钮不被挡，内容区自己滚动
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+      Box(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
+          .pointerInput(onDismiss) { detectTapGestures { onDismiss() } }, contentAlignment = Alignment.Center) {
         Surface(
-            Modifier.padding(24.dp).widthIn(max = maxWidth).fillMaxWidth().heightIn(max = 720.dp),
+            Modifier.pointerInput(Unit) { detectTapGestures { } }.padding(24.dp).widthIn(max = maxWidth).fillMaxWidth().heightIn(max = 720.dp),
             shape = RoundedCornerShape(12.dp), color = c.surface, tonalElevation = 0.dp, shadowElevation = 0.dp,
         ) {
             Column {
@@ -69,6 +73,7 @@ fun PosDialog(
                 )
             }
         }
+      }
     }
 }
 

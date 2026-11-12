@@ -29,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -66,6 +69,9 @@ fun PosTextField(
     val t = Pos.type
     val focus = remember { FocusRequester() }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val root = androidx.compose.ui.platform.LocalView.current.rootView
+    val entry = remember { FieldNav.Entry(root, focus) }
+    androidx.compose.runtime.DisposableEffect(entry) { FieldNav.add(entry); onDispose { FieldNav.remove(entry) } }
     // 单行框按键盘「下一项」跳到下一个输入框（表单一路填下去，不用伸手点被键盘挡住的框）；调用方指定了动作就照它的
     val opts = if (singleLine && (keyboard.imeAction == androidx.compose.ui.text.input.ImeAction.Default || keyboard.imeAction == androidx.compose.ui.text.input.ImeAction.Unspecified)) keyboard.copy(imeAction = androidx.compose.ui.text.input.ImeAction.Next) else keyboard
     if (autoFocus) androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -78,11 +84,12 @@ fun PosTextField(
             cursorBrush = SolidColor(c.primary),
             keyboardOptions = opts,
             keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                // 标签不可聚焦，往下就是下一个输入框；最后一个框往下没有了就收起键盘（不绕回第一个）
-                onNext = { if (!focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)) focusManager.clearFocus() },
+                // 「下一个」：同一屏里紧挨着在下面的输入框；下面没有了就收起键盘（不绕回、不跳到按钮上）
+                onNext = { FieldNav.below(entry)?.focus?.let { runCatching { it.requestFocus() } } ?: focusManager.clearFocus() },
                 onGo = { focusManager.clearFocus(); onGo?.invoke() }, onDone = { focusManager.clearFocus(); onGo?.invoke() }),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-            modifier = Modifier.fillMaxWidth().focusRequester(focus).heightIn(min = PosSize.medium).clip(Pos.metrics.button).background(c.tile)
+            modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                .onGloballyPositioned { entry.y = it.positionInWindow().y; entry.x = it.positionInWindow().x }.heightIn(min = PosSize.medium).clip(Pos.metrics.button).background(c.tile)
                 .then(if (error != null) Modifier.border(1.dp, c.danger, Pos.metrics.button) else Modifier)
                 .padding(horizontal = 12.dp, vertical = 10.dp)
                 .semantics { contentDescription = label; if (error != null) this.error(error) },
@@ -136,4 +143,15 @@ fun PosCheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, mo
         Text(label, style = Pos.type.body, color = if (enabled) c.ink else c.sub, modifier = Modifier.weight(1f))
         if (trailing != null) Text(trailing, style = Pos.type.label, color = c.sub)
     }
+}
+
+/** 「下一个」跳转：登记当前显示的输入框（所在窗口与位置），找同一窗口里下面最近的一个 */
+private object FieldNav {
+    class Entry(val root: android.view.View, val focus: FocusRequester) { var x = 0f; var y = 0f }
+    private val all = mutableListOf<Entry>()
+    fun add(e: Entry) { all += e }
+    fun remove(e: Entry) { all -= e }
+    /** 同一窗口里在它下面的（同一行靠右的也算），取最近的 */
+    fun below(e: Entry): Entry? = all.filter { it !== e && it.root === e.root && (it.y > e.y + 1 || (kotlin.math.abs(it.y - e.y) <= 1 && it.x > e.x)) }
+        .minWithOrNull(compareBy({ it.y }, { it.x }))
 }
