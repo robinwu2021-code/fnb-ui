@@ -140,13 +140,16 @@ private fun SaleDetail(state: RetailOrdersUiState, s: RetailSale, onAction: (Ret
                             Column(Modifier.weight(1f)) {
                                 Text(l.name + (l.sku?.let { " · $it" } ?: ""), style = t.body.let { if (gone) it.copy(textDecoration = TextDecoration.LineThrough) else it }, color = if (gone) c.sub else c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(listOfNotNull(if (l.grams != null) "${kgText(l.grams)} × ${yuan(l.unit)}/kg" else "${yuan(l.unit)} × ${l.qty}",
-                                    if (l.returned > 0) (if (l.grams != null) "已退" else "已退 ${l.returned}") else null).joinToString(" · "), style = t.label.num(), color = if (l.returned > 0) c.warning else c.sub)
+                                    if (l.returned > 0) (if (l.grams != null) "已退" else "已退 ${l.returned}") else null, l.note.ifBlank { null }?.let { "备注：$it" }).joinToString(" · "), style = t.label.num(), color = if (l.returned > 0) c.warning else c.sub)
                             }
                             Text(yuan(l.amount), style = t.strong.num(), color = if (gone) c.sub else c.ink)
                         }
                     }
                 }
-                if (s.discount > 0) Section("整单优惠") { KeyValue("抹零 / 券", "−${yuan(s.discount)}", valueColor = c.primary) }
+                if (s.discount > 0 || s.adjust.isNotBlank()) Section("整单优惠") {
+                    if (s.discount > 0) KeyValue("抹零 / 活动 / 折扣", "−${yuan(s.discount)}", valueColor = c.primary)
+                    if (s.adjust.isNotBlank()) Text(s.adjust, style = t.label, color = c.sub)
+                }
                 Section("收款") { s.pays.forEach { p -> KeyValue(p.method, yuan(p.amount)) } }
                 if (s.returns.isNotEmpty()) Section("退货记录") {
                     s.returns.forEach { r -> KeyValue("${time(r.at)} · ${r.pieces} 件 · ${r.reason.label} · ${if (r.exchange) "换货抵扣" else r.method}", "−${yuan(r.amount)}", valueColor = c.primary) }

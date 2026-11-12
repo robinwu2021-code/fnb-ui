@@ -86,21 +86,22 @@ object CustomerDisplayRules {
      * 零售购物车 → 客显内容（收银页调用）。金额用 RetailCheckout，和收银页、入账同一份算法。
      * credit：换货抵扣；method / received：收款态时的方式与实收。
      */
-    fun retailCart(products: List<Product>, lines: List<CartLine>, member: Boolean, last: Long?, credit: Long = 0, method: String? = null, received: Long? = null): RetailCustomerCart {
+    fun retailCart(products: List<Product>, lines: List<CartLine>, member: Boolean, last: Long?, credit: Long = 0, method: String? = null, received: Long? = null,
+                   promotions: List<Promotion> = emptyList(), extras: CheckoutExtras = CheckoutExtras()): RetailCustomerCart {
         val byId = products.associateBy { it.id }
-        val t = RetailCheckout.totals(products, lines, member)
+        val t = RetailCheckout.totalsWith(products, promotions, lines, member, extras)
         val st = RetailPricing.exchangeSettle(t.due, credit)
         val due = if (credit > 0) st.pay else t.due
         val rows = lines.map { l ->
             val p = byId[l.productId]
-            val info = if (l.custom) RetailPricing.PriceInfo(l.customPrice ?: 0) else p?.let { RetailCheckout.info(it, l.sku) } ?: RetailPricing.PriceInfo(0)
+            val info = RetailCheckout.lineInfo(byId, l)
             val promo = RetailPricing.linePromo(l, info)
             val mem = if (member) RetailPricing.lineMemberSave(l, info) else 0
             RetailCustomerLine(
                 (l.customName ?: p?.name ?: l.productId) + (l.sku?.let { " · $it" } ?: ""),
                 l.grams?.let { "%d.%03d kg".format(it / 1000, it % 1000) } ?: "×${l.qty}",
                 RetailPricing.lineAmount(l, info.unit) - promo - mem,
-                listOfNotNull(if (l.gift) "赠送" else null, if (promo > 0) "${info.promo?.label} −${yuan(promo)}" else null, if (mem > 0) "会员价 −${yuan(mem)}" else null).joinToString(" · "),
+                listOfNotNull(if (l.gift) "赠送" else null, l.price?.let { "改价" }, if (promo > 0) "${info.promo?.label} −${yuan(promo)}" else null, if (mem > 0) "会员价 −${yuan(mem)}" else null).joinToString(" · "),
                 l.gift,
             )
         }

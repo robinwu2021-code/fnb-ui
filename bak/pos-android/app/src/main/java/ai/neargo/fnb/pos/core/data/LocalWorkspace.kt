@@ -1030,16 +1030,22 @@ class LocalWorkspace(
         }.map { next }
     }
 
-    override suspend fun checkoutRetail(lines: List<CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<RetailSale> {
+    override suspend fun authorize(who: String, secret: String): Result<String> = supervisorAuth(state.value, who, secret)
+
+    override suspend fun checkoutRetail(lines: List<CartLine>, member: Boolean, method: String, received: Long, online: Boolean, extras: CheckoutExtras): Result<RetailSale> {
         var sale: RetailSale? = null
         val actor = actorName(state.value)
         return storeOp(event = EventSpec { _, a -> val x = a.retail.sales.first(); Triple("RetailSaleCompleted", """{"no":"${x.no}","amount":${x.paid},"method":"$method"}""", listOf("retail") + x.lines.filter { it.productId.isNotBlank() }.map { "stock:${it.productId}" }) }, check = { s ->
-            val t = RetailCheckout.totals(s.products, lines, member)
+            val t = RetailCheckout.totalsWith(s.products, s.promotions, lines, member, extras)
             val credit = s.retail.credit
             val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
             when {
                 lines.isEmpty() && credit == null -> "购物车是空的"
                 lines.any { !it.custom && s.product(it.productId) == null } -> "购物车里有已下架的商品"
+                extras.discountPct !in 50..100 -> "整单折扣在 5 折到不打折之间"
+                lines.any { (it.price ?: 0) < 0 } -> "改后单价不能为负"
+                RetailCheckout.needsApproval(lines, extras) && extras.approver.isBlank() -> "改价、整单折扣需要主管授权"
+                RetailCheckout.promotionBlock(s.products, s.promotions, lines, extras.promotionIds) != null -> RetailCheckout.promotionBlock(s.products, s.promotions, lines, extras.promotionIds)
                 RetailCheckout.limitBlock(s.products, lines, s.retail.settings.promoLimit) != null -> RetailCheckout.limitBlock(s.products, lines, s.retail.settings.promoLimit)
                 !Money.withinBill(t.due) || !Money.withinBill(received) -> "金额超出上限"
                 // 换货抵扣后不用再收钱：收款方式不看
@@ -1052,13 +1058,19 @@ class LocalWorkspace(
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
-            val t = RetailCheckout.totals(s0.products, lines, member)
+            val t = RetailCheckout.totalsWith(s0.products, s0.promotions, lines, member, extras)
             val credit = s0.retail.credit
             val st = RetailPricing.exchangeSettle(t.due, credit?.amount ?: 0)
             val no = "#R%04d".format(s0.retail.saleSeq)
+            // 改价、折扣、活动的说明（带授权人），订单详情和小票显示
+            val adjust = listOfNotNull(
+                lines.count { it.price != null }.takeIf { it > 0 }?.let { "改价 $it 行" },
+                extras.discountPct.takeIf { it < 100 }?.let { "整单 ${it / 10.0} 折".replace(".0 折", " 折") },
+                s0.promotions.filter { it.id in extras.promotionIds }.joinToString("、") { it.name }.ifBlank { null },
+            ).joinToString(" · ").let { if (it.isNotBlank() && extras.approver.isNotBlank() && RetailCheckout.needsApproval(lines, extras)) "$it（授权：${extras.approver}）" else it }
             val cash = method == "现金"
             val pays = listOfNotNull(credit?.let { SalePay(EXCHANGE, minOf(it.amount, t.due)) }.takeIf { (it?.amount ?: 0) > 0 }, if (st.pay > 0) SalePay(method, st.pay) else null)
-            val x = RetailSale(no, clock(), member = if (member) "会员" else null, lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round, pays = pays)
+            val x = RetailSale(no, clock(), member = if (member) "会员" else null, lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round + t.coupon + t.manual, pays = pays, adjust = adjust)
             var s = s0
             // 扣库存：按件扣件数，称重扣克；临时商品不管库存
             lines.filter { !it.custom }.forEach { l ->
@@ -1086,8 +1098,8 @@ class LocalWorkspace(
 
     /** 零售小票正文：补打时 pay 为 null，只列单上的收款 */
     private fun saleReceipt(s: StoreData, x: RetailSale, credit: ExchangeCredit? = null, pay: PaymentRecord? = null): List<String> =
-        listOf(s.settings.shortName, "单号 ${x.no}") + x.lines.map { l -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×${l.qty}"}  ${yuan(l.amount)}" } +
-            listOfNotNull(if (x.discount > 0) "抹零 ${yuan(x.discount)}" else null, "应收 ${yuan(x.lines.sumOf { it.amount } - x.discount)}",
+        listOf(s.settings.shortName, "单号 ${x.no}") + x.lines.flatMap { l -> listOfNotNull("${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×${l.qty}"}  ${yuan(l.amount)}", l.note.ifBlank { null }?.let { "  备注：$it" }) } +
+            listOfNotNull(x.adjust.ifBlank { null }, if (x.discount > 0) "整单优惠 ${yuan(x.discount)}" else null, "应收 ${yuan(x.lines.sumOf { it.amount } - x.discount)}",
                 credit?.let { "换货抵扣（${it.no}）${yuan(it.amount)}" }) +
             x.pays.filter { it.method != EXCHANGE }.map { "${it.method} ${yuan(it.amount)}" } +
             listOfNotNull(pay?.takeIf { it.change > 0 }?.let { "实收 ${yuan(it.received)} 找零 ${yuan(it.change)}" }, pay?.takeIf { it.amount < 0 }?.let { "退差价 ${it.method} ${yuan(-it.amount)}" }, s.settings.receiptFooter)

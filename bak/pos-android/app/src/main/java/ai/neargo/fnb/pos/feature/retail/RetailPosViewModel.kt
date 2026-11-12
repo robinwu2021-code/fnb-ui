@@ -36,6 +36,10 @@ sealed interface RetailOverlay {
     data object Held : RetailOverlay
     data object Clear : RetailOverlay
     data object Custom : RetailOverlay
+    data class Reprice(val key: Long) : RetailOverlay
+    data class Note(val key: Long) : RetailOverlay
+    data object Discount : RetailOverlay
+    data object Promos : RetailOverlay
     data class Done(val sale: RetailSale, val received: Long, val change: Long, val save: Long, val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null, val refund: Long = 0) : RetailOverlay
 }
 
@@ -55,6 +59,10 @@ data class CartState(
     val cash: String = "",
     val overlay: RetailOverlay? = null,
     val processing: Boolean = false,
+    /** 整单主管折扣（百分比，100 = 不打折）、选用的优惠活动、授权人 */
+    val discountPct: Int = 100,
+    val promoIds: List<String> = emptyList(),
+    val approver: String = "",
 )
 
 data class RetailPosUiState(
@@ -71,7 +79,14 @@ data class RetailPosUiState(
     /** 换货抵扣（订单页换货后带过来，结算时用掉） */
     val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null,
     val settings: ai.neargo.fnb.pos.core.model.RetailSettings = ai.neargo.fnb.pos.core.model.RetailSettings(),
+    /** 门店启用的优惠活动（与餐饮共用「优惠活动」配置） */
+    val promotions: List<ai.neargo.fnb.pos.core.model.Promotion> = emptyList(),
+    /** 当班员工能不能直接改价 / 打折（有「退菜、赠送、折扣授权」权限）；不能就要主管输账号和 PIN */
+    val canAdjust: Boolean = true,
 ) {
+    /** 现在能用的活动（门槛满足的才算进去） */
+    fun promoValid(id: String) = promotions.firstOrNull { it.id == id }?.let { it.enabled && totals.sub >= it.threshold } == true
+    val extras get() = ai.neargo.fnb.pos.core.model.CheckoutExtras(cart.discountPct, cart.promoIds.filter { promoValid(it) }, cart.approver)
     /** 快捷购物袋（设置里选的、还在售的商品） */
     val bags get() = settings.bagIds.mapNotNull { product(it) }
     /** 有抵扣时的多退少补 */
@@ -96,7 +111,7 @@ data class RetailPosUiState(
         else -> null
     }
     fun lineUnit(l: CartLine) = if (l.custom) l.customPrice ?: 0 else product(l.productId)?.let { RetailCheckout.unitOf(it, l.sku) } ?: 0
-    fun lineInfo(l: CartLine) = if (l.custom) RetailPricing.PriceInfo(l.customPrice ?: 0) else product(l.productId)?.let { RetailCheckout.info(it, l.sku) } ?: RetailPricing.PriceInfo(0)
+    fun lineInfo(l: CartLine) = RetailCheckout.lineInfo(products.associateBy { it.id }, l)
     fun lineName(l: CartLine) = l.customName ?: product(l.productId)?.name ?: l.productId
     fun lineAmount(l: CartLine) = lineInfo(l).let { RetailPricing.lineAmount(l, it.unit) - RetailPricing.linePromo(l, it) }
 }
@@ -117,6 +132,15 @@ sealed interface RetailPosAction {
     data object AddCustom : RetailPosAction
     /** 购物车里的快捷购物袋 */
     data class AddBag(val productId: String) : RetailPosAction
+    data class AskReprice(val key: Long) : RetailPosAction
+    data class AskNote(val key: Long) : RetailPosAction
+    data object AskDiscount : RetailPosAction
+    data object AskPromos : RetailPosAction
+    /** 改价：price = null 恢复原价；who / secret 是主管授权（当班员工有权限时留空） */
+    data class Reprice(val key: Long, val price: Long?, val who: String, val secret: String) : RetailPosAction
+    data class SetNote(val key: Long, val note: String) : RetailPosAction
+    data class Discount(val pct: Int, val who: String, val secret: String) : RetailPosAction
+    data class TogglePromo(val id: String) : RetailPosAction
     data class CustomAdd(val name: String, val price: Long) : RetailPosAction
     data object OpenDrawer : RetailPosAction
     data object Hold : RetailPosAction
@@ -150,11 +174,13 @@ class RetailPosViewModel(
     private val retail: RetailRepository,
     device: DeviceRepository,
     private val messages: MessageBus,
+    private val staff: ai.neargo.fnb.pos.core.data.StaffRepository? = null,
 ) : ViewModel() {
     private val cart = MutableStateFlow(CartState())
     private var seq = System.currentTimeMillis()
 
-    val state: StateFlow<RetailPosUiState> = combine(config.current, cart, device.status) { store, c, d ->
+    private val perms = staff?.staff ?: kotlinx.coroutines.flow.MutableStateFlow(ai.neargo.fnb.pos.core.data.StaffState())
+    val state: StateFlow<RetailPosUiState> = combine(config.current, cart, device.status, perms) { store, c, d, st ->
         if (store == null) return@combine RetailPosUiState(cart = c)
         val products = store.products
         RetailPosUiState(
@@ -162,7 +188,10 @@ class RetailPosViewModel(
             categories = store.categories.filter { cat -> products.any { it.categoryId == cat.id } },
             specGroups = store.specGroups, held = store.retail.held, nextNo = "#R%04d".format(store.retail.saleSeq),
             payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.walletBalance, online = d.online,
-            totals = RetailCheckout.totals(products, c.lines, c.member), credit = store.retail.credit, settings = store.retail.settings,
+            totals = RetailCheckout.totalsWith(products, store.promotions, c.lines, c.member,
+                ai.neargo.fnb.pos.core.model.CheckoutExtras(c.discountPct, c.promoIds.filter { id -> store.promotions.firstOrNull { it.id == id }?.let { it.enabled } == true }, c.approver)),
+            credit = store.retail.credit, settings = store.retail.settings,
+            promotions = store.promotions.filter { it.enabled }, canAdjust = ai.neargo.fnb.pos.core.model.Perm.Adjust in st.perms,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RetailPosUiState())
 
@@ -267,7 +296,35 @@ class RetailPosViewModel(
             RetailPosAction.Confirm -> if (s().settleOnly) checkout("", 0) else checkout(cart.value.method ?: return, CashRules.amount(cart.value.cash) ?: s().payDue)
             RetailPosAction.QuickCash -> checkout("现金", s().payDue)
             RetailPosAction.Next -> set { CartState(cat = it.cat) }
+            is RetailPosAction.AskReprice -> set { it.copy(overlay = RetailOverlay.Reprice(a.key), open = null) }
+            is RetailPosAction.AskNote -> set { it.copy(overlay = RetailOverlay.Note(a.key), open = null) }
+            RetailPosAction.AskDiscount -> if (cart.value.lines.isNotEmpty()) set { it.copy(overlay = RetailOverlay.Discount) }
+            RetailPosAction.AskPromos -> if (cart.value.lines.isNotEmpty()) set { it.copy(overlay = RetailOverlay.Promos) }
+            is RetailPosAction.SetNote -> set { c -> c.copy(lines = c.lines.map { if (it.key == a.key) it.copy(note = a.note.trim().take(30).ifBlank { null }) else it }, overlay = null) }
+            is RetailPosAction.Reprice -> {
+                if (a.price == null) { set { c -> c.copy(lines = c.lines.map { if (it.key == a.key) it.copy(price = null) else it }, overlay = null) }; return }
+                approve(a.who, a.secret) { by -> set { c -> c.copy(lines = c.lines.map { if (it.key == a.key) it.copy(price = a.price) else it }, overlay = null, approver = by) }; messages.post("已改价（授权：$by）") }
+            }
+            is RetailPosAction.Discount -> {
+                if (a.pct >= 100) { set { it.copy(discountPct = 100, overlay = null) }; return }
+                approve(a.who, a.secret) { by -> set { it.copy(discountPct = a.pct, overlay = null, approver = by) }; messages.post("整单 ${a.pct / 10.0} 折（授权：$by）".replace(".0 折", " 折")) }
+            }
+            is RetailPosAction.TogglePromo -> {
+                val c = cart.value; val st = s()
+                val on = a.id in c.promoIds
+                val p = st.promotions.firstOrNull { it.id == a.id } ?: return
+                // 整单折扣类只能一个：选新的就把旧的换掉
+                val next = if (on) c.promoIds - a.id else c.promoIds.filterNot { id -> p.kind == ai.neargo.fnb.pos.core.model.PromotionKind.Percent && st.promotions.firstOrNull { it.id == id }?.kind == ai.neargo.fnb.pos.core.model.PromotionKind.Percent } + a.id
+                if (!on) RetailCheckout.promotionBlock(st.products, st.promotions, c.lines, next)?.let { messages.post(it); return }
+                set { it.copy(promoIds = next) }
+            }
         }
+    }
+
+    /** 改价、打折的授权：当班员工有权限直接用他的名字；否则校验主管账号 / PIN */
+    private fun approve(who: String, secret: String, ok: (String) -> Unit) = viewModelScope.launchStorage(messages) {
+        if (s().canAdjust) { ok(staff?.staff?.value?.current?.name ?: "当班"); return@launchStorage }
+        retail.authorize(who, secret).onSuccess(ok).onFailure { messages.post(it.message ?: "授权失败") }
     }
 
     private fun hold(after: () -> Unit) = viewModelScope.launchStorage(messages) {
@@ -282,7 +339,7 @@ class RetailPosViewModel(
         val save = s().totals.save; val credit = s().credit; val pay = s().payDue; val refund = s().settle?.refund ?: 0
         viewModelScope.launchStorage(messages) {
             try {
-                retail.checkoutRetail(c.lines, c.member, method, if (method == "现金") received else pay, s().online)
+                retail.checkoutRetail(c.lines, c.member, method, if (method == "现金") received else pay, s().online, s().extras)
                     .onSuccess { sale -> set { CartState(cat = it.cat, overlay = RetailOverlay.Done(sale, if (method == "现金") received else pay, if (method == "现金") received - pay else 0, save, credit, refund)) } }
                     .onFailure { messages.post(it.message ?: "收款失败") }
             } finally { set { it.copy(processing = false) } }

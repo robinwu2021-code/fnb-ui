@@ -136,9 +136,10 @@ class RoutedRetail(private val ws: LocalWorkspace, private val link: LanLink) : 
     private fun hostOnly() = Result.failure<Nothing>(IllegalStateException(HOST_ONLY))
     private fun retailOf() = ws.lanSnapshot().store?.retail
 
-    override suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale> {
-        if (!link.isSecondary) return ws.checkoutRetail(lines, member, method, received, online)
-        val r = link.submit(I.RetailCheckout(lines, member, method, received, online), "零售收款 $method")
+    override suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean,
+                                        extras: ai.neargo.fnb.pos.core.model.CheckoutExtras): Result<ai.neargo.fnb.pos.core.model.RetailSale> {
+        if (!link.isSecondary) return ws.checkoutRetail(lines, member, method, received, online, extras)
+        val r = link.submit(I.RetailCheckout(lines, member, method, received, online, extras), "零售收款 $method")
         if (!r.ok) return Result.failure(IllegalStateException(r.message))
         val sales = retailOf()?.sales.orEmpty()
         return (sales.firstOrNull { it.no == r.message } ?: sales.firstOrNull())?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已收款，等主机同步后到订单页查看"))

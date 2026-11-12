@@ -19,6 +19,10 @@ data class CartLine(
     /** 临时商品（未知条码手输）：名称与单价（分） */
     val customName: String? = null,
     val customPrice: Long? = null,
+    /** 手改单价（称重商品是每 kg）；改过价的行不再叠加促销和会员价 */
+    val price: Long? = null,
+    /** 行备注（打到小票上） */
+    val note: String? = null,
 ) {
     val weighed get() = grams != null
     val custom get() = customName != null
@@ -30,9 +34,9 @@ data class CartLine(
 object RetailCartRules {
     data class AddResult(val lines: List<CartLine>, val last: Long)
 
-    /** 扫一件：同商品同规格、非称重、非赠送、非临时的行合并数量并移到最上；称重行和临时商品每次新起一行 */
+    /** 扫一件：同商品同规格、非称重、非赠送、非临时、没改价没备注的行合并数量并移到最上；其余每次新起一行 */
     fun scanAdd(lines: List<CartLine>, add: CartLine, newKey: () -> Long): AddResult {
-        val hit = if (!add.weighed && !add.custom) lines.firstOrNull { it.productId == add.productId && !it.weighed && !it.gift && !it.custom && (it.sku ?: "") == (add.sku ?: "") } else null
+        val hit = if (!add.weighed && !add.custom) lines.firstOrNull { it.productId == add.productId && !it.weighed && !it.gift && !it.custom && it.price == null && it.note == null && (it.sku ?: "") == (add.sku ?: "") } else null
         if (hit != null) return AddResult(listOf(hit.copy(qty = hit.qty + add.qty)) + lines.filter { it !== hit }, hit.key)
         val key = newKey()
         return AddResult(listOf(add.copy(key = key)) + lines, key)

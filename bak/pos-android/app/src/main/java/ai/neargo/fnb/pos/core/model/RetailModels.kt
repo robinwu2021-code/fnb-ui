@@ -34,7 +34,12 @@ data class RetailInfo(
 data class RetailSaleLine(
     val key: String, val productId: String, val name: String, val sku: String? = null,
     val qty: Int, val grams: Int? = null, val unit: Long, val amount: Long, val returned: Int = 0,
+    val note: String = "",
 )
+
+/** 收款时的整单优惠：主管整单折扣（百分比，100 = 不打折）、选用的优惠活动、授权人（改价或折扣时必填） */
+@Serializable
+data class CheckoutExtras(val discountPct: Int = 100, val promotionIds: List<String> = emptyList(), val approver: String = "")
 
 @Serializable data class SalePay(val method: String, val amount: Long)
 
@@ -47,6 +52,8 @@ data class RetailSale(
     val no: String, val at: Long, val channel: SaleChannel = SaleChannel.Store, val member: String? = null,
     val lines: List<RetailSaleLine>, /** 整单优惠（券、抹零等），退货时按行分摊 */ val discount: Long = 0,
     val pays: List<SalePay>, val returns: List<SaleReturn> = emptyList(),
+    /** 改价、折扣、活动说明（含授权人），订单详情和小票显示 */
+    val adjust: String = "",
 ) {
     val soldLines get() = lines.map { ReturnRules.SoldLine(it.key, it.qty, it.amount, it.returned, it.grams != null) }
     val status get() = ReturnRules.status(soldLines)

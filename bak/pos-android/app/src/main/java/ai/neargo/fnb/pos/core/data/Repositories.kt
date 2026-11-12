@@ -269,5 +269,8 @@ interface RetailRepository {
     suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int>
     /** 保存零售设置 */
     suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings): Result<Unit>
-    suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale>
+    suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean,
+                               extras: ai.neargo.fnb.pos.core.model.CheckoutExtras = ai.neargo.fnb.pos.core.model.CheckoutExtras()): Result<ai.neargo.fnb.pos.core.model.RetailSale>
+    /** 主管授权（改价、整单折扣用）：通过返回授权人 */
+    suspend fun authorize(who: String, secret: String): Result<String>
 }

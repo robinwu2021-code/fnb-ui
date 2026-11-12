@@ -96,7 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun RetailPosRoute() {
-    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages) }
+    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages, c.staff) }
     val state by vm.state.collectAsStateWithLifecycle()
     val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
     CustomerSync(state)
@@ -124,6 +124,7 @@ private fun CustomerSync(state: RetailPosUiState) {
             else -> ai.neargo.fnb.pos.core.model.CustomerStage.Retail(ai.neargo.fnb.pos.core.model.CustomerDisplayRules.retailCart(
                 state.products, cart.lines, cart.member, cart.last, state.credit?.amount ?: 0,
                 method = cart.method.takeIf { cart.mode == PosMode.Pay }, received = CashRules.amount(cart.cash).takeIf { cart.method == "现金" && cart.mode == PosMode.Pay },
+                promotions = state.promotions, extras = state.extras,
             ))
         }
     }
@@ -155,6 +156,10 @@ fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
         RetailOverlay.Held -> HeldSheet(state, onAction)
         RetailOverlay.Clear -> ClearDialog(state, onAction)
         RetailOverlay.Custom -> CustomDialog(state.cart.unknown, onAction)
+        is RetailOverlay.Reprice -> state.cart.lines.firstOrNull { it.key == overlay.key }?.let { RepriceDialog(state, it, onAction) }
+        is RetailOverlay.Note -> state.cart.lines.firstOrNull { it.key == overlay.key }?.let { NoteDialog(state, it, onAction) }
+        RetailOverlay.Discount -> DiscountDialog(state, onAction)
+        RetailOverlay.Promos -> PromoDialog(state, onAction)
         is RetailOverlay.Done -> DoneDialog(state, overlay, onAction)
         null -> Unit
     }
@@ -210,12 +215,19 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
             } else {
                 LazyColumn(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                     items(cart.lines, key = { it.key }) { l -> CartLineRow(state, l, onAction) }
-                    if (tot.promo > 0 || tot.round > 0 || !cart.member || tot.memberSave > 0) item {
+                    item {
                         Column(Modifier.padding(8.dp).clip(Pos.metrics.card).background(c.tile).padding(10.dp)) {
                             Text("整单优惠", style = t.label, color = c.sub)
                             if (tot.promo > 0) KeyValue("促销", "−${yuan(tot.promo)}", valueColor = c.primary)
                             if (cart.member) { if (tot.memberSave > 0) KeyValue("会员价", "−${yuan(tot.memberSave)}", valueColor = c.primary) }
                             else KeyValue("会员价", "未识别会员", valueColor = c.sub)
+                            // 点行打开选择：优惠活动（门店配置）、整单折扣（主管授权）
+                            val names = state.promotions.filter { it.id in cart.promoIds }.joinToString("、") { it.name + if (!state.promoValid(it.id)) "（未满门槛）" else "" }
+                            KeyValue("优惠活动", if (tot.coupon > 0) "−${yuan(tot.coupon)}" else names.ifBlank { if (state.promotions.isEmpty()) "无可用活动" else "选择 ›" },
+                                Modifier.clickable(enabled = !pay && state.promotions.isNotEmpty()) { onAction(RetailPosAction.AskPromos) }, valueColor = if (tot.coupon > 0) c.primary else c.sub)
+                            if (names.isNotBlank() && tot.coupon > 0) Text(names, style = t.label, color = c.sub)
+                            KeyValue("整单折扣", if (cart.discountPct < 100) "${pctText(cart.discountPct)} −${yuan(tot.manual)}" else "选择 ›",
+                                Modifier.clickable(enabled = !pay) { onAction(RetailPosAction.AskDiscount) }, valueColor = if (tot.manual > 0) c.primary else c.sub)
                             if (tot.round > 0) KeyValue("抹零（到角）", "−${yuan(tot.round)}", valueColor = c.primary)
                         }
                     }
@@ -267,6 +279,8 @@ private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailP
                     l.sku?.let { add(it) }
                     if (l.custom) add("临时商品")
                     if (l.gift) add("赠送")
+                    if (l.price != null) add("改价")
+                    l.note?.let { add("备注：$it") }
                     if (promo > 0) add("${ai.neargo.fnb.pos.core.model.LinePromo.Half2.label} −${yuan(promo)}")
                     if (mem > 0) add("会员价 ${yuan(info.memberPrice ?: 0)} −${yuan(mem)}")
                 }
@@ -282,6 +296,8 @@ private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailP
         }
         if (open) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             PosButton(if (l.gift) "取消赠送" else "赠送", { onAction(RetailPosAction.Gift(l.key)) }, size = BtnSize.Small)
+            if (!l.custom && !l.gift) PosButton(if (l.price != null) "改价 · 已改" else "改价", { onAction(RetailPosAction.AskReprice(l.key)) }, size = BtnSize.Small)
+            PosButton("备注", { onAction(RetailPosAction.AskNote(l.key)) }, size = BtnSize.Small)
             PosButton("删除", { onAction(RetailPosAction.Remove(l.key)) }, size = BtnSize.Small, variant = BtnVariant.Danger)
         }
     }
@@ -592,3 +608,89 @@ private fun kg(grams: Int) = "%d.%03d".format(grams / 1000, grams % 1000)
 private fun parseKg(s: String): Int? = s.toBigDecimalOrNull()?.movePointRight(3)?.toInt()?.takeIf { it in 0..99_999 }
 private fun priceText(p: Product) = if (p.retail?.weighable == true) "${yuan(p.price)}/kg" else yuan(p.displayPrice)
 private fun stockText(p: Product): String = if (p.retail?.weighable == true) p.stock?.let { "${kg(it)} kg" } ?: "不限" else p.totalStock?.toString() ?: "不限"
+
+/* ---------------- 改价、备注、整单折扣、优惠活动 ---------------- */
+
+private fun pctText(p: Int) = if (p % 10 == 0) "${p / 10} 折" else "${p / 10.0} 折"
+
+/** 主管授权输入：当班员工有「折扣授权」权限时不显示 */
+@Composable
+private fun AuthFields(state: RetailPosUiState, who: String, secret: String, onWho: (String) -> Unit, onSecret: (String) -> Unit) {
+    if (state.canAdjust) { Text("当班员工有折扣授权权限，直接生效", style = Pos.type.label, color = Pos.colors.sub, modifier = Modifier.padding(vertical = 6.dp)); return }
+    Section("主管授权") {
+        PosTextField(who, onWho, "主管姓名 / 账号")
+        PosTextField(secret, onSecret, "PIN / 密码", password = true, keyboard = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
+    }
+}
+
+@Composable
+private fun RepriceDialog(state: RetailPosUiState, l: CartLine, onAction: (RetailPosAction) -> Unit) {
+    val p = state.product(l.productId) ?: return
+    val orig = RetailCheckout.unitOf(p, l.sku)
+    var text by remember(l.key) { mutableStateOf(ai.neargo.fnb.pos.core.model.fenToInput(l.price ?: orig)) }
+    var who by remember { mutableStateOf("") }; var secret by remember { mutableStateOf("") }
+    val fen = CashRules.amount(text)
+    val per = if (l.grams != null) "/kg" else "/件"
+    PosDialog("改价 · ${state.lineName(l)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "原价 ${yuan(orig)}$per；改过价的行不再叠加促销和会员价", footer = {
+        if (l.price != null) PosButton("恢复原价", { onAction(RetailPosAction.Reprice(l.key, null, "", "")) }, variant = BtnVariant.Text)
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton("确认改价", { onAction(RetailPosAction.Reprice(l.key, fen, who, secret)) }, variant = BtnVariant.Primary,
+            enabled = fen != null && fen >= 0 && fen != orig && (state.canAdjust || (who.isNotBlank() && secret.isNotBlank())))
+    }) {
+        PosTextField(text, { if (Regex("^\\d{0,6}(\\.\\d{0,2})?$").matches(it)) text = it }, "新单价（元$per）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        AuthFields(state, who, secret, { who = it }, { secret = it })
+    }
+}
+
+@Composable
+private fun NoteDialog(state: RetailPosUiState, l: CartLine, onAction: (RetailPosAction) -> Unit) {
+    var text by remember(l.key) { mutableStateOf(l.note.orEmpty()) }
+    PosDialog("备注 · ${state.lineName(l)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "打到小票上，最多 30 字", footer = {
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton("保存", { onAction(RetailPosAction.SetNote(l.key, text)) }, variant = BtnVariant.Primary)
+    }) {
+        PosTextField(text, { if (it.length <= 30) text = it }, "备注（如：礼品包装、顾客自带袋）")
+    }
+}
+
+@Composable
+private fun DiscountDialog(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit) {
+    var pct by remember { mutableStateOf(if (state.cart.discountPct < 100) state.cart.discountPct else 90) }
+    var who by remember { mutableStateOf("") }; var secret by remember { mutableStateOf("") }
+    val base = state.totals.sub - state.totals.promo - state.totals.memberSave
+    PosDialog("整单折扣", { onAction(RetailPosAction.Dismiss) }, subtitle = "对促销、会员价之后的金额打折；需要主管授权", footer = {
+        if (state.cart.discountPct < 100) PosButton("取消折扣", { onAction(RetailPosAction.Discount(100, "", "")) }, variant = BtnVariant.Text)
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        PosButton("确认 ${pctText(pct)}", { onAction(RetailPosAction.Discount(pct, who, secret)) }, variant = BtnVariant.Primary,
+            enabled = state.canAdjust || (who.isNotBlank() && secret.isNotBlank()))
+    }) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            listOf(95, 90, 88, 85, 80, 70).forEach { p -> PosChip(pctText(p), pct == p, { pct = p }) }
+        }
+        KeyValue("折扣金额", "−${yuan(ai.neargo.fnb.pos.core.model.Money.rate(base, (100 - pct) * 100))}")
+        AuthFields(state, who, secret, { who = it }, { secret = it })
+    }
+}
+
+@Composable
+private fun PromoDialog(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    PosDialog("优惠活动", { onAction(RetailPosAction.Dismiss) }, subtitle = "门店「会员与营销 · 优惠活动」里配置；整单折扣类只能选一个", footer = {
+        PosButton("完成", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Primary)
+    }) {
+        Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            state.promotions.forEach { p ->
+                val on = p.id in state.cart.promoIds
+                val ok = state.totals.sub >= p.threshold
+                Row(Modifier.fillMaxWidth().clip(Pos.metrics.button).background(if (on) c.tint else c.tile).clickable { onAction(RetailPosAction.TogglePromo(p.id)) }.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name, style = t.strong, color = c.ink)
+                        Text(p.kind.label + " · " + p.summary + if (!ok) " · 还差 ${yuan(p.threshold - state.totals.sub)}" else "", style = t.label, color = if (ok) c.sub else c.warning)
+                    }
+                    Text(if (on) "已选" else "选用", style = t.strong, color = if (on) c.primary else c.sub)
+                }
+            }
+        }
+    }
+}
