@@ -50,7 +50,12 @@ data class RetailOrdersUiState(
     val products: List<Product> = emptyList(),
     val credit: ExchangeCredit? = null,
     val online: Boolean = true,
+    val settings: ai.neargo.fnb.pos.core.model.RetailSettings = ai.neargo.fnb.pos.core.model.RetailSettings(),
+    val payMethods: List<String> = emptyList(),
+    val now: Long = System.currentTimeMillis(),
 ) {
+    /** 无单退货是否要主管授权（零售设置） */
+    val needAuth get() = flow?.noReceipt == true && settings.noReceiptAuth
     val shown get() = sales.filter { (filter == null || it.status == filter) && (query.isBlank() || query.trim() in it.no || it.member?.contains(query.trim()) == true) }
     val current get() = sales.firstOrNull { it.no == selected } ?: shown.firstOrNull()
     fun sale(no: String?) = sales.firstOrNull { it.no == no }
@@ -59,6 +64,7 @@ data class RetailOrdersUiState(
     fun blockOf(s: RetailSale): String? = when {
         ReturnRules.channelBlocked(s.channel.name.lowercase()) -> "即时零售平台单请在平台发起退款"
         s.status == ReturnRules.SaleStatus.Returned -> "已全部退货"
+        settings.returnDays > 0 && now - s.at > settings.returnDays * 86_400_000L -> "已超过 ${settings.returnDays} 天退货期限"
         else -> null
     }
 
@@ -72,8 +78,10 @@ data class RetailOrdersUiState(
         else f.pick.entries.sumOf { (pid, n) -> (products.firstOrNull { it.id == pid }?.price ?: 0) * n }
     } ?: 0
     val pieces: Int get() = flow?.let { f -> sale(f.saleNo)?.let { ReturnRules.pickedPieces(it.soldLines, f.pick) } ?: f.pick.values.sum() } ?: 0
-    /** 退款可选方式：有单按原单收款方式，无单只能现金 / 储值 */
-    val methods: List<String> get() = flow?.let { f -> sale(f.saleNo)?.pays?.map { it.method }?.filter { it != EXCHANGE }?.distinct() ?: ReturnRules.NO_RECEIPT_METHODS } ?: emptyList()
+    /** 退款可选方式：有单按原单收款方式（设置关掉「原路退」时门店启用的都行），无单只能现金 / 储值 */
+    val methods: List<String> get() = flow?.let { f ->
+        sale(f.saleNo)?.let { s -> if (settings.originalMethod) s.pays.map { it.method }.filter { it != EXCHANGE }.distinct() else payMethods } ?: ReturnRules.NO_RECEIPT_METHODS
+    } ?: emptyList()
 }
 
 sealed interface RetailOrdersAction {
@@ -110,7 +118,8 @@ class RetailOrdersViewModel(
     val toPos = events.receiveAsFlow()
 
     val state: StateFlow<RetailOrdersUiState> = combine(config.current, local, device.status) { store, l, d ->
-        RetailOrdersUiState(store?.retail?.sales.orEmpty(), l.filter, l.query, l.selected, l.flow, store?.products.orEmpty(), store?.retail?.credit, d.online)
+        RetailOrdersUiState(store?.retail?.sales.orEmpty(), l.filter, l.query, l.selected, l.flow, store?.products.orEmpty(), store?.retail?.credit, d.online,
+            store?.retail?.settings ?: ai.neargo.fnb.pos.core.model.RetailSettings(), store?.settings?.payMethods.orEmpty(), System.currentTimeMillis())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RetailOrdersUiState())
 
     private fun flow(f: (ReturnFlow) -> ReturnFlow) = local.update { l -> l.copy(flow = l.flow?.let(f)) }

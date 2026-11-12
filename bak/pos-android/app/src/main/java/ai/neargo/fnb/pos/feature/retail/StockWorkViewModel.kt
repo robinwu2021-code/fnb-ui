@@ -36,6 +36,7 @@ data class StockWorkUiState(
     val docs: List<StockDoc> = emptyList(),
     val products: List<Product> = emptyList(),
     val today: LocalDate = LocalDate.now(),
+    val expiryDays: Int = 3,
     /** 新建单据弹窗：供应商 / 盘点范围 */
     val creating: StockDocKind? = null,
     val busy: Boolean = false,
@@ -45,7 +46,7 @@ data class StockWorkUiState(
     val current get() = docs.firstOrNull { it.no == selected && it.kind == view.kind } ?: shown.firstOrNull()
     fun openCount(k: StockDocKind) = docs.count { it.kind == k && it.open }
     val low get() = products.filter { StockWork.low(it) }
-    val near get() = products.filter { StockWork.near(it, today) }
+    val near get() = products.filter { StockWork.near(it, today, expiryDays) }
 
     /** 单据右侧的建议：入库建议低库存、报损建议临期、盘点建议同分类还没盘的 */
     fun suggest(d: StockDoc): List<Product> {
@@ -83,7 +84,7 @@ class StockWorkViewModel(config: StoreConfigRepository, private val retail: Reta
     private val local = MutableStateFlow(Local())
 
     val state: StateFlow<StockWorkUiState> = combine(config.current, local) { s, l ->
-        StockWorkUiState(l.view, l.filter, l.selected, s?.retail?.stockDocs.orEmpty(), s?.products.orEmpty(), LocalDate.now(), l.creating, l.busy)
+        StockWorkUiState(l.view, l.filter, l.selected, s?.retail?.stockDocs.orEmpty(), s?.products.orEmpty(), LocalDate.now(), s?.retail?.settings?.expiryDays ?: 3, l.creating, l.busy)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, StockWorkUiState())
 
     private fun cur() = state.value.current

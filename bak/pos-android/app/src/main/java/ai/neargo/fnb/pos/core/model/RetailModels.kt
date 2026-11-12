@@ -100,6 +100,31 @@ data class RetailData(
     val credit: ExchangeCredit? = null,
     /** 价签打印记录（最近的在前） */
     val labelPrints: List<LabelPrint> = emptyList(),
+    val settings: RetailSettings = RetailSettings(),
+)
+
+/**
+ * 零售设置（系统管理 · 零售设置）：只放会改变收银 / 退货 / 价签 / 预警行为的项，每项都有地方用到。
+ * 条码规则（店内码、称重码格式）目前固定，只在设置页说明；接电子秤（R8）时再做成可配。
+ */
+@Serializable
+data class RetailSettings(
+    /** 价签默认模板 */
+    val labelTpl: LabelTpl = LabelTpl.L60x40,
+    /** 改价后自动进待打价签 */
+    val autoLabel: Boolean = true,
+    /** 临期提前几天提醒（含当天） */
+    val expiryDays: Int = 3,
+    /** 有促销的商品每单限购件数；0 = 不限 */
+    val promoLimit: Int = 0,
+    /** 购物车里的快捷购物袋 */
+    val bagIds: List<String> = listOf("bag"),
+    /** 退货期限（天）；0 = 不限 */
+    val returnDays: Int = 7,
+    /** 无单退货要主管授权 */
+    val noReceiptAuth: Boolean = true,
+    /** 有单退货只能原路退 */
+    val originalMethod: Boolean = true,
 )
 
 /** 零售单收款里「换货抵扣」这一笔的方式名（不是真的收款方式，不进收款记录） */

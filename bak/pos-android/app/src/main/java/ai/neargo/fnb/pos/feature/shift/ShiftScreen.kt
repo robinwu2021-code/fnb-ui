@@ -108,6 +108,7 @@ private fun Summary(state: ShiftUiState, modifier: Modifier) {
             DetailBlock("营业额") {
                 Text(yuan(s.total), style = t.amount.num(), color = c.ink)
                 KeyValue("收款笔数", "${s.count} 笔")
+                if (s.refundCount > 0) KeyValue("退款（已从营业额扣除）", "${s.refundCount} 笔 · ${yuan(-s.refund)}")
                 KeyValue("结账桌台", "${s.tables} 桌")
                 KeyValue("客单价", if (s.count > 0) yuan(s.total / s.count) else "—")
             }

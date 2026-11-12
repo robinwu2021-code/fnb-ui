@@ -198,7 +198,7 @@ private fun ReturnDialog(state: RetailOrdersUiState, f: ReturnFlow, onAction: (R
             f.step == 3 && ex -> PosButton("记抵扣，去收银 ${yuan(state.refund)}", { onAction(RetailOrdersAction.Confirm) }, variant = BtnVariant.Primary, enabled = f.reason != null && !f.busy, loading = f.busy)
             f.step == 3 -> PosButton("下一步", { onAction(RetailOrdersAction.Next) }, variant = BtnVariant.Primary, enabled = f.reason != null)
             else -> PosButton("确认退款 ${yuan(state.refund)}", { onAction(RetailOrdersAction.Confirm) }, variant = BtnVariant.Danger,
-                enabled = state.refund > 0 && !f.busy && (!f.noReceipt || (f.approver.isNotBlank() && f.secret.isNotBlank())), loading = f.busy)
+                enabled = state.refund > 0 && !f.busy && (!state.needAuth || (f.approver.isNotBlank() && f.secret.isNotBlank())), loading = f.busy)
         }
     }) {
         Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -233,7 +233,7 @@ private fun FindSale(state: RetailOrdersUiState, ex: Boolean, onAction: (RetailO
             Text("无单退货", style = t.strong, color = c.ink)
             Text("找不到原单：按现价退，只能退现金或储值", style = t.label, color = c.sub)
         }
-        Tag("需主管授权", fg = c.warning)
+        if (state.settings.noReceiptAuth) Tag("需主管授权", fg = c.warning)
     }
 }
 
@@ -305,7 +305,7 @@ private fun ReasonStep(state: RetailOrdersUiState, f: ReturnFlow, sale: RetailSa
 @Composable
 private fun RefundStep(state: RetailOrdersUiState, f: ReturnFlow, onAction: (RetailOrdersAction) -> Unit) {
     val c = Pos.colors; val t = Pos.type
-    Text(if (f.noReceipt) "退款方式（无单只能退现金或储值）" else "退款方式（按原收款方式退）", style = t.section, color = c.ink)
+    Text(if (f.noReceipt) "退款方式（无单只能退现金或储值）" else if (state.settings.originalMethod) "退款方式（按原收款方式退）" else "退款方式", style = t.section, color = c.ink)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("现金", "扫码", "银行卡", "储值卡").forEach { m ->
             PosButton(m, { onAction(RetailOrdersAction.Method(m)) }, Modifier.weight(1f), size = BtnSize.Large, selected = f.method == m,
@@ -320,7 +320,7 @@ private fun RefundStep(state: RetailOrdersUiState, f: ReturnFlow, onAction: (Ret
         }
         Text(yuan(state.refund), style = t.amountM.num(), color = c.primary)
     }
-    if (f.noReceipt) Section("主管授权") {
+    if (state.needAuth) Section("主管授权") {
         PosTextField(f.approver, { onAction(RetailOrdersAction.Auth(it, f.secret)) }, "主管姓名 / 账号")
         PosTextField(f.secret, { onAction(RetailOrdersAction.Auth(f.approver, it)) }, "PIN / 密码", password = true, keyboard = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
         Text("体验账号可用 manager@demo.local / demo12345", style = t.label, color = c.sub)

@@ -33,7 +33,7 @@ object StockWork {
     fun low(p: Product) = p.retail?.safetyStock?.let { StockDocRules.lowStock(book(p), it.toLong()) } == true
 
     /** 临期：有到期日且 3 天内到期（含已过期） */
-    fun near(p: Product, today: LocalDate) = p.retail?.expiry?.let { runCatching { StockDocRules.nearExpiry(LocalDate.parse(it), today) }.getOrDefault(false) } == true
+    fun near(p: Product, today: LocalDate, days: Int = 3) = p.retail?.expiry?.let { runCatching { StockDocRules.nearExpiry(LocalDate.parse(it), today, days.toLong()) }.getOrDefault(false) } == true
 
     /** 建议补货量：补到安全库存的两倍，至少一箱 12 件 */
     fun refill(p: Product): Long = maxOf(12L, (p.retail?.safetyStock ?: 0) * 2L - book(p))

@@ -43,4 +43,12 @@ object RetailCheckout {
         skuLabel == null && !p.hasSpec && p.stock == 0 -> "${p.name} 缺货"
         else -> null
     }
+
+    /** 促销品每单限购：同一商品（各规格合计）件数超过 limit 时返回原因；limit = 0 不限 */
+    fun limitBlock(products: List<Product>, lines: List<CartLine>, limit: Int): String? {
+        if (limit <= 0) return null
+        val byId = products.associateBy { it.id }
+        return lines.filter { !it.custom && !it.gift && it.grams == null && byId[it.productId]?.retail?.promo != null }.groupBy { it.productId }
+            .entries.firstOrNull { (_, ls) -> ls.sumOf { it.qty } > limit }?.let { (id, _) -> "${byId.getValue(id).name} 是促销品，每单限购 $limit 件" }
+    }
 }

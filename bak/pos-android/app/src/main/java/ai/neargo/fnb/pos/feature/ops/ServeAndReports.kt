@@ -140,7 +140,10 @@ fun ReportsRoute() {
                 PosButton("日结", { closing = true }, size = BtnSize.Small, variant = BtnVariant.Primary)
             }
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) { ReportBody(r) }
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 零售门店：零售分区（零售单、退货、渠道、商品）+ 共用的收款方式与时段；餐饮照旧
+                    if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) RetailReportBody(ai.neargo.fnb.pos.core.model.RetailReportRules.build(s, from, to), r) else ReportBody(r)
+                }
                 Column(Modifier.width(300.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     GroupTitle("历史日结（${s.dayCloses.size}）")
                     if (s.dayCloses.isEmpty()) Text("暂无日结记录", style = Pos.type.label, color = Pos.colors.sub)
@@ -169,6 +172,30 @@ fun ReportsRoute() {
             Text("日结后生成日结单，营业日重新开始；已结账数据保留，可在历史日结中查看。", style = Pos.type.label, color = Pos.colors.sub, modifier = Modifier.padding(top = 8.dp))
         }
     }
+}
+
+@Composable
+private fun RetailReportBody(x: ai.neargo.fnb.pos.core.model.RetailReport, r: SalesReport) {
+    GroupTitle("零售概览")
+    KeyValue("净销售（售出 − 退款）", yuan(x.net)); KeyValue("售出实收", yuan(x.gross)); KeyValue("销售单数", "${x.sales}"); KeyValue("件数", "${x.pieces} 件"); KeyValue("客单价", yuan(x.average))
+    KeyValue("退款", "${x.refundCount} 笔 · ${yuan(x.refund)}" + if (x.looseRefund > 0) "（含无单 ${yuan(x.looseRefund)}）" else "")
+    KeyValue("换货", "${x.exchangeCount} 笔（抵扣进了新单，不算退款）")
+    GroupTitle("销售渠道")
+    if (x.byChannel.isEmpty()) Text("无销售", style = Pos.type.label, color = Pos.colors.sub)
+    x.byChannel.forEach { (n, v) -> Bar(n, v, x.gross) }
+    GroupTitle("收款方式（退款已扣）")
+    if (r.byMethod.isEmpty()) Text("无收款", style = Pos.type.label, color = Pos.colors.sub)
+    r.byMethod.entries.sortedByDescending { it.value }.forEach { (m, v) -> Bar(m, v, r.revenue) }
+    GroupTitle("商品销售（前 10）")
+    if (x.items.isEmpty()) Text("无商品数据", style = Pos.type.label, color = Pos.colors.sub)
+    x.items.take(10).forEachIndexed { i, d -> KeyValue("${i + 1}. ${d.name}", "${d.qty} 件 · ${yuan(d.amount)}") }
+    GroupTitle("分类销售")
+    val catTotal = x.categories.sumOf { it.second }
+    x.categories.forEach { (n, v) -> Bar(n, v, catTotal) }
+    GroupTitle("时段分布（收款）")
+    if (r.hours.isEmpty()) Text("无数据", style = Pos.type.label, color = Pos.colors.sub)
+    val peak = r.hours.values.maxOrNull() ?: 0L
+    r.hours.forEach { (h, v) -> Bar("%02d:00".format(h), v, peak) }
 }
 
 @Composable

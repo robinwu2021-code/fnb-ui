@@ -48,19 +48,20 @@ data class GoodsUiState(
     val moves: List<StockMovement> = emptyList(),
     val printed: Int = 0,
     val today: LocalDate = LocalDate.now(),
+    val expiryDays: Int = 3,
 ) {
     fun product(id: String?) = products.firstOrNull { it.id == id }
     fun stateOf(p: Product) = when {
         StockWork.book(p) <= 0 -> StockState.Out
         StockWork.low(p) -> StockState.Low
-        StockWork.near(p, today) -> StockState.Near
+        StockWork.near(p, today, expiryDays) -> StockState.Near
         else -> StockState.Ok
     }
     fun matches(p: Product, f: StockFilter) = when (f) {
         StockFilter.All -> true
         StockFilter.Out -> StockWork.book(p) <= 0
         StockFilter.Low -> StockWork.low(p) && StockWork.book(p) > 0
-        StockFilter.Near -> StockWork.near(p, today)
+        StockFilter.Near -> StockWork.near(p, today, expiryDays)
     }
     val items get() = products.filter { p ->
         val q = query.trim()
@@ -95,7 +96,7 @@ sealed interface GoodsAction {
 /** 零售商品（原型 GoodsWB.tsx）：商品资料改价 → 待打价签 · 库存（筛选、流水、去入库 / 盘点）· 价签（队列、模板、预览、打印） */
 class GoodsViewModel(config: StoreConfigRepository, private val retail: RetailRepository, private val messages: MessageBus) : ViewModel() {
     private data class Local(val sub: GoodsSub = GoodsSub.Items, val cat: String = HOT, val query: String = "", val selected: String? = null, val filter: StockFilter = StockFilter.All,
-        val unpicked: Set<String> = emptySet(), val tpl: LabelTpl = LabelTpl.L60x40, val focus: String? = null)
+        val unpicked: Set<String> = emptySet(), val tpl: LabelTpl? = null, val focus: String? = null)
     private val local = MutableStateFlow(Local())
     private val events = Channel<Unit>(Channel.BUFFERED)
     /** 建好库存单后切到「库存」页签 */
@@ -103,9 +104,9 @@ class GoodsViewModel(config: StoreConfigRepository, private val retail: RetailRe
 
     val state: StateFlow<GoodsUiState> = combine(config.current, local) { s, l ->
         val products = s?.products.orEmpty()
-        GoodsUiState(l.sub, l.cat, l.query, l.selected, l.filter, l.unpicked, l.tpl, l.focus, products,
+        GoodsUiState(l.sub, l.cat, l.query, l.selected, l.filter, l.unpicked, l.tpl ?: s?.retail?.settings?.labelTpl ?: LabelTpl.L60x40, l.focus, products,
             s?.categories.orEmpty().filter { c -> products.any { it.categoryId == c.id } }, s?.retail?.labelQueue.orEmpty(), s?.stockMovements.orEmpty(),
-            s?.retail?.labelPrints?.sumOf { it.productIds.size } ?: 0, LocalDate.now())
+            s?.retail?.labelPrints?.sumOf { it.productIds.size } ?: 0, LocalDate.now(), s?.retail?.settings?.expiryDays ?: 3)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, GoodsUiState())
 
     fun onAction(a: GoodsAction) {

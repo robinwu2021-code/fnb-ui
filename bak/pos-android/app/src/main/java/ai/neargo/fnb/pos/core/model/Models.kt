@@ -440,6 +440,9 @@ data class ShiftRecord(
     val voidCount: Int = 0,
     val giftAmount: Long = 0,
     val giftCount: Int = 0,
+    /** 退款（零售退货、退差价）：笔数与金额（正数）；营业额已扣过 */
+    val refundCount: Int = 0,
+    val refund: Long = 0,
 )
 
 /** 当前班次：开班时间、备用金、历史交班。 */

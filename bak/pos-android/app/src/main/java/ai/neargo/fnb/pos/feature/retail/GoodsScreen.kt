@@ -217,7 +217,7 @@ private fun StockList(state: GoodsUiState, onAction: (GoodsAction) -> Unit) {
                     Text(StockWork.qtyText(p, book), style = t.body.num().let { if (safety != null && book <= safety) it.copy(fontWeight = FontWeight.SemiBold) else it },
                         color = if (safety != null && book <= safety || book <= 0) c.danger else c.ink, modifier = Modifier.weight(1f))
                     Text(safety?.let { StockWork.qtyText(p, it.toLong()) } ?: "—", style = t.body.num(), color = c.sub, modifier = Modifier.weight(0.9f))
-                    Text(p.retail?.expiry ?: "—", style = t.body.num(), color = if (StockWork.near(p, state.today)) c.warning else c.sub, modifier = Modifier.weight(1f))
+                    Text(p.retail?.expiry ?: "—", style = t.body.num(), color = if (StockWork.near(p, state.today, state.expiryDays)) c.warning else c.sub, modifier = Modifier.weight(1f))
                     Box(Modifier.weight(0.8f)) { StateTag(state.stateOf(p)) }
                 }
             }

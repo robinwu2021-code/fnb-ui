@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.feature.manage
 
+import ai.neargo.fnb.pos.feature.retail.RetailSettingsPage
+
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
@@ -77,9 +79,13 @@ fun ManageRoute(onDisplay: () -> Unit, onSwitchStore: () -> Unit) {
 fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Unit, onSwitchStore: () -> Unit) {
     val store = state.store ?: return
     val layout = LocalPosLayout.current
+    val sections = Section.entries.filter { it.visibleFor(store.biz) }
+    // 切到另一业态的门店时，原来选的页可能不在菜单里：落到第一项
+    val section = if (state.section in sections) state.section else sections.first()
     val content: @Composable (Modifier) -> Unit = { m ->
         Column(m.padding(Pos.metrics.pad)) {
-            when (state.section) {
+            when (section) {
+                Section.Retail -> RetailSettingsPage(store)
                 Section.Tables -> TablesSection(store, vm)
                 Section.Areas -> AreasSection(store, vm)
                 Section.Store -> StoreSection(store, vm)
@@ -112,14 +118,14 @@ fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Uni
     Panel(Modifier.fillMaxSize().padding(Pos.metrics.gap)) {
         if (layout.wide) {
             Row(Modifier.fillMaxSize()) {
-                ManageNav(state.section, vm::select, Modifier.width(196.dp).fillMaxHeight())
+                ManageNav(section, sections, vm::select, Modifier.width(196.dp).fillMaxHeight())
                 VerticalDivider(color = Pos.colors.divider)
                 content(Modifier.weight(1f).fillMaxHeight())
             }
         } else {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().background(Pos.colors.tile).horizontalScroll(rememberScrollState()).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Section.entries.forEach { s -> PosChip(s.label, s == state.section, { vm.select(s) }, height = 36.dp) }
+                    sections.forEach { s -> PosChip(s.label, s == section, { vm.select(s) }, height = 36.dp) }
                 }
                 content(Modifier.weight(1f).fillMaxWidth())
             }
@@ -129,9 +135,9 @@ fun ManageScreen(state: ManageUiState, vm: ManageViewModel, onDisplay: () -> Uni
 
 /** 多级菜单：一级分组可展开 / 收起，选中页所在分组保持展开。 */
 @Composable
-private fun ManageNav(selected: Section, onSelect: (Section) -> Unit, modifier: Modifier) {
+private fun ManageNav(selected: Section, sections: List<Section>, onSelect: (Section) -> Unit, modifier: Modifier) {
     val c = Pos.colors
-    val groups = Section.entries.groupBy { it.group }
+    val groups = sections.groupBy { it.group }
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     LazyColumn(modifier.background(c.tile).padding(horizontal = 6.dp, vertical = 8.dp)) {
         groups.forEach { (g, items) ->

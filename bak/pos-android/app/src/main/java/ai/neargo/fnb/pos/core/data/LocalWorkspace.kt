@@ -1038,6 +1038,7 @@ class LocalWorkspace(
             when {
                 lines.isEmpty() && credit == null -> "购物车是空的"
                 lines.any { !it.custom && s.product(it.productId) == null } -> "购物车里有已下架的商品"
+                RetailCheckout.limitBlock(s.products, lines, s.retail.settings.promoLimit) != null -> RetailCheckout.limitBlock(s.products, lines, s.retail.settings.promoLimit)
                 !Money.withinBill(t.due) || !Money.withinBill(received) -> "金额超出上限"
                 // 换货抵扣后不用再收钱：收款方式不看
                 credit != null && st.pay == 0L -> retailOnly(s) ?: need(Perm.Checkout)
@@ -1104,20 +1105,24 @@ class LocalWorkspace(
     override suspend fun returnRetail(req: ReturnRequest, online: Boolean): Result<SaleReturn> {
         var out: SaleReturn? = null
         val actor = actorName(state.value)
-        val approver = if (req.saleNo == null) supervisorAuth(state.value, req.approver, req.secret).getOrElse { return Result.failure(it) } else ""
+        val rs = state.value.store?.retail?.settings ?: RetailSettings()
+        // 无单退货：按设置要主管授权；不要授权时记当前操作员
+        val approver = if (req.saleNo == null) { if (rs.noReceiptAuth) supervisorAuth(state.value, req.approver, req.secret).getOrElse { return Result.failure(it) } else actor } else ""
         return storeOp(event = retailEvent("RetailReturned", """{"sale":"${req.saleNo.orEmpty()}","exchange":${req.exchange},"method":"${req.method}"}"""), check = { s ->
             val sale = req.saleNo?.let { no -> s.retail.sales.firstOrNull { it.no == no } }
             val pieces = sale?.let { ReturnRules.pickedPieces(it.soldLines, req.pick) } ?: req.pick.values.sum()
             when {
                 req.saleNo != null && sale == null -> "原单不存在"
                 sale != null && ReturnRules.channelBlocked(sale.channel.name.lowercase()) -> "即时零售平台单请在平台发起退款"
+                sale != null && s.retail.settings.returnDays > 0 && clock() - sale.at > s.retail.settings.returnDays * 86_400_000L -> "已超过 ${s.retail.settings.returnDays} 天退货期限"
                 pieces <= 0 -> "请选择要退的商品"
                 req.saleNo == null && req.pick.keys.any { s.product(it) == null } -> "商品不存在"
                 req.exchange && req.saleNo == null -> "换货需要原单"
                 req.exchange && s.retail.credit != null -> "上一笔换货还没在收银结算"
                 req.exchange -> retailOnly(s) ?: need(Perm.Checkout)
                 req.saleNo == null && req.method !in ReturnRules.NO_RECEIPT_METHODS -> "无单退货只能退现金或储值"
-                sale != null && sale.pays.none { it.method == req.method } -> "只能按原收款方式退"
+                sale != null && s.retail.settings.originalMethod && sale.pays.none { it.method == req.method } -> "只能按原收款方式退"
+                sale != null && req.method !in s.settings.payMethods -> "门店未启用「${req.method}」"
                 !online && req.method == "扫码" -> "离线时扫码退款不可用"
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
@@ -1185,6 +1190,7 @@ class LocalWorkspace(
         // 规格价没手动改过的跟着基础价走
         val np = p.copy(price = price, skus = p.skus.map { if (it.manualPrice) it else it.copy(price = price) })
         s.copy(products = s.products.map { if (it.id == productId) np else it }).withRetail { r ->
+            if (!r.settings.autoLabel) return@withRetail r
             val had = r.labelQueue.firstOrNull { it.productId == productId }
             val job = LabelJob(productId, LabelWhy.Price, had?.oldPrice ?: p.price)
             r.copy(labelQueue = listOf(job) + r.labelQueue.filterNot { it.productId == productId })
@@ -1213,6 +1219,16 @@ class LocalWorkspace(
             s.withRetail { r -> r.copy(labelQueue = r.labelQueue.filterNot { it.productId in productIds }, labelPrints = (listOf(LabelPrint(clock(), tpl, productIds, actor, program)) + r.labelPrints).take(50)) }
         }.map { n }
     }
+
+    override suspend fun saveRetailSettings(settings: RetailSettings): Result<Unit> = storeOp(event = retailEvent("RetailSettingsSaved", """{"promoLimit":${settings.promoLimit},"returnDays":${settings.returnDays}}"""), check = { s ->
+        when {
+            settings.expiryDays !in 0..30 -> "临期提醒天数在 0–30 之间"
+            settings.promoLimit !in 0..99 -> "限购件数在 0–99 之间"
+            settings.returnDays !in 0..365 -> "退货期限在 0–365 天之间"
+            settings.bagIds.any { s.product(it) == null } -> "购物袋商品不存在"
+            else -> retailOnly(s) ?: need(Perm.Settings)
+        }
+    }) { s -> s.withRetail { it.copy(settings = settings) } }
 
     override suspend fun voidStockDoc(no: String): Result<Unit> =
         storeOp(event = retailEvent("StockDocVoided", """{"no":"$no"}"""), check = { s ->
@@ -1717,7 +1733,7 @@ class LocalWorkspace(
             val s = v.store ?: return@transaction v to Result.failure(IllegalStateException("请先选择门店"))
             val sum = ShiftRules.summary(s.payments, s.shift, s.adjustments)
             val start = if (s.shift.start > 0) s.shift.start else s.payments.minOfOrNull { it.at } ?: clock()
-            val rec = ShiftRecord(newId("S"), start, clock(), staff, sum.total, sum.count, sum.byMethod, s.shift.float, sum.cashExpected, counted, sum.voidAmount, sum.voidCount, sum.giftAmount, sum.giftCount)
+            val rec = ShiftRecord(newId("S"), start, clock(), staff, sum.total, sum.count, sum.byMethod, s.shift.float, sum.cashExpected, counted, sum.voidAmount, sum.voidCount, sum.giftAmount, sum.giftCount, sum.refundCount, sum.refund)
             val next = s.copy(
                 shift = ShiftState(start = clock(), float = s.shift.float, history = s.shift.history + rec),
                 printJobs = s.printJobs + s.withCopies(PrintJob(newId("SH"), PrintKind.Shift, "交班单 $staff", Receipts.shift(rec), clock())),

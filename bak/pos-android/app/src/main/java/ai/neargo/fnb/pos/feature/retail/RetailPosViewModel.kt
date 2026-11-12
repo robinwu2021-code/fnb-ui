@@ -70,7 +70,10 @@ data class RetailPosUiState(
     val totals: RetailPricing.Totals = RetailPricing.Totals(0, 0, 0, 0, 0, 0, 0, 0),
     /** 换货抵扣（订单页换货后带过来，结算时用掉） */
     val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null,
+    val settings: ai.neargo.fnb.pos.core.model.RetailSettings = ai.neargo.fnb.pos.core.model.RetailSettings(),
 ) {
+    /** 快捷购物袋（设置里选的、还在售的商品） */
+    val bags get() = settings.bagIds.mapNotNull { product(it) }
     /** 有抵扣时的多退少补 */
     val settle get() = credit?.let { RetailPricing.exchangeSettle(totals.due, it.amount) }
     /** 这次要收的钱：有抵扣时是补收部分 */
@@ -112,6 +115,8 @@ sealed interface RetailPosAction {
     data class Remove(val key: Long) : RetailPosAction
     data object ToggleMember : RetailPosAction
     data object AddCustom : RetailPosAction
+    /** 购物车里的快捷购物袋 */
+    data class AddBag(val productId: String) : RetailPosAction
     data class CustomAdd(val name: String, val price: Long) : RetailPosAction
     data object OpenDrawer : RetailPosAction
     data object Hold : RetailPosAction
@@ -157,7 +162,7 @@ class RetailPosViewModel(
             categories = store.categories.filter { cat -> products.any { it.categoryId == cat.id } },
             specGroups = store.specGroups, held = store.retail.held, nextNo = "#R%04d".format(store.retail.saleSeq),
             payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.walletBalance, online = d.online,
-            totals = RetailCheckout.totals(products, c.lines, c.member), credit = store.retail.credit,
+            totals = RetailCheckout.totals(products, c.lines, c.member), credit = store.retail.credit, settings = store.retail.settings,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RetailPosUiState())
 
@@ -166,6 +171,8 @@ class RetailPosViewModel(
 
     private fun add(line: CartLine) {
         val r = RetailCartRules.scanAdd(cart.value.lines, line) { ++seq }
+        // 促销品限购（零售设置）：超了就不加，提示原因
+        RetailCheckout.limitBlock(s().products, r.lines, s().settings.promoLimit)?.let { messages.post(it); set { c -> c.copy(qty = 1, overlay = null) }; return }
         set { it.copy(lines = r.lines, last = r.last, unknown = null, qty = 1, overlay = null, mode = PosMode.Scan, method = null, cash = "") }
     }
 
@@ -221,7 +228,12 @@ class RetailPosViewModel(
             is RetailPosAction.SetQty -> set { it.copy(qty = if (it.qty == a.n) 1 else a.n) }
             RetailPosAction.TogglePeek -> set { it.copy(peek = !it.peek, peekId = null, unknown = null) }
             is RetailPosAction.PeekAdd -> s().product(a.productId)?.let { p -> set { it.copy(peek = false, peekId = null) }; pick(p, 1) }
-            is RetailPosAction.Bump -> set { c -> val l = RetailCartRules.bump(c.lines, a.key, a.d); c.copy(lines = l, last = if (a.d > 0) a.key else c.last?.takeIf { k -> l.any { it.key == k } }) }
+            is RetailPosAction.Bump -> {
+                val l = RetailCartRules.bump(cart.value.lines, a.key, a.d)
+                if (a.d > 0) RetailCheckout.limitBlock(s().products, l, s().settings.promoLimit)?.let { messages.post(it); return }
+                set { c -> c.copy(lines = l, last = if (a.d > 0) a.key else c.last?.takeIf { k -> l.any { it.key == k } }) }
+            }
+            is RetailPosAction.AddBag -> s().product(a.productId)?.let { p -> add(CartLine(0, p.id, 1)) }
             is RetailPosAction.Undo -> set { c -> val l = RetailCartRules.undoLast(c.lines, a.key); c.copy(lines = l, last = a.key.takeIf { k -> l.any { it.key == k } }) }
             is RetailPosAction.ToggleOpen -> set { it.copy(open = if (it.open == a.key) null else a.key) }
             is RetailPosAction.Gift -> set { it.copy(lines = RetailCartRules.toggleGift(it.lines, a.key), open = null) }

@@ -161,6 +161,7 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                     PosChip("会员", cart.member, { onAction(RetailPosAction.ToggleMember) })
                     PosButton("挂单", { onAction(RetailPosAction.Hold) }, size = BtnSize.Small, enabled = !empty)
                     PosButton(if (state.held.isEmpty()) "取单" else "取单 · ${state.held.size}", { onAction(RetailPosAction.ShowHeld) }, size = BtnSize.Small, enabled = state.held.isNotEmpty())
+                    state.bags.forEach { b -> PosButton("+ ${b.name.replace("购物袋", "袋")} ${yuan(b.price)}", { onAction(RetailPosAction.AddBag(b.id)) }, size = BtnSize.Small) }
                 }
             }
             state.credit?.let { cr ->

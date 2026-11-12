@@ -267,5 +267,7 @@ interface RetailRepository {
     suspend fun queueLabel(productId: String): Result<Unit>
     /** 打印选中的价签：生成标签机指令并记录，打完从队列移走；返回张数 */
     suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int>
+    /** 保存零售设置 */
+    suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings): Result<Unit>
     suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale>
 }
