@@ -288,6 +288,8 @@ data class StoreData(
     val settings: StoreSettings,
     /** 门店业态（默认餐饮，旧数据兼容） */
     val biz: BizType = BizType.Dining,
+    /** 门店归属账号（邮箱）；空 = 演示 / 旧数据门店 */
+    val owner: String = "",
     /** 零售业务数据（零售门店才有内容） */
     val retail: RetailData = RetailData(),
     val areas: List<Area>,
@@ -379,6 +381,8 @@ const val TASK_LOG_LIMIT = 500
     Kitchen("厨房单", "厨房"), PreBill("预结单", "前台"), Receipt("结账单", "前台"), Shift("交班单", "前台"), Test("测试页", "指定"),
     /** 零售价签：正文是 TSPL 指令，发往「标签机」路由的打印机 */
     Label("价签", "标签机"),
+    /** 开钱箱：钱箱接在前台小票机上，发 ESC/POS 钱箱脉冲（不出纸） */
+    Drawer("开钱箱", "前台"),
 }
 /**
  * 打印状态（N6 分级）：Printed 仅用于模拟/历史与人工确认；真实打印机发出后为 Sent（已写入且状态正常，仍非出纸确认），

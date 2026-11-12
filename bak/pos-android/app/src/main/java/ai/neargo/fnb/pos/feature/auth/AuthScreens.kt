@@ -144,9 +144,12 @@ private fun fieldOf(error: String?): Map<String, String> = when {
 /** 选择门店：门店卡片（名称、编码、地址、桌台与用餐中数量）；切店数据隔离。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun StorePicker(stores: List<StoreSummary>, current: String?, onPick: (String) -> Unit, onLogout: () -> Unit, onCancel: (() -> Unit)? = null) {
+fun StorePicker(stores: List<StoreSummary>, current: String?, onPick: (String) -> Unit, onLogout: () -> Unit, onCancel: (() -> Unit)? = null,
+                onCreate: ((name: String, code: String, address: String, biz: ai.neargo.fnb.pos.core.model.BizType, done: (String?) -> Unit) -> Unit)? = null) {
     val c = Pos.colors
     val t = Pos.type
+    var creating by remember { mutableStateOf(false) }
+    if (creating && onCreate != null) CreateStoreDialog(onCreate) { creating = false }
     Box(Modifier.fillMaxSize().background(c.canvas).verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
         Column(Modifier.widthIn(max = 760.dp).fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -154,6 +157,7 @@ fun StorePicker(stores: List<StoreSummary>, current: String?, onPick: (String) -
                     Text("选择门店", style = t.title, color = c.ink)
                     Text("各门店的桌台、商品、餐牌与账单分别保存在本机，互不影响", style = t.label, color = c.sub)
                 }
+                if (onCreate != null) PosButton("新建门店", { creating = true }, variant = BtnVariant.Soft)
                 if (onCancel != null) PosButton("返回", onCancel, variant = BtnVariant.Text)
                 PosButton("退出登录", onLogout, variant = BtnVariant.Text)
             }
@@ -185,5 +189,30 @@ fun StorePicker(stores: List<StoreSummary>, current: String?, onPick: (String) -
                 }
             }
         }
+    }
+}
+
+/** 新建门店：名称、门店码、地址、业态；资料按业态从演示门店复制，建好后在系统管理里改 */
+@Composable
+private fun CreateStoreDialog(onCreate: (String, String, String, ai.neargo.fnb.pos.core.model.BizType, (String?) -> Unit) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var biz by remember { mutableStateOf(ai.neargo.fnb.pos.core.model.BizType.Dining) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember(name, code, address, biz) { mutableStateOf<String?>(null) }
+    ai.neargo.fnb.pos.core.designsystem.component.PosDialog("新建门店", onDismiss, footer = {
+        PosButton("取消", onDismiss, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Large)
+        PosButton("新建并进入", { busy = true; onCreate(name, code, address, biz) { e -> busy = false; error = e; if (e == null) onDismiss() } },
+            variant = BtnVariant.Primary, size = ai.neargo.fnb.pos.core.designsystem.component.BtnSize.Large, loading = busy)
+    }) {
+        Text("商品、规格、桌台与设置按业态从演示门店复制一份，建好后到「系统管理」里改；订单、会员、员工不复制。", style = Pos.type.label, color = Pos.colors.sub)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            ai.neargo.fnb.pos.core.model.BizType.entries.forEach { b -> PosButton(b.label, { biz = b }, selected = biz == b) }
+        }
+        ai.neargo.fnb.pos.core.designsystem.component.PosTextField(name, { name = it.take(20) }, "门店名称", hint = "例如 东门店")
+        ai.neargo.fnb.pos.core.designsystem.component.PosTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(12) }, "门店码", hint = "2–12 位字母、数字，如 DM01")
+        ai.neargo.fnb.pos.core.designsystem.component.PosTextField(address, { address = it.take(60) }, "地址（可不填）")
+        error?.let { Text(it, style = Pos.type.label, color = Pos.colors.danger, modifier = Modifier.padding(top = 8.dp)) }
     }
 }

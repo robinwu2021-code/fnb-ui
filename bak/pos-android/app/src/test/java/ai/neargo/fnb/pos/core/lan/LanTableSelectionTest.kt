@@ -50,17 +50,17 @@ class LanTableSelectionTest {
             sec.selectTable("H01")
             // 副机开 H03：副机选到 H03，主机仍在 H01
             floor.openTable("H03", 2).getOrThrow()
-            assertEquals(TableStatus.Dining, host.current.value!!.tables.first { it.id == "H03" }.status)
-            assertEquals("H01", host.current.value!!.currentTableId)
-            assertEquals("H03", sec.current.value!!.currentTableId)
+            assertEquals(TableStatus.Dining, host.lanSnapshot().store!!.tables.first { it.id == "H03" }.status)
+            assertEquals("H01", host.lanSnapshot().store!!.currentTableId)
+            assertEquals("H03", sec.lanSnapshot().store!!.currentTableId)
             // 副机把 H03 换到 H04：副机跟到 H04，主机不动
             floor.changeTable("H03", "H04").getOrThrow()
-            assertEquals("H04", sec.current.value!!.currentTableId)
-            assertEquals("H01", host.current.value!!.currentTableId)
+            assertEquals("H04", sec.lanSnapshot().store!!.currentTableId)
+            assertEquals("H01", host.lanSnapshot().store!!.currentTableId)
             // 主机正看着被换走的桌：跟到新桌
             host.selectTable("H04")
             floor.changeTable("H04", "H02").getOrThrow()
-            assertEquals("H02", host.current.value!!.currentTableId)
+            assertEquals("H02", host.lanSnapshot().store!!.currentTableId)
         } finally { server.stop() }
     }
 }

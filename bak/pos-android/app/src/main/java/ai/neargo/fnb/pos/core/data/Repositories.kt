@@ -38,6 +38,8 @@ interface SessionRepository {
     suspend fun logout()
     suspend fun selectStore(storeId: String)
     suspend fun selectTable(tableId: String)
+    /** 真实商户新建门店：按业态从演示门店复制商品、规格、桌台与设置（不带订单、流水、会员、员工），归当前账号；返回门店 ID */
+    suspend fun createStore(name: String, code: String, address: String, biz: ai.neargo.fnb.pos.core.model.BizType): Result<String>
 }
 
 /** 门店配置：区域、桌台、分类、规格组、商品、库存、餐牌、门店设置。 */
@@ -265,6 +267,8 @@ interface RetailRepository {
     suspend fun setRetailPrice(productId: String, price: Long): Result<Unit>
     /** 手动把商品加进待打价签 */
     suspend fun queueLabel(productId: String): Result<Unit>
+    /** 手动开钱箱（找零、换零钱）：要收银权限，记事件留痕 */
+    suspend fun openDrawer(): Result<Unit>
     /** 打印选中的价签：生成标签机指令并记录，打完从队列移走；返回张数 */
     suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int>
     /** 线上订单：模拟来单（演示；真实平台接入后由平台推送）、接单、拣货完成、顾客取走 / 送达、拒单 */
