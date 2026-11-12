@@ -190,7 +190,7 @@ private fun DocPanel(state: StockWorkUiState, d: StockDoc, onAction: (StockWorkA
             if (sug.isNotEmpty()) {
                 Text(when (d.kind) { StockDocKind.Receive -> "低库存，建议补货"; StockDocKind.Loss -> "临期商品"; else -> "还没盘的商品" }, style = t.label, color = c.sub)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    sug.forEach { p -> PosButton("+ ${p.name}", { onAction(StockWorkAction.Add(p.id)) }, size = BtnSize.Small) }
+                    sug.forEach { p -> PosButton("+ ${nameOf(p)}", { onAction(StockWorkAction.Add(p.id)) }, size = BtnSize.Small) }
                 }
             }
         }
@@ -212,7 +212,7 @@ private fun DocLineRow(state: StockWorkUiState, d: StockDoc, l: StockDocLine, on
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(Pos.metrics.card).background(c.surface).padding(horizontal = 8.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(p.name + (skuLabel?.let { " · $it" } ?: ""), style = t.line, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(nameOf(p) + (skuLabel?.let { " · $it" } ?: ""), style = t.line, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val meta = when (d.kind) {
                     StockDocKind.Receive -> listOfNotNull("进价 ${yuan(StockWork.cost(p))}${if (StockWork.weighed(p)) "/kg" else ""}", "账面 ${StockWork.qtyText(p, book)}", if (StockWork.low(p)) "低库存" else null)
                     StockDocKind.Count -> listOfNotNull("账面 ${StockWork.qtyText(p, book)}", (l.qty - book).takeIf { it != 0L && d.state != StockDocState.Posted && d.state != StockDocState.Variance }?.let { "差异 ${if (it > 0) "+" else ""}${if (StockWork.weighed(p)) StockWork.qtyText(p, it) else it}" })
@@ -289,7 +289,7 @@ private fun Alerts(state: StockWorkUiState, onAction: (StockWorkAction) -> Unit)
             items(items, key = { it.id }) { p ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Pos.metrics.button).background(c.tile).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(p.name, style = t.strong, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(nameOf(p), style = t.strong, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("账面 ${StockWork.qtyText(p, StockWork.book(p))}", style = t.label.num(), color = if (StockWork.book(p) == 0L) c.danger else c.ink)
                     Text(if (low) "安全库存 ${p.retail?.safetyStock ?: 0}" else "到期 ${p.retail?.expiry.orEmpty()}", style = t.label.num(), color = c.warning)
                     Text(if (low) "建议补 ${StockWork.refill(p)}" else "", style = t.label.num(), color = c.sub)

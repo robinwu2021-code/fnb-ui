@@ -123,7 +123,7 @@ private fun ItemList(state: GoodsUiState, onAction: (GoodsAction) -> Unit) {
         SearchField(state.query, { onAction(GoodsAction.Search(it)) }, "搜商品名或条码", Modifier.fillMaxWidth())
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             PosChip("常用", state.cat == HOT && state.query.isBlank(), { onAction(GoodsAction.Cat(HOT)) })
-            state.categories.forEach { cat -> PosChip(cat.name, state.cat == cat.id && state.query.isBlank(), { onAction(GoodsAction.Cat(cat.id)) }) }
+            state.categories.forEach { cat -> PosChip(nameOf(cat), state.cat == cat.id && state.query.isBlank(), { onAction(GoodsAction.Cat(cat.id)) }) }
         }
         Row(Modifier.padding(horizontal = 10.dp)) {
             listOf("商品" to 2f, "条码" to 1.2f, "售价" to 0.9f, "会员价" to 0.8f, "库存" to 0.9f, "状态" to 0.8f).forEach { (h, w) -> Text(h, style = t.label, color = c.sub, modifier = Modifier.weight(w)) }
@@ -133,7 +133,7 @@ private fun ItemList(state: GoodsUiState, onAction: (GoodsAction) -> Unit) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Pos.metrics.button).background(if (state.current?.id == p.id) c.tint else Color.Transparent)
                     .clickable { onAction(GoodsAction.Select(p.id)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(2f)) {
-                        Text(p.name, style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(nameOf(p), style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (StockWork.weighed(p) || p.hasSpec) Text(if (StockWork.weighed(p)) "称重" else "多规格 · ${p.skus.size} 格", style = t.label, color = c.sub)
                     }
                     Text(p.retail?.barcodes?.firstOrNull().orEmpty(), style = t.label.num(), color = c.sub, modifier = Modifier.weight(1.2f), maxLines = 1)
@@ -182,7 +182,7 @@ private fun DetailHead(state: GoodsUiState, p: Product) {
     val c = Pos.colors; val t = Pos.type
     Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(p.name, style = t.title, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis); StateTag(state.stateOf(p))
+            Text(nameOf(p), style = t.title, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis); StateTag(state.stateOf(p))
         }
         Text(listOfNotNull(p.retail?.barcodes?.firstOrNull(), state.categories.firstOrNull { it.id == p.categoryId }?.name).joinToString(" · "), style = t.label.num(), color = c.sub)
     }
@@ -211,7 +211,7 @@ private fun StockList(state: GoodsUiState, onAction: (GoodsAction) -> Unit) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Pos.metrics.button).background(if (state.current?.id == p.id) c.tint else Color.Transparent)
                     .clickable { onAction(GoodsAction.Select(p.id)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(2f)) {
-                        Text(p.name, style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(nameOf(p), style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(p.retail?.barcodes?.firstOrNull().orEmpty(), style = t.label.num(), color = c.sub)
                     }
                     Text(StockWork.qtyText(p, book), style = t.body.num().let { if (safety != null && book <= safety) it.copy(fontWeight = FontWeight.SemiBold) else it },
@@ -292,7 +292,7 @@ private fun LabelQueue(state: GoodsUiState, onAction: (GoodsAction) -> Unit) {
                     .clickable { onAction(GoodsAction.Focus(p.id)) }.padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(on, { onAction(GoodsAction.TogglePick(p.id)) }, colors = CheckboxDefaults.colors(checkedColor = c.primary))
                     Column(Modifier.weight(1f)) {
-                        Text(p.name, style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(nameOf(p), style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(when (q.why) { LabelWhy.Price -> "改价 ${q.oldPrice?.let { yuan(it) } ?: ""} → ${yuan(p.price)}"; else -> q.why.label }, style = t.label.num(), color = if (q.why == LabelWhy.Price) c.warning else c.sub)
                     }
                     Text(yuan(p.price) + if (StockWork.weighed(p)) "/kg" else "", style = t.strong.num(), color = c.ink)

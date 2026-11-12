@@ -118,7 +118,7 @@ private fun SaleList(state: RetailOrdersUiState, onAction: (RetailOrdersAction) 
                     val sel = state.current?.no == s.no
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Pos.metrics.button).background(if (sel) c.tint else Color.Transparent)
                         .clickable { onAction(RetailOrdersAction.Select(s.no)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(Modifier.width(80.dp)) { StatusTag(s.status) }
+                        Row(Modifier.width(if (ai.neargo.fnb.pos.core.designsystem.component.LocalLang.current == ai.neargo.fnb.pos.core.model.Lang.En) 150.dp else 80.dp)) { StatusTag(s.status) }
                         Text(s.no, style = t.strong.num(), color = c.ink, modifier = Modifier.width(72.dp))
                         Text(listOfNotNull(s.channel.label, s.member).joinToString(" · "), style = t.body, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Text("${s.pieces} 件 · ${time(s.at)}", style = t.label.num(), color = c.sub, modifier = Modifier.weight(1f))
@@ -148,7 +148,7 @@ private fun SaleDetail(state: RetailOrdersUiState, s: RetailSale, onAction: (Ret
                         val gone = ReturnRules.refundable(s.soldLines.first { it.key == l.key }) == 0
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(l.name + (l.sku?.let { " · $it" } ?: ""), style = t.body.let { if (gone) it.copy(textDecoration = TextDecoration.LineThrough) else it }, color = if (gone) c.sub else c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text((state.products.firstOrNull { it.id == l.productId }?.let { nameOf(it) } ?: l.name) + (l.sku?.let { " · $it" } ?: ""), style = t.body.let { if (gone) it.copy(textDecoration = TextDecoration.LineThrough) else it }, color = if (gone) c.sub else c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(listOfNotNull(if (l.grams != null) "${kgText(l.grams)} × ${yuan(l.unit)}/kg" else "${yuan(l.unit)} × ${l.qty}",
                                     if (l.returned > 0) (if (l.grams != null) "已退" else "已退 ${l.returned}") else null, l.note.ifBlank { null }?.let { "备注：$it" }).joinToString(" · "), style = t.label.num(), color = if (l.returned > 0) c.warning else c.sub)
                             }
@@ -233,7 +233,7 @@ private fun FindSale(state: RetailOrdersUiState, ex: Boolean, onAction: (RetailO
         val why = state.blockOf(s)
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(Pos.metrics.button).clickable(enabled = why == null) { onAction(RetailOrdersAction.PickSale(s.no)) }.padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.width(80.dp)) { StatusTag(s.status) }
+            Row(Modifier.width(if (ai.neargo.fnb.pos.core.designsystem.component.LocalLang.current == ai.neargo.fnb.pos.core.model.Lang.En) 150.dp else 80.dp)) { StatusTag(s.status) }
             Text(s.no, style = t.strong.num(), color = if (why == null) c.ink else c.sub, modifier = Modifier.width(72.dp))
             Text(why ?: listOfNotNull(s.channel.label, s.member).joinToString(" · "), style = t.body, color = if (why == null) c.ink else c.sub, maxLines = 1, modifier = Modifier.weight(1f))
             Text("${s.pieces} 件 · ${time(s.at)}", style = t.label.num(), color = c.sub)
@@ -268,7 +268,7 @@ private fun PickLines(state: RetailOrdersUiState, f: ReturnFlow, sale: RetailSal
         SearchField(f.query, { onAction(RetailOrdersAction.FlowQuery(it)) }, "搜商品名或条码", Modifier.fillMaxWidth())
         state.looseItems.take(12).forEach { p ->
             val q = f.pick[p.id] ?: 0
-            PickRow(p.name, "现价 ${yuan(p.price)}/件", q, 99, false, p.price * q) { onAction(RetailOrdersAction.Pick(p.id, it)) }
+            PickRow(nameOf(p), "现价 ${yuan(p.price)}/件", q, 99, false, p.price * q) { onAction(RetailOrdersAction.Pick(p.id, it)) }
         }
     }
     Row(Modifier.fillMaxWidth().clip(Pos.metrics.card).background(c.tint).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -380,7 +380,7 @@ private fun OnlineList(state: RetailOrdersUiState, onAction: (RetailOrdersAction
                     val sel = state.onlineCurrent?.no == o.no
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Pos.metrics.button).background(if (sel) c.tint else Color.Transparent)
                         .clickable { onAction(RetailOrdersAction.SelectOnline(o.no)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(Modifier.width(80.dp)) { onlineTag(o.state) }
+                        Row(Modifier.width(if (ai.neargo.fnb.pos.core.designsystem.component.LocalLang.current == ai.neargo.fnb.pos.core.model.Lang.En) 150.dp else 80.dp)) { onlineTag(o.state) }
                         Text(o.no, style = t.strong.num(), color = c.ink, modifier = Modifier.width(72.dp))
                         Text("${o.channel.label} · ${if (o.delivery) "配送" else "自提"}", style = t.body, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1)
                         Text("${o.lines.sumOf { it.qty }} 件 · ${time(o.at)}", style = t.label.num(), color = c.sub, modifier = Modifier.weight(1f))

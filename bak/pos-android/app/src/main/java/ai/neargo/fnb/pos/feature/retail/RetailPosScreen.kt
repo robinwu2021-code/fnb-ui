@@ -167,7 +167,7 @@ fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
             overlay.ids.mapNotNull { state.product(it) }.forEach { p ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(Pos.metrics.button).background(Pos.colors.tile).clickable { onAction(RetailPosAction.PickProduct(p.id)) }.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(p.name, style = Pos.type.strong, color = Pos.colors.ink, modifier = Modifier.weight(1f))
+                    Text(nameOf(p), style = Pos.type.strong, color = Pos.colors.ink, modifier = Modifier.weight(1f))
                     Text(priceText(p), style = Pos.type.strong.num(), color = Pos.colors.ink)
                 }
             }
@@ -205,7 +205,7 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                     PosChip(if (cart.member) "解除会员" else "会员", cart.member, { onAction(RetailPosAction.ToggleMember) })
                     PosButton("挂单", { onAction(RetailPosAction.Hold) }, size = BtnSize.Small, enabled = !empty)
                     PosButton(if (state.held.isEmpty()) "取单" else "取单 · ${state.held.size}", { onAction(RetailPosAction.ShowHeld) }, size = BtnSize.Small, enabled = state.held.isNotEmpty())
-                    state.bags.forEach { b -> PosButton("+ ${b.name.replace("购物袋", "袋")} ${yuan(b.price)}", { onAction(RetailPosAction.AddBag(b.id)) }, size = BtnSize.Small) }
+                    state.bags.forEach { b -> PosButton("+ ${nameOf(b).replace("购物袋", "袋")} ${yuan(b.price)}", { onAction(RetailPosAction.AddBag(b.id)) }, size = BtnSize.Small) }
                 }
             }
             state.credit?.let { cr ->
@@ -285,7 +285,7 @@ private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailP
         .clickable(enabled = !pay) { onAction(RetailPosAction.ToggleOpen(l.key)) }.padding(horizontal = 8.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(state.lineName(l), style = t.line, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(lineTitle(state, l), style = t.line, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val meta = buildList {
                     if (l.grams != null) add("${kg(l.grams)} kg × ${yuan(info.unit)}/kg") else add("${yuan(info.unit)}/件")
                     l.sku?.let { add(it) }
@@ -345,7 +345,7 @@ private fun ScanPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Uni
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PosChip("常用", cart.cat == HOT, { onAction(RetailPosAction.SelectCat(HOT)) })
-                    state.categories.forEach { cat -> PosChip(cat.name, cart.cat == cat.id, { onAction(RetailPosAction.SelectCat(cat.id)) }) }
+                    state.categories.forEach { cat -> PosChip(nameOf(cat), cart.cat == cat.id, { onAction(RetailPosAction.SelectCat(cat.id)) }) }
                 }
                 Row(Modifier.padding(start = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(2, 3, 5).forEach { n -> PosChip("× $n", cart.qty == n, { onAction(RetailPosAction.SetQty(n)) }) }
@@ -377,7 +377,7 @@ private fun ScanStrip(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                 Text("查价模式：扫码或点商品只看价格和库存，不加入购物车", style = t.label, color = c.sub)
             } else Row(strip.background(c.tile).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text(p.name, style = t.strong, color = c.ink, maxLines = 1)
+                    Text(nameOf(p), style = t.strong, color = c.ink, maxLines = 1)
                     val r = p.retail
                     Text(listOfNotNull(r?.barcodes?.firstOrNull(), r?.promo?.label, r?.memberPrice?.let { "会员价 ${yuan(it)}" }).joinToString(" · "), style = t.label.num(), color = c.sub)
                 }
@@ -390,7 +390,7 @@ private fun ScanStrip(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
             val l = state.last!!
             Row(strip.background(c.tile).padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("刚扫", style = t.label, color = c.sub)
-                Text(state.lineName(l), style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(lineTitle(state, l), style = t.strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 Text(if (l.grams != null) "${kg(l.grams)} kg" else "× ${l.qty}", style = t.body.num(), color = c.ink)
                 Text(yuan(state.lineAmount(l)), style = t.strong.num(), color = c.ink)
                 Spacer(Modifier.weight(1f))
@@ -415,7 +415,7 @@ private fun ItemTile(state: RetailPosUiState, p: Product, onAction: (RetailPosAc
     Box(Modifier.fillMaxWidth().height(96.dp).clip(Pos.metrics.card).background(if (inCart > 0) c.tint else c.tile)
         .clickable(enabled = !out) { onAction(RetailPosAction.Tap(p.id)) }.semantics { contentDescription = p.name }.padding(10.dp)) {
         Column(Modifier.fillMaxSize()) {
-            Text(p.name, style = t.strong, color = if (out) c.sub else c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(nameOf(p), style = t.strong, color = if (out) c.sub else c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (weigh) Icon(Icons.Rounded.Scale, null, tint = c.sub, modifier = Modifier.size(12.dp))
                 Text(when { weigh -> "PLU"; p.hasSpec -> "多规格"; else -> p.retail?.barcodes?.firstOrNull()?.takeLast(6).orEmpty() }, style = t.label.num(), color = c.sub)
@@ -494,7 +494,7 @@ private fun WeighDialog(p: Product, grams: Int, onAction: (RetailPosAction) -> U
     var input by remember(p.id) { mutableStateOf(if (grams > 0) kg(grams) else "") }
     val w = parseKg(input) ?: grams
     val amount = Money.roundHalfUp(p.price * w, 1000)
-    PosDialog("称重 · ${p.name}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)}/kg · ${p.retail?.barcodes?.firstOrNull().orEmpty()}", footer = {
+    PosDialog("称重 · ${nameOf(p)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)}/kg · ${p.retail?.barcodes?.firstOrNull().orEmpty()}", footer = {
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         PosButton("加入 ${yuan(amount)}", { onAction(RetailPosAction.AddWeighed(p.id, w)) }, variant = BtnVariant.Primary, enabled = w > 0)
     }) {
@@ -519,7 +519,7 @@ private fun SkuDialog(state: RetailPosUiState, p: Product, onAction: (RetailPosA
     val groups = state.groupsOf(p)
     val rows = groups.firstOrNull()?.options.orEmpty()
     val cols = groups.getOrNull(1)?.options
-    PosDialog("选规格 · ${p.name}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)} · 点一格加入，数字是库存", maxWidth = 640.dp, footer = {
+    PosDialog("选规格 · ${nameOf(p)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "${yuan(p.price)} · 点一格加入，数字是库存", maxWidth = 640.dp, footer = {
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         PosButton(pick?.let { "加入 $it" } ?: "请选择规格", { pick?.let { onAction(RetailPosAction.AddSku(p.id, it)) } }, variant = BtnVariant.Primary, enabled = pick != null)
     }) {
@@ -644,7 +644,7 @@ private fun RepriceDialog(state: RetailPosUiState, l: CartLine, onAction: (Retai
     var who by remember { mutableStateOf("") }; var secret by remember { mutableStateOf("") }
     val fen = CashRules.amount(text)
     val per = if (l.grams != null) "/kg" else "/件"
-    PosDialog("改价 · ${state.lineName(l)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "原价 ${yuan(orig)}$per；改过价的行不再叠加促销和会员价", footer = {
+    PosDialog("改价 · ${lineTitle(state, l)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "原价 ${yuan(orig)}$per；改过价的行不再叠加促销和会员价", footer = {
         if (l.price != null) PosButton("恢复原价", { onAction(RetailPosAction.Reprice(l.key, null, "", "")) }, variant = BtnVariant.Text)
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         PosButton("确认改价", { onAction(RetailPosAction.Reprice(l.key, fen, who, secret)) }, variant = BtnVariant.Primary,
@@ -658,7 +658,7 @@ private fun RepriceDialog(state: RetailPosUiState, l: CartLine, onAction: (Retai
 @Composable
 private fun NoteDialog(state: RetailPosUiState, l: CartLine, onAction: (RetailPosAction) -> Unit) {
     var text by remember(l.key) { mutableStateOf(l.note.orEmpty()) }
-    PosDialog("备注 · ${state.lineName(l)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "打到小票上，最多 30 字", footer = {
+    PosDialog("备注 · ${lineTitle(state, l)}", { onAction(RetailPosAction.Dismiss) }, subtitle = "打到小票上，最多 30 字", footer = {
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         PosButton("保存", { onAction(RetailPosAction.SetNote(l.key, text)) }, variant = BtnVariant.Primary)
     }) {

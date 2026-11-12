@@ -88,7 +88,7 @@ fun ColumnScope.RetailSettingsPage(store: StoreData) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
                 store.categories.forEach { cat ->
                     val on = cat.id in d.restrictCats
-                    PosChip(cat.name, on, { d = d.copy(restrictCats = if (on) d.restrictCats - cat.id else d.restrictCats + cat.id) })
+                    PosChip(nameOf(cat), on, { d = d.copy(restrictCats = if (on) d.restrictCats - cat.id else d.restrictCats + cat.id) })
                 }
             }
         }
@@ -99,7 +99,7 @@ fun ColumnScope.RetailSettingsPage(store: StoreData) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
                 candidates.forEach { p ->
                     val on = p.id in d.bagIds
-                    PosChip("${p.name} ${yuan(p.price)}", on, { d = d.copy(bagIds = if (on) d.bagIds - p.id else d.bagIds + p.id) })
+                    PosChip("${nameOf(p)} ${yuan(p.price)}", on, { d = d.copy(bagIds = if (on) d.bagIds - p.id else d.bagIds + p.id) })
                 }
             }
         }
