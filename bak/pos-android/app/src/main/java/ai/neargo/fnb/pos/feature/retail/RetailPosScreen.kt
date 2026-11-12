@@ -96,7 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun RetailPosRoute() {
-    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages, c.staff, c.ops) }
+    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages, c.staff, c.ops, c.cartDrafts) }
     val state by vm.state.collectAsStateWithLifecycle()
     val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
     CustomerSync(state)

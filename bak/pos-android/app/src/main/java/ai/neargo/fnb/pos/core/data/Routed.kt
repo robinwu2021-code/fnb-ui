@@ -1,6 +1,7 @@
 package ai.neargo.fnb.pos.core.data
 
 import ai.neargo.fnb.pos.core.lan.IntentResult
+import kotlinx.coroutines.flow.stateIn
 import ai.neargo.fnb.pos.core.lan.LanLink
 import ai.neargo.fnb.pos.core.lan.RemoteIntent
 import ai.neargo.fnb.pos.core.lan.RemoteIntent as I
@@ -18,6 +19,16 @@ import ai.neargo.fnb.pos.core.model.TableOrder
  * 副机的营业写入转为意图交主机仲裁，管理/库存/交班/打印仅主 POS 可执行。单机或主机时直接调用本机仓库。
  */
 private const val HOST_ONLY = "仅主 POS 可执行此操作"
+const val HOST_DOWN = "主 POS 未连接，本机只读"
+
+/** 设备状态加上主副 POS 连接：副 POS 连不上主机时标记只读，确认收款等按钮直接显示原因（不用等点了才弹提示） */
+class RoutedDevice(private val base: DeviceRepository, lan: kotlinx.coroutines.flow.StateFlow<LanState>, link: kotlinx.coroutines.flow.StateFlow<ai.neargo.fnb.pos.core.lan.LinkStatus>,
+                   scope: kotlinx.coroutines.CoroutineScope) : DeviceRepository by base {
+    override val status = kotlinx.coroutines.flow.combine(base.status, lan, link) { d, l, k -> d.copy(readOnly = readOnlyReason(l.role, k.connected)) }
+        .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, base.status.value.copy(readOnly = readOnlyReason(lan.value.role, link.value.connected)))
+}
+
+fun readOnlyReason(role: LanRole, connected: Boolean): String? = if (role == LanRole.Secondary && !connected) HOST_DOWN else null
 
 private fun IntentResult.unit(): Result<Unit> = if (ok) Result.success(Unit) else Result.failure(IllegalStateException(message))
 

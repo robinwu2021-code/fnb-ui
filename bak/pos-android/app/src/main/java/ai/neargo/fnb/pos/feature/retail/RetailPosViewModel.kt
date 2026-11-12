@@ -20,6 +20,12 @@ import ai.neargo.fnb.pos.core.model.fenToInput
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -91,6 +97,8 @@ data class RetailPosUiState(
     val members: List<ai.neargo.fnb.pos.core.model.Member> = emptyList(),
     /** 今天按临期折扣卖的商品 */
     val expiryOff: Set<String> = emptySet(),
+    /** 副 POS 连不上主机：只读原因 */
+    val readOnly: String? = null,
 ) {
     val memberRec get() = members.firstOrNull { it.id == cart.memberId }
     /** 现在能用的活动（门槛满足的才算进去） */
@@ -111,6 +119,7 @@ data class RetailPosUiState(
     /** 当前所选方式不能确认的原因；null = 可以确认 */
     val block: String? get() = when {
         cart.lines.isEmpty() && credit == null -> "购物车是空的"
+        readOnly != null -> readOnly
         settleOnly -> null
         cart.method == null -> "请选择收款方式"
         cart.method == "现金" && (CashRules.amount(cart.cash) ?: 0) < payDue -> "实收不足"
@@ -188,9 +197,25 @@ class RetailPosViewModel(
     private val messages: MessageBus,
     private val staff: ai.neargo.fnb.pos.core.data.StaffRepository? = null,
     private val ops: ai.neargo.fnb.pos.core.data.OperationsRepository? = null,
+    private val drafts: ai.neargo.fnb.pos.core.data.CartDraftStore? = null,
 ) : ViewModel() {
     private val cart = MutableStateFlow(CartState())
     private var seq = System.currentTimeMillis()
+
+    init {
+        // 本机购物车草稿：进来先恢复上次没收完的（App 被杀、重启也不丢），之后每次变动存一份
+        if (drafts != null) viewModelScope.launch {
+            val storeId = config.current.mapNotNull { it?.id }.first()
+            runCatching { drafts.load(storeId) }.getOrNull()?.takeIf { it.lines.isNotEmpty() && cart.value.lines.isEmpty() }?.let { d ->
+                seq = maxOf(seq, (d.lines.maxOfOrNull { it.key } ?: 0) + 1)
+                set { it.copy(lines = d.lines, member = d.member, memberId = d.memberId, discountPct = d.discountPct, promoIds = d.promoIds, approver = d.approver, last = d.lines.lastOrNull()?.key) }
+                messages.post("已恢复上次未收完的购物车（${d.lines.sumOf { if (it.grams != null) 1 else it.qty }} 件）")
+            }
+            cart.map { ai.neargo.fnb.pos.core.data.CartDraft(it.lines, it.member, it.memberId, it.discountPct, it.promoIds, it.approver) }
+                .distinctUntilChanged().drop(1)
+                .collect { runCatching { drafts.save(storeId, it) } }
+        }
+    }
 
     private val perms = staff?.staff ?: kotlinx.coroutines.flow.MutableStateFlow(ai.neargo.fnb.pos.core.data.StaffState())
     val state: StateFlow<RetailPosUiState> = combine(config.current, cart, device.status, perms) { store, c, d, st ->
@@ -201,7 +226,7 @@ class RetailPosViewModel(
             cart = c, products = products,
             categories = store.categories.filter { cat -> products.any { it.categoryId == cat.id } },
             specGroups = store.specGroups, held = store.retail.held, nextNo = "#R%04d".format(store.retail.saleSeq),
-            payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.members.firstOrNull { it.id == c.memberId }?.balance ?: store.walletBalance, online = d.online,
+            payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.members.firstOrNull { it.id == c.memberId }?.balance ?: store.walletBalance, online = d.online, readOnly = d.readOnly,
             members = store.members,
             expiryOff = products.filter { p -> store.products.firstOrNull { it.id == p.id }?.price != p.price }.map { it.id }.toSet(),
             totals = RetailCheckout.totalsWith(products, store.promotions, c.lines, c.member,

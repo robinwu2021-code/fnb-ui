@@ -469,6 +469,8 @@ data class DeviceStatus(
     val network: Boolean = true,
     val forceOffline: Boolean = false,
     val printerOk: Boolean = true,
+    /** 本机不能写营业数据的原因（副 POS 连不上主 POS）；null = 可以写。两业态的确认按钮都看它 */
+    val readOnly: String? = null,
 ) {
     val online get() = network && !forceOffline
 }

@@ -88,7 +88,9 @@ class AppContainer(context: Context) {
     /** 零售（R3 起）：先只走本机；副 POS 经主机仲裁放在后面做。 */
     val retail: RetailRepository = RoutedRetail(workspace, lanLink)
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
-    val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
+    /** 收银台购物车草稿（本机） */
+    val cartDrafts: CartDraftStore = DataStoreCartDrafts(dataStore)
+    val device: DeviceRepository = RoutedDevice(NetworkDevice(context.applicationContext, appScope), workspace.lanState, lanLink.status, appScope)
     val messages: MessageBus = SimpleMessageBus()
     /** 本机图片库：商品图片选择后复制到应用私有目录。 */
     val media = LocalMedia(context.applicationContext)
@@ -182,6 +184,17 @@ private class DataStoreSnapshot(private val ds: DataStore<Preferences>) : Snapsh
     /** 旧 DataStore 只用于一次性导入，不能承载命令事务。 */
     override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt =
         throw UnsupportedOperationException("旧版存储不支持命令事务")
+}
+
+/** 购物车草稿存在本机偏好里（按门店一个键，JSON） */
+private class DataStoreCartDrafts(private val ds: DataStore<Preferences>) : CartDraftStore {
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+    private fun key(storeId: String) = stringPreferencesKey("cart_draft_$storeId")
+    override suspend fun load(storeId: String): CartDraft? =
+        ds.data.first()[key(storeId)]?.let { runCatching { json.decodeFromString(CartDraft.serializer(), it) }.getOrNull() }
+    override suspend fun save(storeId: String, draft: CartDraft?) {
+        ds.edit { if (draft == null || draft.lines.isEmpty()) it.remove(key(storeId)) else it[key(storeId)] = json.encodeToString(CartDraft.serializer(), draft) }
+    }
 }
 
 private class DataStorePreferences(private val ds: DataStore<Preferences>) : PreferencesRepository {
