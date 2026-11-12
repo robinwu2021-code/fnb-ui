@@ -1,0 +1,182 @@
+package ai.neargo.fnb.pos.core.cloud
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.Serializable
+
+/** 本机保存的云端连接设置（每台设备一份；门店号 = 服务端 storeNo） */
+@Serializable data class CloudSettings(val baseUrl: String = "", val storeNo: String = "", val token: String = "") {
+    val configured get() = baseUrl.isNotBlank() && storeNo.isNotBlank()
+}
+
+interface CloudSettingsStore {
+    fun load(): CloudSettings
+    fun save(settings: CloudSettings)
+}
+
+/** 页面展示用的云端状态 */
+data class CloudState(
+    val settings: CloudSettings = CloudSettings(),
+    val health: CloudHealth = CloudHealth(),
+    val badge: CloudBadge = CloudBadge.NotConfigured,
+    val uploader: Boolean = true,
+    val pending: Int = 0,
+    val issues: List<CloudIssue> = emptyList(),
+    val lastRound: SyncRound? = null,
+    val lastSyncAt: Long = 0,
+    val businessDate: String = "",
+)
+
+/**
+ * 云端连通与同步循环（方案 §2–§6）：
+ * - 只有主 POS / 单机连云（`uploader`）；副 POS 显示「经主 POS」。
+ * - 系统无网络或强制离线：立即离线，不探测。
+ * - 有网：按 [CloudHealth.nextProbeMs] 探测 `/store/info`；判为在线且有待上传时回放一轮。
+ * - 网络恢复、新事件、手动「立即同步」会提前唤醒。
+ */
+class CloudMonitor(
+    private val settingsStore: CloudSettingsStore,
+    private val api: CloudApi,
+    /** 当前本机门店 id；未进店为 null */
+    private val storeId: () -> String?,
+    /** 按「本机门店@服务端门店」取映射表（换门店或换服务端门店不串号） */
+    private val refsFor: (scope: String) -> CloudRefs,
+    private val events: EventSource,
+    private val network: Flow<Boolean>,
+    private val uploader: Flow<Boolean>,
+    private val pending: Flow<Int>,
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** 一轮上传后（ack 改了待上传数）刷新统计 */
+    private val afterRound: suspend () -> Unit = {},
+) {
+    private val s = MutableStateFlow(CloudState(settings = settingsStore.load()))
+    val state: StateFlow<CloudState> = s.asStateFlow()
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val roundLock = Mutex()
+    @Volatile private var netUp = false
+
+    fun start(scope: CoroutineScope) {
+        observe(scope)
+        scope.launch { while (true) { tick(); withTimeoutOrNull(delayMs()) { wake.receive() } } }
+    }
+
+    /** 只跟踪网络、角色、待上传数（测试里手动 tick） */
+    internal fun observe(scope: CoroutineScope) {
+        scope.launch {
+            combine(network, uploader, pending) { n, u, p -> Triple(n, u, p) }.distinctUntilChanged().collect { (n, u, p) ->
+                val wasUp = netUp; netUp = n
+                s.update { it.copy(uploader = u, pending = p).withBadge() }
+                if (n && !wasUp) s.update { it.copy(health = it.health.copy(failStreak = 0)) }
+                wake.trySend(Unit)
+            }
+        }
+    }
+
+    private fun delayMs(): Long = s.value.let { st ->
+        when {
+            !st.settings.configured || !st.uploader -> 60_000
+            !netUp -> 60_000                      // 等系统网络恢复事件唤醒
+            else -> st.health.nextProbeMs()
+        }
+    }
+
+    /** 一次探测；在线且有待上传则回放。供循环和测试调用。 */
+    suspend fun tick() {
+        val st = s.value
+        if (!st.settings.configured || !st.uploader) { s.update { it.withBadge() }; return }
+        if (!netUp) { s.update { it.copy(health = it.health.forceOffline("本机无网络或已强制离线")).withBadge() }; return }
+        val probe = runCatching { api.storeInfo(st.settings.storeNo) }
+        probe.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        s.update { cur ->
+            val h = probe.fold({ cur.health.success() }, { e ->
+                // 门店号或令牌错误：属于配置问题，直接判离线并显示原因
+                if (e is CloudException && e.kind != CloudErrorKind.Network) cur.health.forceOffline(e.message.orEmpty()) else cur.health.failure(e.message ?: "连接失败")
+            })
+            cur.copy(health = h, businessDate = probe.getOrNull()?.businessDate ?: cur.businessDate).withBadge()
+        }
+        if (s.value.health.online && s.value.pending > 0) runRound()
+    }
+
+    /** 手动「立即同步」：不等防抖，直接探测并回放 */
+    suspend fun syncNow(): Result<SyncRound> {
+        val st = s.value
+        if (!st.settings.configured) return Result.failure(IllegalStateException("尚未设置云端地址和门店号"))
+        if (!st.uploader) return Result.failure(IllegalStateException("副 POS 由主 POS 上传云端"))
+        if (!netUp) return Result.failure(IllegalStateException("当前离线，联网后自动上传"))
+        return runCatching { runRound() }.onFailure { if (it is CancellationException) throw it }
+    }
+
+    /** 测试连接：用当前填写（未保存）的设置调一次门店信息 */
+    suspend fun test(settings: CloudSettings, probe: suspend (CloudSettings) -> CloudStoreInfo): Result<CloudStoreInfo> =
+        runCatching { probe(settings) }.onFailure { if (it is CancellationException) throw it }
+
+    fun configure(settings: CloudSettings) {
+        val clean = settings.copy(baseUrl = settings.baseUrl.trim().trimEnd('/'), storeNo = settings.storeNo.trim(), token = settings.token.trim())
+        settingsStore.save(clean)
+        s.update { it.copy(settings = clean, health = CloudHealth(), issues = issuesOf(clean)).withBadge() }
+        wake.trySend(Unit)
+    }
+
+    /** 需处理 · 重试：人工确认原因已排除（如后台已空出桌台），换新的尝试键重传；该聚合解除阻塞 */
+    fun retry(eventId: String) {
+        val r = refs() ?: return
+        val n = (r.get("attempt", eventId)?.remoteNo?.toIntOrNull() ?: 0) + 1
+        r.put(CloudRef("attempt", eventId, n.toString())); r.resolve(eventId)
+        s.update { it.copy(issues = issuesOf(it.settings)).withBadge() }
+        wake.trySend(Unit)
+    }
+
+    /** 需处理 · 跳过：人工已在后台处理，这条不再上传（本机标记为已处理）；该聚合后续事件继续 */
+    suspend fun skip(eventId: String) {
+        val id = storeId() ?: return
+        events.ack(id, eventId); refs()?.resolve(eventId)
+        s.update { it.copy(issues = issuesOf(it.settings)).withBadge() }
+        runCatching { afterRound() }
+        wake.trySend(Unit)
+    }
+
+    fun nudge() { wake.trySend(Unit) }
+
+    private fun scopeKey(st: CloudSettings) = storeId()?.let { "$it@${st.storeNo}" }
+    private fun refs() = scopeKey(s.value.settings)?.let(refsFor)
+    private fun issuesOf(st: CloudSettings) = scopeKey(st)?.let { refsFor(it).issues() }.orEmpty()
+
+    private suspend fun runRound(): SyncRound = roundLock.withLock {
+        val st = s.value.settings
+        val id = storeId() ?: throw IllegalStateException("未进入门店")
+        val refs = refsFor("$id@${st.storeNo}")
+        val r = CloudSync(api, refs, events, clock).run(id, st.storeNo) { done, total ->
+            if (total > 0) s.update { it.copy(badge = CloudBadge.Syncing(done, total)) }
+        }
+        s.update { cur ->
+            val h = when (r.stoppedBy?.kind) {
+                CloudErrorKind.Network -> cur.health.failure(r.stoppedBy.message.orEmpty())
+                CloudErrorKind.Unauthorized -> cur.health.forceOffline(r.stoppedBy.message.orEmpty())
+                else -> cur.health
+            }
+            cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues()).withBadge()
+        }
+        if (r.uploaded > 0) runCatching { afterRound() }
+        r
+    }
+
+    private fun CloudState.withBadge(): CloudState = copy(badge = when {
+        !uploader -> CloudBadge.ViaHost
+        !settings.configured -> CloudBadge.NotConfigured
+        issues.isNotEmpty() -> CloudBadge.NeedsAction(issues.size)
+        health.online -> CloudBadge.Online(pending)
+        else -> CloudBadge.Offline(pending, health.lastError)
+    })
+}

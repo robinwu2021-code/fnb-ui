@@ -72,6 +72,7 @@ import androidx.compose.material.icons.outlined.RoomService
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PointOfSale
@@ -129,14 +130,16 @@ data class ShellUiState(
     val pending: Int = 0, val stores: List<StoreSummary> = emptyList(),
     /** 云端待上传事件数、厨房待处理（失败/未知）数。 */
     val cloudPending: Int = 0, val kitchenAction: Int = 0,
+    /** 云端四态（未设置 / 在线 / 离线 / 同步中 / 需处理；副 POS 为经主 POS） */
+    val cloud: ai.neargo.fnb.pos.core.cloud.CloudBadge = ai.neargo.fnb.pos.core.cloud.CloudBadge.NotConfigured,
 )
 
 /** 应用壳 ViewModel：会话、设备状态、显示偏好（主题）。 */
 class ShellViewModel(private val session: SessionRepository, device: DeviceRepository, private val prefs: PreferencesRepository, sync: SyncRepository, val messages: MessageBus,
-    status: ai.neargo.fnb.pos.core.data.SyncStatusRepository) : ViewModel() {
-    private val endpoints = combine(status.stats, sync.deliveryGroups) { st, dl -> st.unackedEvents to dl.count { it.needsAction } }
+    status: ai.neargo.fnb.pos.core.data.SyncStatusRepository, cloud: kotlinx.coroutines.flow.Flow<ai.neargo.fnb.pos.core.cloud.CloudBadge> = kotlinx.coroutines.flow.flowOf(ai.neargo.fnb.pos.core.cloud.CloudBadge.NotConfigured)) : ViewModel() {
+    private val endpoints = combine(status.stats, sync.deliveryGroups, cloud) { st, dl, c -> Triple(st.unackedEvents, dl.count { it.needsAction }, c) }
     val state = combine(session.session, device.status, prefs.prefs, sync.pendingCount, combine(session.stores, endpoints) { a, b -> a to b }) { s, d, p, n, (st, e) ->
-        ShellUiState(s, d, p, n, st, e.first, e.second)
+        ShellUiState(s, d, p, n, st, e.first, e.second, e.third)
     }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ShellUiState())
     fun selectStore(id: String) = viewModelScope.launchStorage(messages) { session.selectStore(id) }
@@ -218,7 +221,7 @@ fun PosApp(shell: ShellViewModel) {
         val layout = PosLayout(maxWidth)
         CompositionLocalProvider(LocalPosLayout provides layout) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, dining = profile.tables, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
+                val actions = HeaderActions(state.device, state.pending, notice, state.cloudPending, state.kitchenAction, cloud = state.cloud, onShift = { nav.goTop(ShiftRoute) }, onPrint = { nav.goTop(PrintRoute) }, onServe = { nav.goTop(ai.neargo.fnb.pos.navigation.ServeRoute) }, dining = profile.tables, onReports = { nav.goTop(ai.neargo.fnb.pos.navigation.ReportsRoute) }, perms = staffState.perms, staffMode = staffState.required,
                     onLock = { lockScope.launch { container.staff.signOutStaff() } }, onDisplay = { displayOpen = true }, onSync = { nav.goTop(SyncRoute) }, onStore = { pickingStore = true }, onLang = shell::toggleLang,
                     onDrawer = { lockScope.launch { container.retail.openDrawer().onSuccess { shell.messages.post("已发送开钱箱指令") }.onFailure { shell.messages.post(it.message ?: "开钱箱失败") } } })
                 if (layout.wide) Header(session, current, go, onManage, actions)
@@ -320,6 +323,7 @@ private fun WorkNav(current: TopLevel, onNavigate: (TopLevel) -> Unit, onManage:
 /** 页头右侧操作：原页头（消息 / 打印 / 语言 / 显示）与原页脚（在线 / 钱箱 / 交班 / 帮助）合并，统一为图标。 */
 private class HeaderActions(
     val device: DeviceStatus, val pending: Int, val notice: (String) -> Unit, val cloudPending: Int, val kitchenAction: Int,
+    val cloud: ai.neargo.fnb.pos.core.cloud.CloudBadge = ai.neargo.fnb.pos.core.cloud.CloudBadge.NotConfigured,
     val onShift: () -> Unit, val onPrint: () -> Unit, val onServe: () -> Unit, val onReports: () -> Unit,
     /** 出菜（厨房）只在餐饮门店有 */
     val dining: Boolean = true,
@@ -386,21 +390,30 @@ private fun CompactHeader(session: Session, actions: HeaderActions) {
     }
 }
 
-/** 在线 / 同步状态：在线为主色云勾，离线为警示色云叉；点按说明详情。 */
+/**
+ * 在线 / 云端状态四态（方案 §6）：在线 = 云勾、离线 = 云叉、同步中 = 云转圈、需处理 = 云叉红点；未设置云端为灰。
+ * 网络在线不等于已同步：说明里分别写网络、厨房、云端。
+ */
 @Composable
 private fun StatusIcon(a: HeaderActions) {
     val online = a.device.online
-    // N3：网络在线不等于已同步；厨房与云端分别说明，不出现「数据已同步」
+    val c = Pos.colors
+    val (icon, cloudText, tint) = when (val b = a.cloud) {
+        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Online -> Triple(Icons.Outlined.CloudDone, if (b.pending > 0) "云端在线 · 待上传 ${b.pending} 条" else "云端在线 · 已全部上传", c.primary)
+        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Syncing -> Triple(Icons.Outlined.CloudSync, "正在上传云端 ${b.done}/${b.total}", c.primary)
+        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Offline -> Triple(Icons.Outlined.CloudOff, "云端离线 · ${b.pending} 条在本机" + (if (b.reason.isNotBlank()) "（${b.reason}）" else ""), c.warning)
+        is ai.neargo.fnb.pos.core.cloud.CloudBadge.NeedsAction -> Triple(Icons.Outlined.CloudOff, "云端 ${b.count} 条需处理", c.danger)
+        ai.neargo.fnb.pos.core.cloud.CloudBadge.ViaHost -> Triple(if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, "副 POS · 云端由主 POS 上传", if (online) c.primary else c.warning)
+        ai.neargo.fnb.pos.core.cloud.CloudBadge.NotConfigured -> Triple(if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, "云端未设置 · ${a.cloudPending} 条事件在本机", if (online) c.primary else c.warning)
+    }
     val parts = buildList {
         add(if (online) "网络在线" else "离线 · 厨房单本机照常出单")
         if (a.kitchenAction > 0) add("厨房 ${a.kitchenAction} 张待处理")
-        add(if (ai.neargo.fnb.pos.core.data.CloudLink.CONNECTED) "云端待上传 ${a.cloudPending} 条" else "云端未接入 · ${a.cloudPending} 条事件在本机")
+        add(cloudText)
     }
-    val attention = a.kitchenAction + a.pending
-    ToolIcon(
-        if (online) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff, parts.joinToString(" · "),
-        badge = attention.takeIf { it > 0 }, tint = if (online && a.kitchenAction == 0) Pos.colors.primary else Pos.colors.warning, onClick = a.onSync,
-    )
+    val needs = (a.cloud as? ai.neargo.fnb.pos.core.cloud.CloudBadge.NeedsAction)?.count ?: 0
+    val attention = a.kitchenAction + a.pending + needs
+    ToolIcon(icon, parts.joinToString(" · "), badge = attention.takeIf { it > 0 }, tint = if (a.kitchenAction > 0 && tint == c.primary) c.warning else tint, dot = needs > 0, onClick = a.onSync)
 }
 
 /** 打印机：正常为默认色，缺纸为危险色并带圆点。 */

@@ -53,6 +53,8 @@ internal class SqliteSnapshotStore(private val context: Context, private val nam
         }
     }
     val journal = CommandJournal({ helper.writableDatabase })
+    /** 云端映射表等附属表用同一个库文件 */
+    fun writable(): SQLiteDatabase = helper.writableDatabase
     val commandOutbox = CommandOutbox { helper.writableDatabase }
 
     /** 迁移记录（版本、时间、说明），用于恢复页显示。 */

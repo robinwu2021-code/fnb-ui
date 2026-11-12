@@ -98,12 +98,36 @@ class AppContainer(context: Context) {
     val media = LocalMedia(context.applicationContext)
     /** 运行期能力：第一期全离线（线上平台订单、云同步关闭） */
     val runtime = ai.neargo.fnb.pos.core.model.RuntimeProfile.Phase1Offline
+
+    /** 云端（服务端 POS 合同）：只有主 POS / 单机上传；地址与门店号在同步中心设置 */
+    private val cloudSettings = ai.neargo.fnb.pos.core.cloud.PrefsCloudSettings(context.applicationContext)
+    val cloudApi = ai.neargo.fnb.pos.core.cloud.HttpCloudApi({
+        val st = cloudSettings.load(); ai.neargo.fnb.pos.core.cloud.CloudConfig(st.baseUrl, st.storeNo, st.token, workspace::staffIdOnDuty)
+    })
+    val cloud = ai.neargo.fnb.pos.core.cloud.CloudMonitor(
+        cloudSettings, cloudApi,
+        storeId = { workspace.current.value?.id },
+        refsFor = { scope -> ai.neargo.fnb.pos.core.cloud.SqliteCloudRefs(database::writable, scope) },
+        events = object : ai.neargo.fnb.pos.core.cloud.EventSource {
+            override suspend fun pending(storeId: String, limit: Int) = database.journal.pending(storeId, limit)
+            override suspend fun ack(storeId: String, eventId: String) { database.journal.ack(storeId, eventId) }
+        },
+        network = device.status.map { it.online },
+        uploader = workspace.lanState.map { it.role != LanRole.Secondary },
+        pending = syncStatus.stats.map { it.unackedEvents },
+        afterRound = { syncStatus.refresh() },
+    )
+    /** 用填写中的设置测连接（不保存） */
+    suspend fun testCloud(st: ai.neargo.fnb.pos.core.cloud.CloudSettings) = cloud.test(st) {
+        ai.neargo.fnb.pos.core.cloud.HttpCloudApi({ ai.neargo.fnb.pos.core.cloud.CloudConfig(it.baseUrl.trim().trimEnd('/'), it.storeNo.trim(), it.token.trim()) }).storeInfo(it.storeNo.trim())
+    }
     /** 本机电子秤（零售称重）：按本机偏好里的地址连接 */
     val scale = ai.neargo.fnb.pos.core.hardware.NetworkScale(appScope)
 
     init {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
+        cloud.start(appScope)
         if (workspace.lanState.value.role == LanRole.Host) appScope.launch(Dispatchers.IO) { runCatching { lanHost.start() }.onFailure { messages.post("主 POS 服务启动失败：${it.message}") } }
         lanLink.start()
         appScope.launch { prefs.prefs.collect { p -> scale.configure(p.scaleHost, p.scalePort, p.scalePoll, if (p.scaleGrams) ai.neargo.fnb.pos.core.model.ScaleRules.Unit.G else ai.neargo.fnb.pos.core.model.ScaleRules.Unit.Kg) } }

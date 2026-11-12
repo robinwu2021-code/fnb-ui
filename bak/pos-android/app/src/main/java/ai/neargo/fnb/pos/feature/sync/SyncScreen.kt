@@ -1,7 +1,11 @@
 package ai.neargo.fnb.pos.feature.sync
 
 import ai.neargo.fnb.pos.app.posViewModel
-import ai.neargo.fnb.pos.core.data.CloudLink
+import ai.neargo.fnb.pos.core.cloud.CloudBadge
+import ai.neargo.fnb.pos.core.cloud.CloudMonitor
+import ai.neargo.fnb.pos.core.cloud.CloudSettings
+import ai.neargo.fnb.pos.core.cloud.CloudState
+import ai.neargo.fnb.pos.core.cloud.CloudStoreInfo
 import ai.neargo.fnb.pos.core.data.CommandStats
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -70,6 +74,7 @@ enum class SyncTab(val label: String) { Kitchen("厨房任务"), Cloud("云事�
 data class SyncUiState(
     val items: List<OutboxItem> = emptyList(), val pending: Int = 0, val device: DeviceStatus = DeviceStatus(),
     val deliveries: List<TicketDelivery> = emptyList(), val payments: List<PaymentRecord> = emptyList(), val stats: CommandStats = CommandStats(),
+    val cloud: CloudState = CloudState(),
 ) {
     val kitchenAction get() = deliveries.count { it.needsAction }
     val kitchenPending get() = deliveries.count { g -> !g.needsAction && !g.cancelled && g.records.any { it.state == DeliveryState.Pending && it.supersededBy.isBlank() } }
@@ -78,9 +83,11 @@ data class SyncUiState(
 class SyncViewModel(
     private val sync: SyncRepository, private val device: DeviceRepository, config: StoreConfigRepository,
     private val status: SyncStatusRepository, private val messages: MessageBus,
+    private val cloud: CloudMonitor? = null, private val probe: suspend (CloudSettings) -> Result<CloudStoreInfo> = { Result.failure(IllegalStateException("未接入")) },
 ) : ViewModel() {
-    val state = combine(sync.outbox, sync.pendingCount, device.status, sync.deliveryGroups, combine(config.current, status.stats) { s, st -> s to st }) { o, p, d, dl, (s, st) ->
-        SyncUiState(o, p, d, dl, s?.payments.orEmpty().sortedByDescending { it.at }, st)
+    private val cloudState = cloud?.state ?: kotlinx.coroutines.flow.flowOf(CloudState())
+    val state = combine(sync.outbox, sync.pendingCount, device.status, sync.deliveryGroups, combine(config.current, status.stats, cloudState) { s, st, cs -> Triple(s, st, cs) }) { o, p, d, dl, (s, st, cs) ->
+        SyncUiState(o, p, d, dl, s?.payments.orEmpty().sortedByDescending { it.at }, st, cs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SyncUiState())
 
     init { viewModelScope.launch { status.refresh() } }
@@ -91,6 +98,24 @@ class SyncViewModel(
         val n = sync.syncNow()
         messages.post(if (n > 0) "已模拟补发 $n 项（未接入云端）" else "没有待补发的演示队列")
     }
+
+    /** 云端：立即上传一轮（不等探测防抖） */
+    fun cloudSync() = viewModelScope.launch {
+        val m = cloud ?: return@launch
+        m.syncNow().onSuccess { r ->
+            messages.post(when {
+                r.stoppedBy != null -> "上传中断：${r.stoppedBy.message}（已上传 ${r.uploaded} 条，其余保留在本机）"
+                r.issues > 0 -> "已上传 ${r.uploaded} 条，${r.issues} 条需处理"
+                else -> "已上传 ${r.uploaded} 条" + if (r.waiting > 0) "，${r.waiting} 条等服务端接口" else ""
+            })
+        }.onFailure { messages.post(it.message ?: "同步失败") }
+    }
+    fun cloudTest(st: CloudSettings, done: (String) -> Unit) = viewModelScope.launch {
+        probe(st).onSuccess { done("连接成功：${it.store.name}（营业日 ${it.businessDate}）") }.onFailure { done("连接失败：${it.message}") }
+    }
+    fun cloudSave(st: CloudSettings) { cloud?.configure(st); messages.post(if (st.baseUrl.isBlank()) "已关闭云端上传" else "已保存云端设置") }
+    fun cloudRetry(eventId: String) { cloud?.retry(eventId); messages.post("已重新排队上传") }
+    fun cloudSkip(eventId: String) = viewModelScope.launch { cloud?.skip(eventId); messages.post("已跳过，这条不再上传；该订单后续事件继续") }
 
     fun confirm(ticketId: String, reason: String, done: (String?) -> Unit) = viewModelScope.launchStorage(messages) {
         val r = sync.confirmDelivery(ticketId, reason)
@@ -105,9 +130,9 @@ class SyncViewModel(
 
 @Composable
 fun SyncRoute() {
-    val vm = posViewModel { c, _ -> SyncViewModel(c.sync, c.device, c.config, c.syncStatus, c.messages) }
+    val vm = posViewModel { c, _ -> SyncViewModel(c.sync, c.device, c.config, c.syncStatus, c.messages, c.cloud, c::testCloud) }
     val state by vm.state.collectAsStateWithLifecycle()
-    SyncScreen(state, vm::syncNow, vm::confirm, vm::printForScreen)
+    SyncScreen(state, vm::syncNow, vm::confirm, vm::printForScreen, CloudActions(vm::cloudSync, vm::cloudTest, vm::cloudSave, vm::cloudRetry, { vm.cloudSkip(it) }))
 }
 
 private val fmt get() = SimpleDateFormat("MM-dd HH:mm:ss", Locale.CHINA)
@@ -118,7 +143,7 @@ private fun time(ms: Long) = if (ms > 0) fmt.format(Date(ms)) else "—"
  * 「有网」不等于已同步；模拟结果明确标注；未得远端持久回执不清队列。
  */
 @Composable
-fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, String, (String?) -> Unit) -> Unit, onPrintForScreen: (String) -> Unit = {}) {
+fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, String, (String?) -> Unit) -> Unit, onPrintForScreen: (String) -> Unit = {}, cloud: CloudActions = CloudActions()) {
     var tab by rememberSaveable { mutableStateOf(SyncTab.Kitchen) }
     var confirming by remember { mutableStateOf<TicketDelivery?>(null) }
     val c = Pos.colors
@@ -130,14 +155,14 @@ fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, Strin
                 Endpoint("本机命令", "${state.stats.committed} 已提交", if (state.stats.conflicts + state.stats.rejected > 0) "冲突 ${state.stats.conflicts} · 拒绝 ${state.stats.rejected}" else "最近 ${time(state.stats.lastAcceptedAt)}", ok = state.stats.conflicts + state.stats.rejected == 0, Modifier.weight(1f)) { tab = SyncTab.Commands }
                 Endpoint("主机回执", if (state.stats.singleDevice) "单机 · 本机即主机" else "—", "未决发送 ${state.stats.openCommands}", ok = state.stats.openCommands == 0, Modifier.weight(1f)) { tab = SyncTab.Commands }
                 Endpoint("厨房任务", if (state.kitchenAction > 0) "${state.kitchenAction} 张待处理" else "无异常", "等待送达 ${state.kitchenPending} 张 · 按档口出单方式判定", ok = state.kitchenAction == 0, Modifier.weight(1f)) { tab = SyncTab.Kitchen }
-                Endpoint("云事件", if (CloudLink.CONNECTED) "已连接" else "未接入云端", "待上传 ${state.stats.unackedEvents} 条", ok = false, Modifier.weight(1f)) { tab = SyncTab.Cloud }
+                Endpoint("云事件", cloudTitle(state.cloud.badge), "待上传 ${state.stats.unackedEvents} 条", ok = state.cloud.badge is CloudBadge.Online || state.cloud.badge == CloudBadge.ViaHost, Modifier.weight(1f)) { tab = SyncTab.Cloud }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SyncTab.entries.forEach { t -> PosButton(t.label, { tab = t }, size = BtnSize.Small, selected = tab == t) }
             }
             when (tab) {
                 SyncTab.Kitchen -> KitchenTab(state.deliveries, Modifier.weight(1f), onPrintForScreen) { confirming = it }
-                SyncTab.Cloud -> CloudTab(state, onSync, Modifier.weight(1f))
+                SyncTab.Cloud -> CloudTab(state, onSync, cloud, Modifier.weight(1f))
                 SyncTab.Commands -> CommandsTab(state.stats)
                 SyncTab.Payments -> PaymentsTab(state.payments, Modifier.weight(1f))
             }
@@ -210,28 +235,99 @@ private fun KitchenTab(items: List<TicketDelivery>, modifier: Modifier, onPrintF
     }
 }
 
+/** 云端操作（同步中心「云事件」页） */
+class CloudActions(
+    val sync: () -> Unit = {}, val test: (CloudSettings, (String) -> Unit) -> Unit = { _, _ -> },
+    val save: (CloudSettings) -> Unit = {}, val retry: (String) -> Unit = {}, val skip: (String) -> Unit = {},
+)
+
+private fun cloudTitle(b: CloudBadge) = when (b) {
+    CloudBadge.NotConfigured -> "未设置云端"
+    CloudBadge.ViaHost -> "经主 POS 上传"
+    is CloudBadge.Online -> "在线"
+    is CloudBadge.Offline -> "离线"
+    is CloudBadge.Syncing -> "上传中 ${b.done}/${b.total}"
+    is CloudBadge.NeedsAction -> "${b.count} 条需处理"
+}
+
 @Composable
-private fun CloudTab(state: SyncUiState, onSync: () -> Unit, modifier: Modifier) {
+private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActions, modifier: Modifier) {
     val c = Pos.colors
+    val cs = state.cloud
+    var editing by remember { mutableStateOf(false) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        KeyValue("云端服务", if (CloudLink.CONNECTED) "已连接" else "未接入（事件仅保存在本机，不会被标为已同步）", valueColor = if (CloudLink.CONNECTED) c.ink else c.warning)
-        KeyValue("待上传事件", "${state.stats.unackedEvents} 条（其中旧版 ${state.stats.legacyUnacked} 条）")
-        KeyValue("最早未上传", time(state.stats.oldestUnackedAt))
-        KeyValue("结账规则", CheckoutPolicy.STATUS)
-        Row(Modifier.fillMaxWidth()) {
-            Text("演示离线队列 · 待补发 ${state.pending} 项（补发为模拟结果）", style = Pos.type.strong, color = c.ink, modifier = Modifier.weight(1f).padding(top = 8.dp))
-            PosButton("模拟补发", onSync, variant = BtnVariant.Primary, size = BtnSize.Small, enabled = state.pending > 0)
+        val statusText = when (val b = cs.badge) {
+            CloudBadge.NotConfigured -> "未设置（事件仅保存在本机，不会被标为已同步）"
+            CloudBadge.ViaHost -> "副 POS 不直连云端，由主 POS 统一上传"
+            is CloudBadge.Online -> "在线 · ${cs.settings.baseUrl}"
+            is CloudBadge.Offline -> "离线" + (if (b.reason.isNotBlank()) "：${b.reason}" else "") + " · 网络恢复后自动上传"
+            is CloudBadge.Syncing -> "正在上传 ${b.done}/${b.total}"
+            is CloudBadge.NeedsAction -> "在线，${b.count} 条上传被服务端拒绝，需处理后该订单才继续上传"
         }
-        val cols = listOf(Col("类型", 0.7f), Col("内容", 2.4f), Col("产生时间", 1.2f), Col("状态", 1.1f), Col("完成时间", 1.2f, end = true))
-        DataTable(cols, Modifier.weight(1f), empty = "暂无离线操作") {
-            items(state.items.size) { i ->
-                val it = state.items[i]
-                TableRow(listOf(
-                    { Cell(it.kind.label) }, { Cell(it.summary) }, { Cell(time(it.createdAt), sub = true) },
-                    { if (it.state == OutboxState.Pending) Tag("待补发", fg = Pos.colors.warning) else Tag("已补发 · ${sourceLabel(it.ackSource)}", bg = Pos.colors.tint, fg = Pos.colors.primary) },
-                    { Cell(time(it.doneAt), sub = true) },
-                ), cols)
+        KeyValue("云端服务", statusText, valueColor = when (cs.badge) { is CloudBadge.Online, CloudBadge.ViaHost -> c.ink; is CloudBadge.NeedsAction -> c.danger; else -> c.warning })
+        if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (if (cs.businessDate.isNotBlank()) " · 营业日 ${cs.businessDate}" else ""))
+        KeyValue("待上传事件", "${state.stats.unackedEvents} 条（其中旧版 ${state.stats.legacyUnacked} 条，旧版不上传）")
+        KeyValue("最早未上传", time(state.stats.oldestUnackedAt))
+        cs.lastRound?.let { r -> KeyValue("最近一次上传", "${time(cs.lastSyncAt)} · 上传 ${r.uploaded} 条 · 等服务端接口 ${r.waiting} 条" + (r.stoppedBy?.let { " · 中断：${it.message}" } ?: "")) }
+        KeyValue("已对接", "开台、换桌、日结；点菜、结账、交班待服务端接口")
+        KeyValue("结账规则", CheckoutPolicy.STATUS)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (cs.uploader) PosButton("云端设置", { editing = true }, size = BtnSize.Small)
+            PosButton("立即上传", actions.sync, variant = BtnVariant.Primary, size = BtnSize.Small, enabled = cs.uploader && cs.settings.configured)
+        }
+        if (cs.issues.isNotEmpty()) {
+            Text("需处理（服务端拒绝）：排除原因后点「重试」；已在后台处理则点「跳过」。处理前该订单后续事件暂停上传", style = Pos.type.strong, color = c.danger, modifier = Modifier.padding(top = 6.dp))
+            val cols = listOf(Col("事件", 0.9f), Col("对象", 1.2f), Col("原因", 2.6f), Col("时间", 1f), Col("", 1.4f, end = true))
+            DataTable(cols, Modifier.weight(1f), empty = "") {
+                items(cs.issues.size) { i ->
+                    val it = cs.issues[i]
+                    TableRow(listOf(
+                        { Cell(it.type) }, { Cell(it.aggregateId, sub = true) }, { Cell(if (it.code > 0) "${it.message}（${it.code}）" else it.message) },
+                        { Cell(time(it.at), sub = true) }, { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { PosButton("重试", { actions.retry(it.eventId) }, size = BtnSize.Small); PosButton("跳过", { actions.skip(it.eventId) }, size = BtnSize.Small) } },
+                    ), cols)
+                }
             }
+        }
+        // 有需处理时把空间给需处理列表；演示离线队列在没有需处理时显示
+        if (cs.issues.isEmpty()) {
+            Row(Modifier.fillMaxWidth()) {
+                Text("演示离线队列 · 待补发 ${state.pending} 项（补发为模拟结果）", style = Pos.type.strong, color = c.ink, modifier = Modifier.weight(1f).padding(top = 8.dp))
+                PosButton("模拟补发", onSync, variant = BtnVariant.Primary, size = BtnSize.Small, enabled = state.pending > 0)
+            }
+            val cols = listOf(Col("类型", 0.7f), Col("内容", 2.4f), Col("产生时间", 1.2f), Col("状态", 1.1f), Col("完成时间", 1.2f, end = true))
+            DataTable(cols, Modifier.weight(1f), empty = "暂无离线操作") {
+                items(state.items.size) { i ->
+                    val it = state.items[i]
+                    TableRow(listOf(
+                        { Cell(it.kind.label) }, { Cell(it.summary) }, { Cell(time(it.createdAt), sub = true) },
+                        { if (it.state == OutboxState.Pending) Tag("待补发", fg = Pos.colors.warning) else Tag("已补发 · ${sourceLabel(it.ackSource)}", bg = Pos.colors.tint, fg = Pos.colors.primary) },
+                        { Cell(time(it.doneAt), sub = true) },
+                    ), cols)
+                }
+            }
+        }
+    }
+    if (editing) CloudSettingsDialog(cs.settings, actions) { editing = false }
+}
+
+/** 云端设置：地址、服务端门店号、终端令牌；可先测连接再保存；地址留空 = 关闭云端上传 */
+@Composable
+private fun CloudSettingsDialog(current: CloudSettings, actions: CloudActions, onClose: () -> Unit) {
+    var url by remember { mutableStateOf(current.baseUrl) }
+    var store by remember { mutableStateOf(current.storeNo) }
+    var token by remember { mutableStateOf(current.token) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val draft = CloudSettings(url, store, token)
+    PosDialog("云端设置", onDismiss = onClose, subtitle = "只有主 POS / 单机连云端；副 POS 经主 POS 上传", footer = {
+        PosButton("测试连接", { result = "连接中…"; actions.test(draft) { result = it } }, size = BtnSize.Large, enabled = draft.configured)
+        PosButton("取消", onClose, size = BtnSize.Large)
+        PosButton("保存", { actions.save(draft); onClose() }, variant = BtnVariant.Primary, size = BtnSize.Large, enabled = draft.configured || url.isBlank())
+    }) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PosTextField(url, { url = it; result = null }, "服务端地址", hint = "例如 https://api.example.com/biz/pos/fnb", autoFocus = true)
+            PosTextField(store, { store = it; result = null }, "服务端门店号", hint = "后台门店的 storeNo")
+            PosTextField(token, { token = it; result = null }, "终端令牌", password = true, hint = "后台签发给本机的令牌，可留空（内网测试）")
+            result?.let { Text(it, style = Pos.type.body, color = if (it.startsWith("连接成功")) Pos.colors.primary else Pos.colors.warning) }
         }
     }
 }

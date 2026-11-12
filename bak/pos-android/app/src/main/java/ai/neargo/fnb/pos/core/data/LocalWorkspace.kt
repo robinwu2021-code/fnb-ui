@@ -482,6 +482,8 @@ class LocalWorkspace(
         }
     }
 
+    /** 当班员工 id（云端请求头 X-Operator；服务端要校验为本店在职员工，员工号映射待后端确认） */
+    fun staffIdOnDuty(): String = state.value.staffId
     override suspend fun signOutStaff() { commit { it.copy(staffId = "") } }
 
     /**
