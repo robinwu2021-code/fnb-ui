@@ -1907,5 +1907,7 @@
   "报损单": "Write-off docs",
   "调拨单": "Transfer docs",
   "供应商": "Supplier",
-  "范围": "Scope"
+  "范围": "Scope",
+  "本店有货的商品": "In stock here",
+  "{0} 已发出，本店已扣库存，等{1}确认收货": "{0} sent; stock deducted here, waiting for {1} to confirm receipt"
 }

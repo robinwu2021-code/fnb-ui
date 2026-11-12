@@ -56,10 +56,13 @@ fun PosTextField(
     password: Boolean = false,
     singleLine: Boolean = true,
     keyboard: KeyboardOptions = KeyboardOptions.Default,
+    /** 出现时自动获得焦点（弹窗里唯一 / 第一个要填的框用） */
+    autoFocus: Boolean = false,
 ) {
     val c = Pos.colors
     val t = Pos.type
     val focus = remember { FocusRequester() }
+    if (autoFocus) androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         // 点标签也能聚焦输入框
         Text(label, style = t.label, color = c.sub, modifier = Modifier.clickable(role = Role.Button, onClickLabel = "编辑$label") { focus.requestFocus() }.padding(bottom = 4.dp))

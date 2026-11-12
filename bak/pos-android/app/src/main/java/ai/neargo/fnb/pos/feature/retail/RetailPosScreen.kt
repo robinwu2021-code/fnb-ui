@@ -590,7 +590,7 @@ private fun CustomDialog(code: String?, onAction: (RetailPosAction) -> Unit) {
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         PosButton("加入 ${yuan(fen)}", { onAction(RetailPosAction.CustomAdd(name, fen)) }, variant = BtnVariant.Primary, enabled = fen > 0 && Money.withinBill(fen))
     }) {
-        PosTextField(name, { if (it.length <= 20) name = it }, "名称")
+        PosTextField(name, { if (it.length <= 20) name = it }, "名称", autoFocus = true)
         PosTextField(price, { if (Regex("^\\d{0,6}(\\.\\d{0,2})?$").matches(it)) price = it }, "单价（元）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
     }
 }
@@ -650,7 +650,7 @@ private fun RepriceDialog(state: RetailPosUiState, l: CartLine, onAction: (Retai
         PosButton("确认改价", { onAction(RetailPosAction.Reprice(l.key, fen, who, secret)) }, variant = BtnVariant.Primary,
             enabled = fen != null && fen >= 0 && fen != orig && (state.canAdjust || (who.isNotBlank() && secret.isNotBlank())))
     }) {
-        PosTextField(text, { if (Regex("^\\d{0,6}(\\.\\d{0,2})?$").matches(it)) text = it }, "新单价（元$per）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        PosTextField(text, { if (Regex("^\\d{0,6}(\\.\\d{0,2})?$").matches(it)) text = it }, "新单价（元$per）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal), autoFocus = true)
         AuthFields(state, who, secret, { who = it }, { secret = it })
     }
 }
@@ -662,7 +662,7 @@ private fun NoteDialog(state: RetailPosUiState, l: CartLine, onAction: (RetailPo
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         PosButton("保存", { onAction(RetailPosAction.SetNote(l.key, text)) }, variant = BtnVariant.Primary)
     }) {
-        PosTextField(text, { if (it.length <= 30) text = it }, "备注（如：礼品包装、顾客自带袋）")
+        PosTextField(text, { if (it.length <= 30) text = it }, "备注（如：礼品包装、顾客自带袋）", autoFocus = true)
     }
 }
 
@@ -720,7 +720,7 @@ private fun MemberDialog(state: RetailPosUiState, onAction: (RetailPosAction) ->
         PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
         if (q.isNotBlank() && hits.isEmpty()) PosButton("新建并识别", { onAction(RetailPosAction.NewMember(q.trim(), name.trim())) }, variant = BtnVariant.Primary, enabled = phoneOk && name.isNotBlank())
     }) {
-        PosTextField(q, { q = it.take(11) }, "手机号或姓名", keyboard = KeyboardOptions(keyboardType = KeyboardType.Phone))
+        PosTextField(q, { q = it.take(11) }, "手机号或姓名", keyboard = KeyboardOptions(keyboardType = KeyboardType.Phone), autoFocus = true)
         hits.forEach { m ->
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(Pos.metrics.button).background(c.tile).clickable { onAction(RetailPosAction.PickMember(m.id)) }.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically) {

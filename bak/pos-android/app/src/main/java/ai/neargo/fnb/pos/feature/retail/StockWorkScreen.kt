@@ -188,7 +188,7 @@ private fun DocPanel(state: StockWorkUiState, d: StockDoc, onAction: (StockWorkA
             }
             val sug = state.suggest(d)
             if (sug.isNotEmpty()) {
-                Text(when (d.kind) { StockDocKind.Receive -> "低库存，建议补货"; StockDocKind.Loss -> "临期商品"; else -> "还没盘的商品" }, style = t.label, color = c.sub)
+                Text(when (d.kind) { StockDocKind.Receive -> "低库存，建议补货"; StockDocKind.Loss -> "临期商品"; StockDocKind.Transfer -> "本店有货的商品"; else -> "还没盘的商品" }, style = t.label, color = c.sub)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     sug.forEach { p -> PosButton("+ ${nameOf(p)}", { onAction(StockWorkAction.Add(p.id)) }, size = BtnSize.Small) }
                 }

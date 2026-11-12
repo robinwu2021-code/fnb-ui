@@ -147,7 +147,7 @@ class StockWorkViewModel(config: StoreConfigRepository, private val retail: Reta
                 viewModelScope.launchStorage(messages) {
                     try {
                         retail.advanceStockDoc(d.no).onSuccess { s ->
-                            messages.post(when (s) { StockDocState.Pending -> "${d.no} 已提交，等主管审批"; StockDocState.Variance -> "${d.no} 已过账，有盘点差异"; else -> "${d.no} 已过账，库存已更新" })
+                            messages.post(when (s) { StockDocState.Pending -> "${d.no} 已提交，等主管审批"; StockDocState.Variance -> "${d.no} 已过账，有盘点差异"; else -> if (d.kind == StockDocKind.Transfer && d.state == StockDocState.Draft) "${d.no} 已发出，本店已扣库存，等${st.storeName(d.toStore)}确认收货" else "${d.no} 已过账，库存已更新" })
                         }.onFailure { messages.post(it.message ?: "过账失败") }
                     } finally { local.update { it.copy(busy = false) } }
                 }
