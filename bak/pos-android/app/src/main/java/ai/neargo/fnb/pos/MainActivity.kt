@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos
 
+import kotlinx.coroutines.flow.map
 import ai.neargo.fnb.pos.app.PosApp
 import ai.neargo.fnb.pos.app.ShellViewModel
 import ai.neargo.fnb.pos.app.posViewModel
@@ -22,7 +23,7 @@ class MainActivity : ComponentActivity() {
         // 双屏收银机：顾客面向的副屏显示客显画面
         ai.neargo.fnb.pos.feature.customer.CustomerDisplayHost(this).attach()
         setContent {
-            val shell = posViewModel { c, _ -> ShellViewModel(c.session, c.device, c.prefs, c.sync, c.messages, c.syncStatus) }
+            val shell = posViewModel { c, _ -> ShellViewModel(c.session, c.device, c.prefs, c.sync, c.messages, c.syncStatus, c.cloud.state.map { it.badge }) }
             val state by shell.state.collectAsStateWithLifecycle()
             // 偏好首次读出前不渲染，避免默认皮肤闪一下再切换
             val prefs = state.prefs ?: return@setContent

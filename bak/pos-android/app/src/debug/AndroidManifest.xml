@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 仅调试包：允许明文 HTTP，连本机模拟服务端（模拟器里为 10.0.2.2）与内网测试服务端。正式包只走 HTTPS。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>
