@@ -43,7 +43,7 @@ object StaffRules {
      * 事件类型 → 所需权限。退菜/赠送/折扣由主管凭据单独授权，不在此校验；未列出的类型不需要额外权限。
      */
     fun permFor(eventType: String): Perm? = when (eventType) {
-        "PaymentRecorded", "RetailSaleCompleted", "RetailReturned", "RetailReceiptReprinted" -> Perm.Checkout
+        "PaymentRecorded", "RetailSaleCompleted", "RetailReturned", "RetailReceiptReprinted", "OnlineOrderReceived", "OnlineOrderAdvanced", "OnlineOrderRejected" -> Perm.Checkout
         "MemberCreated" -> Perm.Member
         "MemberRecharged" -> Perm.Recharge
         "ShiftClosed" -> Perm.Shift

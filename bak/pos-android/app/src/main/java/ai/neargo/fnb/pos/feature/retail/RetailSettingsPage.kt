@@ -103,6 +103,10 @@ fun ColumnScope.RetailSettingsPage(store: StoreData) {
                 }
             }
         }
+        Section("线上订单（小程序、即时零售平台）") {
+            SwitchRow("自动接单", "来单直接进入拣货，不用收银员点「接单」", d.autoAccept) { d = d.copy(autoAccept = it) }
+            SwitchRow("接单后打印拣货单", "按分类排好商品，方便拣货", d.printPick) { d = d.copy(printPick = it) }
+        }
         Section("退换货") {
             StepRow("退货期限", if (d.returnDays == 0) "不限期限" else "售出 ${d.returnDays} 天内可以退换，超过的订单不能退", d.returnDays, "天", 0, 365) { d = d.copy(returnDays = it) }
             SwitchRow("无单退货需主管授权", "找不到原单时按现价退，只退现金或储值", d.noReceiptAuth) { d = d.copy(noReceiptAuth = it) }

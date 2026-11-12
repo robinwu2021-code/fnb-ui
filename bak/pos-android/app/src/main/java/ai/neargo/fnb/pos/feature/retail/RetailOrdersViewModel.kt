@@ -53,7 +53,15 @@ data class RetailOrdersUiState(
     val settings: ai.neargo.fnb.pos.core.model.RetailSettings = ai.neargo.fnb.pos.core.model.RetailSettings(),
     val payMethods: List<String> = emptyList(),
     val now: Long = System.currentTimeMillis(),
+    /** 线上订单视图 */
+    val onlineView: Boolean = false,
+    val onlineOrders: List<ai.neargo.fnb.pos.core.model.OnlineOrder> = emptyList(),
+    val onlineSel: String? = null,
+    val rejecting: String? = null,
 ) {
+    val onlineCurrent get() = onlineOrders.firstOrNull { it.no == onlineSel } ?: onlineOrders.firstOrNull()
+    /** 待处理（待接单、拣货中、待取货）的线上订单数 */
+    val onlinePending get() = onlineOrders.count { it.state in setOf(ai.neargo.fnb.pos.core.model.OnlineState.New, ai.neargo.fnb.pos.core.model.OnlineState.Picking, ai.neargo.fnb.pos.core.model.OnlineState.Ready) }
     /** 无单退货是否要主管授权（零售设置） */
     val needAuth get() = flow?.noReceipt == true && settings.noReceiptAuth
     val shown get() = sales.filter { (filter == null || it.status == filter) && (query.isBlank() || query.trim() in it.no || it.member?.contains(query.trim()) == true) }
@@ -102,6 +110,12 @@ sealed interface RetailOrdersAction {
     data object Next : RetailOrdersAction
     data object Confirm : RetailOrdersAction
     data object Close : RetailOrdersAction
+    data class OnlineView(val on: Boolean) : RetailOrdersAction
+    data class SelectOnline(val no: String) : RetailOrdersAction
+    data class Simulate(val channel: ai.neargo.fnb.pos.core.model.SaleChannel) : RetailOrdersAction
+    data class AdvanceOnline(val no: String) : RetailOrdersAction
+    data class AskReject(val no: String?) : RetailOrdersAction
+    data class Reject(val no: String, val reason: String) : RetailOrdersAction
 }
 
 /** 零售订单：列表、详情、退货四步（含无单退货）、换货三步 → 抵扣带回收银 */
@@ -111,7 +125,8 @@ class RetailOrdersViewModel(
     device: DeviceRepository,
     private val messages: MessageBus,
 ) : ViewModel() {
-    private data class Local(val filter: ReturnRules.SaleStatus? = null, val query: String = "", val selected: String? = null, val flow: ReturnFlow? = null)
+    private data class Local(val filter: ReturnRules.SaleStatus? = null, val query: String = "", val selected: String? = null, val flow: ReturnFlow? = null,
+        val onlineView: Boolean = false, val onlineSel: String? = null, val rejecting: String? = null)
     private val local = MutableStateFlow(Local())
     private val events = Channel<Unit>(Channel.BUFFERED)
     /** 换货确认后通知页面切到收银 */
@@ -119,7 +134,8 @@ class RetailOrdersViewModel(
 
     val state: StateFlow<RetailOrdersUiState> = combine(config.current, local, device.status) { store, l, d ->
         RetailOrdersUiState(store?.retail?.sales.orEmpty(), l.filter, l.query, l.selected, l.flow, store?.products.orEmpty(), store?.retail?.credit, d.online,
-            store?.retail?.settings ?: ai.neargo.fnb.pos.core.model.RetailSettings(), store?.settings?.payMethods.orEmpty(), System.currentTimeMillis())
+            store?.retail?.settings ?: ai.neargo.fnb.pos.core.model.RetailSettings(), store?.settings?.payMethods.orEmpty(), System.currentTimeMillis(),
+            l.onlineView, store?.retail?.online.orEmpty(), l.onlineSel, l.rejecting)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RetailOrdersUiState())
 
     private fun flow(f: (ReturnFlow) -> ReturnFlow) = local.update { l -> l.copy(flow = l.flow?.let(f)) }
@@ -150,6 +166,21 @@ class RetailOrdersViewModel(
             RetailOrdersAction.Next -> flow { it.copy(step = minOf(4, it.step + 1)) }
             RetailOrdersAction.Close -> local.update { it.copy(flow = null) }
             RetailOrdersAction.Confirm -> confirm()
+            is RetailOrdersAction.OnlineView -> local.update { it.copy(onlineView = a.on) }
+            is RetailOrdersAction.SelectOnline -> local.update { it.copy(onlineSel = a.no) }
+            is RetailOrdersAction.Simulate -> viewModelScope.launchStorage(messages) {
+                retail.simulateOnlineOrder(a.channel).onSuccess { no -> local.update { it.copy(onlineSel = no) }; messages.post("${a.channel.label}来单 $no") }.onFailure { messages.post(it.message ?: "来单失败") }
+            }
+            is RetailOrdersAction.AdvanceOnline -> viewModelScope.launchStorage(messages) {
+                retail.advanceOnline(a.no).onSuccess { st -> messages.post(when (st) {
+                    ai.neargo.fnb.pos.core.model.OnlineState.Picking -> "已接单 ${a.no}" + if (state.value.settings.printPick) "，拣货单已加入打印队列" else ""
+                    ai.neargo.fnb.pos.core.model.OnlineState.Ready -> "${a.no} 拣货完成，等顾客取货 / 骑手取件"
+                    else -> "${a.no} 已完成，已记零售单并扣库存" }) }.onFailure { messages.post(it.message ?: "操作失败") }
+            }
+            is RetailOrdersAction.AskReject -> local.update { it.copy(rejecting = a.no) }
+            is RetailOrdersAction.Reject -> viewModelScope.launchStorage(messages) {
+                retail.rejectOnline(a.no, a.reason).onSuccess { local.update { it.copy(rejecting = null) }; messages.post("已拒单 ${a.no}，平台会退款给顾客") }.onFailure { messages.post(it.message ?: "拒单失败") }
+            }
         }
     }
 

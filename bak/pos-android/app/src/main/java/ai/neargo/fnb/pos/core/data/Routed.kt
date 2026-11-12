@@ -183,4 +183,8 @@ class RoutedRetail(private val ws: LocalWorkspace, private val link: LanLink) : 
     override suspend fun queueLabel(productId: String) = if (link.isSecondary) hostOnly() else ws.queueLabel(productId)
     override suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl) = if (link.isSecondary) hostOnly() else ws.printLabels(productIds, tpl)
     override suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings) = if (link.isSecondary) hostOnly() else ws.saveRetailSettings(settings)
+    // 线上订单由主 POS 接单处理（平台推送到主机）
+    override suspend fun simulateOnlineOrder(channel: ai.neargo.fnb.pos.core.model.SaleChannel) = if (link.isSecondary) hostOnly() else ws.simulateOnlineOrder(channel)
+    override suspend fun advanceOnline(no: String) = if (link.isSecondary) hostOnly() else ws.advanceOnline(no)
+    override suspend fun rejectOnline(no: String, reason: String) = if (link.isSecondary) hostOnly() else ws.rejectOnline(no, reason)
 }

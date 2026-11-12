@@ -1305,6 +1305,80 @@ class LocalWorkspace(
         }.map { n }
     }
 
+    /** 拣货单：商品、规格、数量，按分类排，方便拣货 */
+    private fun pickList(s: StoreData, o: OnlineOrder) = PrintJob(newId("R"), PrintKind.Receipt, "拣货单 ${o.no}",
+        listOf("【拣货单】${o.no} · ${o.channel.label}", "${o.customer} ${o.phone}", if (o.delivery) "配送" else "到店自提") +
+            o.lines.sortedBy { l -> s.product(l.productId)?.categoryId.orEmpty() }.map { l -> "□ ${s.product(l.productId)?.name ?: l.productId}${l.sku?.let { " $it" }.orEmpty()} ×${l.qty}" } +
+            listOfNotNull(o.note.ifBlank { null }?.let { "备注：$it" }), clock())
+
+    override suspend fun simulateOnlineOrder(channel: SaleChannel): Result<String> {
+        var no = ""
+        return storeOp(event = retailEvent("OnlineOrderReceived", """{"channel":"$channel"}"""), check = { s ->
+            if (channel == SaleChannel.Store) "门店渠道不是线上订单" else retailOnly(s) ?: need(Perm.Checkout)
+        }) { s ->
+            val seq = s.retail.onlineSeq
+            // 演示：从在售、按件、无规格的商品里轮流挑 2–3 样
+            val pool = s.products.filter { it.retail?.weighable != true && !it.hasSpec && (it.stock ?: 0) > 0 && it.price >= 100 }
+            val picks = (0 until 2 + seq % 2).map { pool[(seq * 3 + it * 5) % pool.size] }.distinctBy { it.id }
+            val lines = picks.mapIndexed { i, p -> CartLine(i + 1L, p.id, 1 + (seq + i) % 2) }
+            val t = RetailCheckout.totals(s.products, lines, false)
+            no = (if (channel == SaleChannel.Mini) "XC" else "PT") + "%04d".format(seq)
+            val tail = "%04d".format((seq * 7919) % 10000)
+            var o = OnlineOrder(no, channel, clock(), "顾客", "尾号 $tail", lines, t.due, delivery = channel == SaleChannel.Platform,
+                saleLines = RetailCheckout.saleLines(s.products, lines, false))
+            var next = s
+            if (s.retail.settings.autoAccept) {
+                o = o.copy(state = OnlineState.Picking)
+                if (s.retail.settings.printPick) next = next.copy(printJobs = next.printJobs + next.withCopies(pickList(s, o)))
+            }
+            next.withRetail { it.copy(online = listOf(o) + it.online, onlineSeq = seq + 1) }
+        }.map { no }
+    }
+
+    override suspend fun advanceOnline(no: String): Result<OnlineState> {
+        var out = OnlineState.New
+        val actor = actorName(state.value)
+        return storeOp(event = retailEvent("OnlineOrderAdvanced", """{"no":"$no"}"""), check = { s ->
+            val o = s.retail.online.firstOrNull { it.no == no }
+            when {
+                o == null -> "线上订单不存在"
+                o.state == OnlineState.Done || o.state == OnlineState.Rejected -> "订单${o.state.label}"
+                o.state == OnlineState.Ready && o.lines.any { s.product(it.productId) == null } -> "有商品已下架，请联系顾客"
+                else -> retailOnly(s) ?: need(Perm.Checkout)
+            }
+        }) { s0 ->
+            val o = s0.retail.online.first { it.no == no }
+            var s = s0
+            val next = when (o.state) {
+                OnlineState.New -> { if (s.retail.settings.printPick) s = s.copy(printJobs = s.printJobs + s.withCopies(pickList(s, o))); o.copy(state = OnlineState.Picking) }
+                OnlineState.Picking -> o.copy(state = OnlineState.Ready)
+                else -> {
+                    // 完成：生成零售单（渠道 = 小程序 / 平台），扣库存，记「线上支付」收款（钱在平台，不进现金）
+                    val saleNo = "#R%04d".format(s.retail.saleSeq)
+                    o.lines.forEach { l -> val p = s.product(l.productId)!!; val key = RetailCheckout.skuKeyOf(p, l.sku)
+                        s = s.setBook(l.productId, key, s.bookOf(l.productId, key) - l.qty.toLong(), "线上订单 ${o.no}（$saleNo）", actor) }
+                    val sale = RetailSale(saleNo, clock(), o.channel, member = null, lines = o.saleLines, discount = o.saleLines.sumOf { it.amount } - o.amount,
+                        pays = listOf(SalePay(ONLINE_PAY, o.amount)), adjust = "${o.channel.label} ${o.no}")
+                    val pay = PaymentRecord(newId("P"), "零售", o.amount, ONLINE_PAY, clock(), synced = true, orderId = saleNo, currency = s.settings.currency, state = PaymentState.Succeeded, source = "online")
+                    s = s.copy(payments = s.payments + pay).withRetail { it.copy(sales = listOf(sale) + it.sales, saleSeq = it.saleSeq + 1) }
+                    o.copy(state = OnlineState.Done, saleNo = saleNo)
+                }
+            }
+            out = next.state
+            s.withRetail { r -> r.copy(online = r.online.map { if (it.no == no) next else it }) }
+        }.map { out }
+    }
+
+    override suspend fun rejectOnline(no: String, reason: String): Result<Unit> = storeOp(event = retailEvent("OnlineOrderRejected", """{"no":"$no"}"""), check = { s ->
+        val o = s.retail.online.firstOrNull { it.no == no }
+        when {
+            o == null -> "线上订单不存在"
+            o.state !in setOf(OnlineState.New, OnlineState.Picking) -> "订单${o.state.label}，不能拒单"
+            reason.isBlank() -> "请填写拒单原因（会告诉顾客）"
+            else -> retailOnly(s) ?: need(Perm.Checkout)
+        }
+    }) { s -> s.withRetail { r -> r.copy(online = r.online.map { if (it.no == no) it.copy(state = OnlineState.Rejected, note = reason.trim().take(30)) else it }) } }
+
     override suspend fun saveRetailSettings(settings: RetailSettings): Result<Unit> = storeOp(event = retailEvent("RetailSettingsSaved", """{"promoLimit":${settings.promoLimit},"returnDays":${settings.returnDays}}"""), check = { s ->
         when {
             settings.expiryDays !in 0..30 -> "临期提醒天数在 0–30 之间"

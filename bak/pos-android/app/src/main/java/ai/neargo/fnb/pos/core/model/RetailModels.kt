@@ -114,6 +114,9 @@ data class RetailData(
     val settings: RetailSettings = RetailSettings(),
     /** 挂单序号（H 开头）；0 表示旧数据，按现有挂单号接着编 */
     val heldSeq: Int = 0,
+    /** 线上订单（最新的在前）与序号 */
+    val online: List<OnlineOrder> = emptyList(),
+    val onlineSeq: Int = 1,
 )
 
 /**
@@ -144,7 +147,26 @@ data class RetailSettings(
     val restrictFrom: String = "",
     val restrictTo: String = "",
     val restrictCats: List<String> = emptyList(),
+    /** 线上订单（小程序、即时零售平台）：来单自动接单、接单后打印拣货单 */
+    val autoAccept: Boolean = false,
+    val printPick: Boolean = true,
 )
+
+/** 线上订单状态：待接单 → 拣货中 → 待取货 / 待配送 → 已完成；可以拒单 */
+@Serializable enum class OnlineState(val label: String) { New("待接单"), Picking("拣货中"), Ready("待取货"), Done("已完成"), Rejected("已拒单") }
+
+/** 线上订单（顾客在小程序或平台下单并已付款）：完成时生成零售单、扣库存、记「线上支付」收款 */
+@Serializable
+data class OnlineOrder(
+    val no: String, val channel: SaleChannel, val at: Long, val customer: String, val phone: String,
+    val lines: List<CartLine>, val amount: Long, val delivery: Boolean = false,
+    val state: OnlineState = OnlineState.New, val note: String = "", val saleNo: String = "",
+    /** 下单时按当时价格算好的单行（完成时原样记进零售单，平台已按这个价收款） */
+    val saleLines: List<RetailSaleLine> = emptyList(),
+)
+
+/** 线上订单在门店收款记录里的方式名（钱在平台，已付款，不进现金） */
+const val ONLINE_PAY = "线上支付"
 
 /** 零售单收款里「换货抵扣」这一笔的方式名（不是真的收款方式，不进收款记录） */
 const val EXCHANGE = "换货抵扣"

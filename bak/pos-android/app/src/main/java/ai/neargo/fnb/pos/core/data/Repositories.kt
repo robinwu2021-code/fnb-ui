@@ -267,6 +267,10 @@ interface RetailRepository {
     suspend fun queueLabel(productId: String): Result<Unit>
     /** 打印选中的价签：生成标签机指令并记录，打完从队列移走；返回张数 */
     suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl): Result<Int>
+    /** 线上订单：模拟来单（演示；真实平台接入后由平台推送）、接单、拣货完成、顾客取走 / 送达、拒单 */
+    suspend fun simulateOnlineOrder(channel: ai.neargo.fnb.pos.core.model.SaleChannel): Result<String>
+    suspend fun advanceOnline(no: String): Result<ai.neargo.fnb.pos.core.model.OnlineState>
+    suspend fun rejectOnline(no: String, reason: String): Result<Unit>
     /** 保存零售设置 */
     suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings): Result<Unit>
     suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean,

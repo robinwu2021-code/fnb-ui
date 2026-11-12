@@ -45,6 +45,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,6 +83,13 @@ private fun StatusTag(s: ReturnRules.SaleStatus) { val (bg, fg) = statusColors(s
 @Composable
 fun RetailOrdersScreen(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit, side: BillSide = BillSide.Right) {
     val layout = LocalPosLayout.current
+    if (state.onlineView) {
+        Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> state.onlineCurrent?.let { OnlineDetail(state, it, onAction, m) } ?: Panel(m) { EmptyState("没有线上订单", Modifier.padding(16.dp)) } }) { m ->
+            OnlineList(state, onAction, m)
+        }
+        state.rejecting?.let { RejectDialog(it, onAction) }
+        return
+    }
     Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> state.current?.let { SaleDetail(state, it, onAction, m) } ?: Panel(m) { EmptyState("没有订单", Modifier.padding(16.dp)) } }) { m ->
         SaleList(state, onAction, m)
     }
@@ -92,6 +101,7 @@ private fun SaleList(state: RetailOrdersUiState, onAction: (RetailOrdersAction) 
     val c = Pos.colors; val t = Pos.type
     Panel(modifier) {
         Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ViewSwitch(state, onAction)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SearchField(state.query, { onAction(RetailOrdersAction.Search(it)) }, "搜索单号 / 会员", Modifier.weight(1f))
                 PosButton("退货", { onAction(RetailOrdersAction.Open(ReturnMode.Return, null)) }, variant = BtnVariant.Soft)
@@ -329,4 +339,105 @@ private fun RefundStep(state: RetailOrdersUiState, f: ReturnFlow, onAction: (Ret
         Text("体验账号可用 manager@demo.local / demo12345", style = t.label, color = c.sub)
     }
     Spacer(Modifier.padding(2.dp))
+}
+
+/* ---------------- 线上订单（小程序自提 / 即时零售平台） ---------------- */
+
+@Composable
+private fun ViewSwitch(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        PosChip("门店订单", !state.onlineView, { onAction(RetailOrdersAction.OnlineView(false)) })
+        PosChip("线上订单", state.onlineView, { onAction(RetailOrdersAction.OnlineView(true)) }, count = state.onlinePending.takeIf { it > 0 })
+    }
+}
+
+@Composable
+private fun onlineTag(s: ai.neargo.fnb.pos.core.model.OnlineState) {
+    val c = Pos.colors
+    val (bg, fg) = when (s) {
+        ai.neargo.fnb.pos.core.model.OnlineState.New -> c.dangerBg to c.danger
+        ai.neargo.fnb.pos.core.model.OnlineState.Picking, ai.neargo.fnb.pos.core.model.OnlineState.Ready -> c.control to c.warning
+        ai.neargo.fnb.pos.core.model.OnlineState.Done -> c.tint to c.primary
+        ai.neargo.fnb.pos.core.model.OnlineState.Rejected -> c.control to c.sub
+    }
+    Tag(s.label, bg = bg, fg = fg)
+}
+
+@Composable
+private fun OnlineList(state: RetailOrdersUiState, onAction: (RetailOrdersAction) -> Unit, modifier: Modifier) {
+    val c = Pos.colors; val t = Pos.type
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ViewSwitch(state, onAction)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("平台未接入：用「模拟来单」演示接单流程", style = t.label, color = c.warning, modifier = Modifier.weight(1f))
+                PosButton("模拟小程序来单", { onAction(RetailOrdersAction.Simulate(ai.neargo.fnb.pos.core.model.SaleChannel.Mini)) }, size = BtnSize.Small)
+                PosButton("模拟平台来单", { onAction(RetailOrdersAction.Simulate(ai.neargo.fnb.pos.core.model.SaleChannel.Platform)) }, size = BtnSize.Small)
+            }
+            if (state.onlineOrders.isEmpty()) EmptyState("还没有线上订单")
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                items(state.onlineOrders, key = { it.no }) { o ->
+                    val sel = state.onlineCurrent?.no == o.no
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Pos.metrics.button).background(if (sel) c.tint else Color.Transparent)
+                        .clickable { onAction(RetailOrdersAction.SelectOnline(o.no)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.width(80.dp)) { onlineTag(o.state) }
+                        Text(o.no, style = t.strong.num(), color = c.ink, modifier = Modifier.width(72.dp))
+                        Text("${o.channel.label} · ${if (o.delivery) "配送" else "自提"}", style = t.body, color = c.ink, modifier = Modifier.weight(1f), maxLines = 1)
+                        Text("${o.lines.sumOf { it.qty }} 件 · ${time(o.at)}", style = t.label.num(), color = c.sub, modifier = Modifier.weight(1f))
+                        Text(yuan(o.amount), style = t.strong.num(), color = c.ink)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnlineDetail(state: RetailOrdersUiState, o: ai.neargo.fnb.pos.core.model.OnlineOrder, onAction: (RetailOrdersAction) -> Unit, modifier: Modifier) {
+    val c = Pos.colors; val t = Pos.type
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) { Text(o.no, style = t.title.num(), color = c.ink, modifier = Modifier.weight(1f)); onlineTag(o.state) }
+                Text("${o.channel.label} · ${if (o.delivery) "配送" else "到店自提"} · ${o.customer} ${o.phone} · ${time(o.at)}", style = t.label.num(), color = c.sub)
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Section("商品 · ${o.lines.sumOf { it.qty }} 件") {
+                    o.saleLines.forEach { l -> KeyValue("${l.name}${l.sku?.let { " · $it" }.orEmpty()} × ${l.qty}", yuan(l.amount)) }
+                }
+                Section("付款") { KeyValue("顾客已在${o.channel.label}付款", yuan(o.amount)) }
+                if (o.note.isNotBlank()) Section("拒单原因") { Text(o.note, style = t.body, color = c.ink) }
+                if (o.saleNo.isNotBlank()) Section("零售单") { KeyValue("已记零售单", o.saleNo) }
+            }
+            Column(Modifier.fillMaxWidth().background(c.control).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("实付 · ${o.lines.sumOf { it.qty }} 件", style = t.label, color = c.sub, modifier = Modifier.weight(1f))
+                    Text(yuan(o.amount), style = t.amount.num(), color = c.ink)
+                }
+                when (o.state) {
+                    ai.neargo.fnb.pos.core.model.OnlineState.New, ai.neargo.fnb.pos.core.model.OnlineState.Picking -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PosButton("拒单", { onAction(RetailOrdersAction.AskReject(o.no)) }, variant = BtnVariant.Danger, size = BtnSize.Large)
+                        PosButton(if (o.state == ai.neargo.fnb.pos.core.model.OnlineState.New) "接单" + if (state.settings.printPick) "（打拣货单）" else "" else "拣货完成", { onAction(RetailOrdersAction.AdvanceOnline(o.no)) },
+                            Modifier.weight(1f), variant = BtnVariant.Primary, size = BtnSize.Large)
+                    }
+                    ai.neargo.fnb.pos.core.model.OnlineState.Ready -> PosButton(if (o.delivery) "已交骑手，完成" else "顾客已取货，完成", { onAction(RetailOrdersAction.AdvanceOnline(o.no)) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large)
+                    else -> Text(if (o.state == ai.neargo.fnb.pos.core.model.OnlineState.Done) "已完成：记零售单、扣库存，收款记「线上支付」" else "已拒单，平台退款给顾客", style = t.label, color = c.sub)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RejectDialog(no: String, onAction: (RetailOrdersAction) -> Unit) {
+    var reason by remember { mutableStateOf("") }
+    PosDialog("拒单 · $no", { onAction(RetailOrdersAction.AskReject(null)) }, subtitle = "原因会告诉顾客，平台按原路退款", footer = {
+        PosButton("取消", { onAction(RetailOrdersAction.AskReject(null)) }, variant = BtnVariant.Text)
+        PosButton("确认拒单", { onAction(RetailOrdersAction.Reject(no, reason)) }, variant = BtnVariant.Danger, enabled = reason.isNotBlank())
+    }) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            listOf("商品缺货", "门店已打烊", "超出配送范围").forEach { r -> PosChip(r, reason == r, { reason = r }) }
+        }
+        PosTextField(reason, { if (it.length <= 30) reason = it }, "或者自己写")
+    }
 }
