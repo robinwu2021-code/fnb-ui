@@ -138,6 +138,7 @@ const val EXCHANGE = "换货抵扣"
 data class LooseReturn(val no: String, val at: Long, val lines: List<RetailSaleLine>, val amount: Long, val reason: ReturnRules.Reason, val method: String, val approver: String, val restock: Boolean)
 
 /** 退货申请：saleNo 为空 = 无单退货（pick 的键是商品 ID，按现价）；否则 pick 的键是原单行 key */
+@Serializable
 data class ReturnRequest(
     val saleNo: String?, val pick: Map<String, Int>, val reason: ReturnRules.Reason, val restock: Boolean, val method: String,
     val exchange: Boolean = false, val approver: String = "", val secret: String = "",

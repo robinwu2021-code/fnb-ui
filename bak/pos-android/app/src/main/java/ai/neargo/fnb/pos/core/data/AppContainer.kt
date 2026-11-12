@@ -66,7 +66,7 @@ class AppContainer(context: Context) {
     // —— 主副 POS（N5）：副机写入经主机仲裁；主机执行器直接使用本机仓库 ——
     private val deviceKeys get() = identity.keys
     val lanLink = ai.neargo.fnb.pos.core.lan.LanLink(workspace, deviceKeys, appScope, deviceName = android.os.Build.MODEL ?: "副 POS")
-    val lanHost = ai.neargo.fnb.pos.core.lan.LanHost(workspace, ai.neargo.fnb.pos.core.lan.HostExecutor(workspace, workspace, workspace, database, workspace, workspace), deviceKeys, appScope,
+    val lanHost = ai.neargo.fnb.pos.core.lan.LanHost(workspace, ai.neargo.fnb.pos.core.lan.HostExecutor(workspace, workspace, workspace, database, workspace, workspace, retail = workspace), deviceKeys, appScope,
         hostName = android.os.Build.MODEL ?: "主 POS")
     val lan get() = workspace.lanState
     suspend fun setHostRole(on: Boolean) {
@@ -85,7 +85,7 @@ class AppContainer(context: Context) {
     val shift: ShiftRepository = RoutedShift(workspace, lanLink)
     val ops: OperationsRepository = RoutedOps(workspace, lanLink)
     /** 零售（R3 起）：先只走本机；副 POS 经主机仲裁放在后面做。 */
-    val retail: RetailRepository = workspace
+    val retail: RetailRepository = RoutedRetail(workspace, lanLink)
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
     val device: DeviceRepository = NetworkDevice(context.applicationContext, appScope)
     val messages: MessageBus = SimpleMessageBus()

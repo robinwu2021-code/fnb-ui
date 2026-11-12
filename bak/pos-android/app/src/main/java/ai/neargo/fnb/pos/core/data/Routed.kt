@@ -127,3 +127,59 @@ class RoutedOps(private val ws: LocalWorkspace, private val link: LanLink) : Ope
     override suspend fun savePromotion(p: ai.neargo.fnb.pos.core.model.Promotion) = if (link.isSecondary) hostOnly() else ws.savePromotion(p)
     override suspend fun closeDay(staff: String) = if (link.isSecondary) hostOnly() else ws.closeDay(staff)
 }
+
+/**
+ * 零售路由：副 POS 的收款、退换货、挂单 / 取单、补打小票转成意图交主机仲裁（价格、库存、权限由主机重验，按命令号去重）；
+ * 库存单据、改价、价签、零售设置只能在主 POS 做。成功后副机已拉回主机快照，结果从本机副本按单号取。
+ */
+class RoutedRetail(private val ws: LocalWorkspace, private val link: LanLink) : RetailRepository by ws {
+    private fun hostOnly() = Result.failure<Nothing>(IllegalStateException(HOST_ONLY))
+    private fun retailOf() = ws.lanSnapshot().store?.retail
+
+    override suspend fun checkoutRetail(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: Boolean, method: String, received: Long, online: Boolean): Result<ai.neargo.fnb.pos.core.model.RetailSale> {
+        if (!link.isSecondary) return ws.checkoutRetail(lines, member, method, received, online)
+        val r = link.submit(I.RetailCheckout(lines, member, method, received, online), "零售收款 $method")
+        if (!r.ok) return Result.failure(IllegalStateException(r.message))
+        val sales = retailOf()?.sales.orEmpty()
+        return (sales.firstOrNull { it.no == r.message } ?: sales.firstOrNull())?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已收款，等主机同步后到订单页查看"))
+    }
+
+    override suspend fun returnRetail(req: ai.neargo.fnb.pos.core.model.ReturnRequest, online: Boolean): Result<ai.neargo.fnb.pos.core.model.SaleReturn> {
+        if (!link.isSecondary) return ws.returnRetail(req, online)
+        val r = link.submit(I.RetailReturn(req, online), if (req.exchange) "换货 ${req.saleNo}" else "退货 ${req.saleNo ?: "无单"}")
+        if (!r.ok) return Result.failure(IllegalStateException(r.message))
+        val d = retailOf()
+        val ret = req.saleNo?.let { no -> d?.sales?.firstOrNull { it.no == no }?.returns?.lastOrNull() }
+            ?: d?.looseReturns?.firstOrNull()?.let { ai.neargo.fnb.pos.core.model.SaleReturn(it.at, it.amount, it.lines.sumOf { l -> l.qty }, it.reason, it.method) }
+        return ret?.let { Result.success(it) } ?: Result.failure(IllegalStateException("已退货，等主机同步后到订单页查看"))
+    }
+
+    override suspend fun holdCart(lines: List<ai.neargo.fnb.pos.core.model.CartLine>, member: String?, why: String): Result<String> {
+        if (!link.isSecondary) return ws.holdCart(lines, member, why)
+        val r = link.submit(I.RetailHold(lines, member, why), "零售挂单")
+        return if (r.ok) Result.success(r.message) else Result.failure(IllegalStateException(r.message))
+    }
+
+    override suspend fun recallHeld(no: String): Result<ai.neargo.fnb.pos.core.model.RetailHeld> {
+        if (!link.isSecondary) return ws.recallHeld(no)
+        // 取单前先记下挂单内容（主机执行后副本里就没有了）
+        // 别的副机刚挂的单本机副本可能还没有：先从主机拉一次
+        val h = retailOf()?.held?.firstOrNull { it.no == no }
+            ?: run { runCatching { link.pull() }; retailOf()?.held?.firstOrNull { it.no == no } }
+            ?: return Result.failure(IllegalStateException("挂单不存在"))
+        val r = link.submit(I.RetailRecall(no), "零售取单 $no")
+        return if (r.ok) Result.success(h) else Result.failure(IllegalStateException(r.message))
+    }
+
+    override suspend fun reprintSale(no: String): Result<Unit> = if (link.isSecondary) link.submit(I.RetailReprint(no), "补打 $no").unit() else ws.reprintSale(no)
+
+    // 管理类：只能在主 POS
+    override suspend fun newStockDoc(kind: ai.neargo.fnb.pos.core.model.StockDocKind, supplier: String, scope: String) = if (link.isSecondary) hostOnly() else ws.newStockDoc(kind, supplier, scope)
+    override suspend fun setStockDocLines(no: String, lines: List<ai.neargo.fnb.pos.core.model.StockDocLine>) = if (link.isSecondary) hostOnly() else ws.setStockDocLines(no, lines)
+    override suspend fun advanceStockDoc(no: String) = if (link.isSecondary) hostOnly() else ws.advanceStockDoc(no)
+    override suspend fun voidStockDoc(no: String) = if (link.isSecondary) hostOnly() else ws.voidStockDoc(no)
+    override suspend fun setRetailPrice(productId: String, price: Long) = if (link.isSecondary) hostOnly() else ws.setRetailPrice(productId, price)
+    override suspend fun queueLabel(productId: String) = if (link.isSecondary) hostOnly() else ws.queueLabel(productId)
+    override suspend fun printLabels(productIds: List<String>, tpl: ai.neargo.fnb.pos.core.model.LabelTpl) = if (link.isSecondary) hostOnly() else ws.printLabels(productIds, tpl)
+    override suspend fun saveRetailSettings(settings: ai.neargo.fnb.pos.core.model.RetailSettings) = if (link.isSecondary) hostOnly() else ws.saveRetailSettings(settings)
+}
