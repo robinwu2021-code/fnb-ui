@@ -99,7 +99,34 @@ fun RetailPosRoute() {
     val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages) }
     val state by vm.state.collectAsStateWithLifecycle()
     val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
+    CustomerSync(state)
     RetailPosScreen(state, vm::onAction, prefs?.layout?.bill ?: BillSide.Left)
+}
+
+/**
+ * 客显同步：购物车在收银页内存里，有变化就推一份快照（明细、刚扫、应付、收款与找零）；
+ * 收款完成推「收款成功」；购物车清空时不覆盖还在停留中的致谢页（下一位按得快也能看到找零）。
+ */
+@Composable
+private fun CustomerSync(state: RetailPosUiState) {
+    val stage = appContainer().customerStage
+    val cart = state.cart
+    LaunchedEffect(cart, state.products, state.credit) {
+        val done = cart.overlay as? RetailOverlay.Done
+        stage.value = when {
+            done != null -> {
+                val method = done.sale.pays.firstOrNull { it.method != ai.neargo.fnb.pos.core.model.EXCHANGE }?.method
+                if (done.refund > 0) ai.neargo.fnb.pos.core.model.CustomerStage.Paid("零售", done.refund, 0, "退差价 · ${done.credit?.method.orEmpty()}", System.currentTimeMillis())
+                else ai.neargo.fnb.pos.core.model.CustomerStage.Paid("零售", done.received, done.change, method ?: "换货抵扣", System.currentTimeMillis())
+            }
+            cart.lines.isEmpty() && state.credit == null ->
+                stage.value.takeIf { it is ai.neargo.fnb.pos.core.model.CustomerStage.Paid } ?: ai.neargo.fnb.pos.core.model.CustomerStage.Browse
+            else -> ai.neargo.fnb.pos.core.model.CustomerStage.Retail(ai.neargo.fnb.pos.core.model.CustomerDisplayRules.retailCart(
+                state.products, cart.lines, cart.member, cart.last, state.credit?.amount ?: 0,
+                method = cart.method.takeIf { cart.mode == PosMode.Pay }, received = CashRules.amount(cart.cash).takeIf { cart.method == "现金" && cart.mode == PosMode.Pay },
+            ))
+        }
+    }
 }
 
 /**

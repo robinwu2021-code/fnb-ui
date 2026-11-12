@@ -96,12 +96,14 @@ fun CustomerScreen(view: CustomerView, now: Long, modifier: Modifier = Modifier)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(view.store.ifBlank { "欢迎光临" }, style = Pos.type.title.copy(fontSize = 30.sp), color = c.ink, modifier = Modifier.weight(1f))
             if (view is CustomerView.Order) Text("桌台 ${view.table}", style = Pos.type.title.copy(fontSize = 26.sp), color = c.primary)
+            if (view is CustomerView.Retail) Text("共 ${view.cart.pieces} 件" + if (view.cart.member) " · 会员" else "", style = Pos.type.title.copy(fontSize = 26.sp), color = c.primary)
         }
         Spacer(Modifier.height(20.dp))
         when (view) {
             is CustomerView.Idle -> Idle(view, now)
             is CustomerView.Order -> OrderView(view)
             is CustomerView.Paid -> PaidView(view)
+            is CustomerView.Retail -> RetailView(view)
         }
     }
 }
@@ -115,9 +117,49 @@ private fun Idle(v: CustomerView.Idle, now: Long) {
         else Row(Modifier.fillMaxSize().padding(32.dp), verticalAlignment = Alignment.CenterVertically) {
             ProductImage(slide.image, slide.name, Modifier.weight(1.2f).fillMaxHeight().clip(RoundedCornerShape(12.dp)))
             Column(Modifier.weight(1f).padding(start = 40.dp)) {
-                Text("今日推荐", style = Pos.type.label.copy(fontSize = 22.sp), color = c.sub)
+                Text(if (slide.note.isNotBlank()) "今日特惠" else "今日推荐", style = Pos.type.label.copy(fontSize = 22.sp), color = c.sub)
                 Text(slide.name, style = Pos.type.hero.copy(fontSize = 52.sp), color = c.ink, modifier = Modifier.padding(vertical = 12.dp))
-                Text(yuan(slide.price), style = Pos.type.amount.copy(fontSize = 44.sp), color = c.primary)
+                Text(yuan(slide.price) + if (slide.perKg) "/kg" else "", style = Pos.type.amount.copy(fontSize = 44.sp), color = c.primary)
+                if (slide.note.isNotBlank()) Text(slide.note, style = Pos.type.strong.copy(fontSize = 28.sp), color = c.warning, modifier = Modifier.padding(top = 10.dp))
+            }
+        }
+    }
+}
+
+/** 零售客显：左边逐行明细（刚扫的那行在最上、底色突出），右边原价合计、已省、换货抵扣、应付与收款找零 */
+@Composable
+private fun RetailView(v: CustomerView.Retail) {
+    val c = Pos.colors
+    val k = v.cart
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        if (v.showLines) {
+            Column(Modifier.weight(1.5f).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(c.surface).padding(24.dp)) {
+                k.last?.let { Text("刚扫：$it", style = Pos.type.strong.copy(fontSize = 22.sp), color = c.primary, modifier = Modifier.padding(bottom = 12.dp)) }
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    items(k.lines) { l ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(l.name, style = Pos.type.strong.copy(fontSize = 26.sp), color = c.ink)
+                                if (l.note.isNotBlank()) Text(l.note, style = Pos.type.label.copy(fontSize = 18.sp), color = c.primary)
+                            }
+                            Text(l.qty, style = Pos.type.body.copy(fontSize = 24.sp), color = c.sub, modifier = Modifier.width(130.dp))
+                            Text(if (l.gift) "赠送" else yuan(l.amount), style = Pos.type.strong.copy(fontSize = 26.sp), color = if (l.gift) c.primary else c.ink)
+                        }
+                    }
+                }
+            }
+        }
+        Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(c.surface).padding(28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Amount("原价合计", yuan(k.sub))
+            if (k.save > 0) Amount("已省", "−" + yuan(k.save).drop(1))
+            if (k.credit > 0) Amount("换货抵扣", "−" + yuan(k.credit).drop(1))
+            Spacer(Modifier.weight(1f))
+            Text(when { k.refund > 0 -> "退您差价"; k.credit > 0 -> "需补差价"; k.pay != null -> "应付"; else -> "当前合计" }, style = Pos.type.label.copy(fontSize = 22.sp), color = c.sub)
+            Text(yuan(if (k.refund > 0) k.refund else k.due), style = Pos.type.amount.copy(fontSize = 64.sp, fontWeight = FontWeight.Bold), color = c.primary)
+            k.pay?.let { p ->
+                Amount("收款方式", p.method)
+                p.received?.let { Amount("实收", yuan(it)) }
+                p.change?.let { Text("找零 ${yuan(it)}", style = Pos.type.amount.copy(fontSize = 40.sp), color = c.ink) }
             }
         }
     }
@@ -267,6 +309,8 @@ fun CustomerDisplayPanel() {
             val factor = maxWidth.value / 1280f
             CompositionLocalProvider(LocalDensity provides Density(d.density * factor, d.fontScale)) { CustomerScreen(view, now) }
         }
-        Text("跟随收银员当前桌台：点单时显示明细与合计，结账时显示应付、收款方式与找零，收款成功后显示致谢页 ${CustomerDisplayRules.PAID_HOLD_MS / 1000} 秒。", style = Pos.type.label, color = Pos.colors.sub)
+        val retail = c.config.current.collectAsStateWithLifecycle().value?.biz == ai.neargo.fnb.pos.core.model.BizType.Retail
+        Text(if (retail) "跟随收银台购物车：扫码时显示刚扫的商品、逐行明细、已省与合计，收款时显示应付与找零，换货显示补差价或退差价；收款成功后显示致谢页 ${CustomerDisplayRules.PAID_HOLD_MS / 1000} 秒。空闲时优先轮播特惠商品。"
+            else "跟随收银员当前桌台：点单时显示明细与合计，结账时显示应付、收款方式与找零，收款成功后显示致谢页 ${CustomerDisplayRules.PAID_HOLD_MS / 1000} 秒。", style = Pos.type.label, color = Pos.colors.sub)
     }
 }
