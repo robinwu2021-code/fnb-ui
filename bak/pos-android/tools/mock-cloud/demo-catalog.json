@@ -1,0 +1,282 @@
+{
+    "storeNo": "NS002",
+    "menus": [
+        {
+            "menuNo": "M1",
+            "revisionNo": "R1",
+            "name": "全天菜单"
+        }
+    ],
+    "items": [
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-1",
+            "goodsNo": "G-1",
+            "title": "宫保鸡丁",
+            "skus": [
+                {
+                    "skuNo": "S-1-g1:g1-1|g2:g2-1",
+                    "spec": "标准 · 微辣",
+                    "priceMinor": 4800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-1-g1:g1-1|g2:g2-2",
+                    "spec": "标准 · 中辣",
+                    "priceMinor": 4800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-1-g1:g1-1|g2:g2-3",
+                    "spec": "标准 · 不辣",
+                    "priceMinor": 4800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-1-g1:g1-2|g2:g2-1",
+                    "spec": "大份 · 微辣",
+                    "priceMinor": 5800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-1-g1:g1-2|g2:g2-2",
+                    "spec": "大份 · 中辣",
+                    "priceMinor": 5800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-1-g1:g1-2|g2:g2-3",
+                    "spec": "大份 · 不辣",
+                    "priceMinor": 5800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-2",
+            "goodsNo": "G-2",
+            "title": "水煮鱼",
+            "skus": [
+                {
+                    "skuNo": "S-2-g1:g1-1|g2:g2-1",
+                    "spec": "标准 · 微辣",
+                    "priceMinor": 8800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-2-g1:g1-1|g2:g2-2",
+                    "spec": "标准 · 中辣",
+                    "priceMinor": 8800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-2-g1:g1-1|g2:g2-3",
+                    "spec": "标准 · 不辣",
+                    "priceMinor": 8800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-2-g1:g1-2|g2:g2-1",
+                    "spec": "大份 · 微辣",
+                    "priceMinor": 9800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-2-g1:g1-2|g2:g2-2",
+                    "spec": "大份 · 中辣",
+                    "priceMinor": 9800,
+                    "currency": "CNY"
+                },
+                {
+                    "skuNo": "S-2-g1:g1-2|g2:g2-3",
+                    "spec": "大份 · 不辣",
+                    "priceMinor": 9800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-3",
+            "goodsNo": "G-3",
+            "title": "小炒黄牛肉",
+            "skus": [
+                {
+                    "skuNo": "S-3",
+                    "spec": "",
+                    "priceMinor": 6800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-4",
+            "goodsNo": "G-4",
+            "title": "蒜蓉西兰花",
+            "skus": [
+                {
+                    "skuNo": "S-4",
+                    "spec": "",
+                    "priceMinor": 2800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-5",
+            "goodsNo": "G-5",
+            "title": "麻婆豆腐",
+            "skus": [
+                {
+                    "skuNo": "S-5",
+                    "spec": "",
+                    "priceMinor": 2600,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-6",
+            "goodsNo": "G-6",
+            "title": "酸菜鱼",
+            "skus": [
+                {
+                    "skuNo": "S-6",
+                    "spec": "",
+                    "priceMinor": 7800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-7",
+            "goodsNo": "G-7",
+            "title": "夫妻肺片",
+            "skus": [
+                {
+                    "skuNo": "S-7",
+                    "spec": "",
+                    "priceMinor": 3800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-8",
+            "goodsNo": "G-8",
+            "title": "拍黄瓜",
+            "skus": [
+                {
+                    "skuNo": "S-8",
+                    "spec": "",
+                    "priceMinor": 1600,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-9",
+            "goodsNo": "G-9",
+            "title": "米饭",
+            "skus": [
+                {
+                    "skuNo": "S-9",
+                    "spec": "",
+                    "priceMinor": 300,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-10",
+            "goodsNo": "G-10",
+            "title": "担担面",
+            "skus": [
+                {
+                    "skuNo": "S-10",
+                    "spec": "",
+                    "priceMinor": 2200,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-11",
+            "goodsNo": "G-11",
+            "title": "番茄蛋汤",
+            "skus": [
+                {
+                    "skuNo": "S-11",
+                    "spec": "",
+                    "priceMinor": 1800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-12",
+            "goodsNo": "G-12",
+            "title": "酸梅汤",
+            "skus": [
+                {
+                    "skuNo": "S-12",
+                    "spec": "",
+                    "priceMinor": 1200,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-13",
+            "goodsNo": "G-13",
+            "title": "鲜榨橙汁",
+            "skus": [
+                {
+                    "skuNo": "S-13",
+                    "spec": "",
+                    "priceMinor": 1800,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-14",
+            "goodsNo": "G-14",
+            "title": "红糖糍粑",
+            "skus": [
+                {
+                    "skuNo": "S-14",
+                    "spec": "",
+                    "priceMinor": 2200,
+                    "currency": "CNY"
+                }
+            ]
+        },
+        {
+            "menuNo": "M1",
+            "menuItemNo": "MI-15",
+            "goodsNo": "G-15",
+            "title": "双人套餐",
+            "skus": [
+                {
+                    "skuNo": "S-15",
+                    "spec": "",
+                    "priceMinor": 16800,
+                    "currency": "CNY"
+                }
+            ]
+        }
+    ]
+}

@@ -36,14 +36,15 @@ data class CloudState(
     val issues: List<CloudIssue> = emptyList(),
     val lastRound: SyncRound? = null,
     val lastSyncAt: Long = 0,
-    val businessDate: String = "",
+    /** 服务端门店桌台数（探测时带回，用于确认门店号填对了） */
+    val tables: Int = 0,
 )
 
 /**
  * 云端连通与同步循环（方案 §2–§6）：
  * - 只有主 POS / 单机连云（`uploader`）；副 POS 显示「经主 POS」。
  * - 系统无网络或强制离线：立即离线，不探测。
- * - 有网：按 [CloudHealth.nextProbeMs] 探测 `/store/info`；判为在线且有待上传时回放一轮。
+ * - 有网：按 [CloudHealth.nextProbeMs] 探测（取 1 张桌台）；判为在线且有待上传时回放一轮。
  * - 网络恢复、新事件、手动「立即同步」会提前唤醒。
  */
 class CloudMonitor(
@@ -97,14 +98,14 @@ class CloudMonitor(
         val st = s.value
         if (!st.settings.configured || !st.uploader) { s.update { it.withBadge() }; return }
         if (!netUp) { s.update { it.copy(health = it.health.forceOffline("本机无网络或已强制离线")).withBadge() }; return }
-        val probe = runCatching { api.storeInfo(st.settings.storeNo) }
+        val probe = runCatching { api.probe(st.settings.storeNo) }
         probe.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         s.update { cur ->
             val h = probe.fold({ cur.health.success() }, { e ->
                 // 门店号或令牌错误：属于配置问题，直接判离线并显示原因
                 if (e is CloudException && e.kind != CloudErrorKind.Network) cur.health.forceOffline(e.message.orEmpty()) else cur.health.failure(e.message ?: "连接失败")
             })
-            cur.copy(health = h, businessDate = probe.getOrNull()?.businessDate ?: cur.businessDate).withBadge()
+            cur.copy(health = h, tables = probe.getOrNull()?.tables ?: cur.tables).withBadge()
         }
         if (s.value.health.online && s.value.pending > 0) runRound()
     }
@@ -118,8 +119,8 @@ class CloudMonitor(
         return runCatching { runRound() }.onFailure { if (it is CancellationException) throw it }
     }
 
-    /** 测试连接：用当前填写（未保存）的设置调一次门店信息 */
-    suspend fun test(settings: CloudSettings, probe: suspend (CloudSettings) -> CloudStoreInfo): Result<CloudStoreInfo> =
+    /** 测试连接：用当前填写（未保存）的设置探测一次 */
+    suspend fun test(settings: CloudSettings, probe: suspend (CloudSettings) -> CloudProbe): Result<CloudProbe> =
         runCatching { probe(settings) }.onFailure { if (it is CancellationException) throw it }
 
     fun configure(settings: CloudSettings) {
@@ -168,7 +169,7 @@ class CloudMonitor(
             }
             cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues()).withBadge()
         }
-        if (r.uploaded > 0) runCatching { afterRound() }
+        if (r.uploaded + r.local > 0) runCatching { afterRound() }
         r
     }
 

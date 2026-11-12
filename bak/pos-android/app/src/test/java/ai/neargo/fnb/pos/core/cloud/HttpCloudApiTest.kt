@@ -8,10 +8,10 @@ import org.junit.Before
 import org.junit.Test
 import java.net.InetSocketAddress
 
-/** HTTP 层：请求头（令牌、门店、员工、幂等键）、body 字段、信封解析、错误码分类、断网 */
+/** HTTP 层（Biz 接口）：路径、请求头（令牌、门店、员工、幂等键）、body 字段、信封解析、错误码分类、断网 */
 class HttpCloudApiTest {
     private lateinit var server: HttpServer
-    private val seen = mutableListOf<Pair<Map<String, String>, String>>()
+    private val seen = mutableListOf<Triple<String, Map<String, String>, String>>()
     private var reply: (String) -> Pair<Int, String> = { 200 to "{}" }
 
     @Before fun up() {
@@ -19,55 +19,71 @@ class HttpCloudApiTest {
         server.createContext("/") { ex ->
             val h = ex.requestHeaders.entries.associate { it.key.lowercase() to it.value.first() }
             val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
-            synchronized(seen) { seen += h to (ex.requestURI.toString() + " " + body) }
+            synchronized(seen) { seen += Triple(ex.requestMethod + " " + ex.requestURI.toString(), h, body) }
             val (status, text) = reply(ex.requestURI.path)
-            val bytes = text.toByteArray(); ex.sendResponseHeaders(status, bytes.size.toLong()); ex.responseBody.use { it.write(bytes) }
+            val bytes = text.toByteArray(); ex.sendResponseHeaders(status, if (bytes.isEmpty()) -1 else bytes.size.toLong()); if (bytes.isNotEmpty()) ex.responseBody.use { it.write(bytes) } else ex.close()
         }
         server.start()
     }
     @After fun down() = server.stop(0)
 
-    private fun api(base: String = "http://127.0.0.1:${server.address.port}/api") =
-        HttpCloudApi({ CloudConfig(base, "NS002", "tok", { "S001" }) }, connectTimeoutMs = 500, readTimeoutMs = 1000)
+    private fun base() = "http://127.0.0.1:${server.address.port}"
+    private fun api(base: String = base()) = HttpCloudApi({ CloudConfig(base, "NS002", "tok", { "S001" }) }, connectTimeoutMs = 500, readTimeoutMs = 1000)
 
-    @Test fun openTableSendsHeadersAndParsesEnvelope() = runBlocking {
-        reply = { 200 to """{"code":0,"msg":"ok","data":{"check":{"checkNo":"C1","status":"OPEN","tableNos":["t-1"],"guestCount":2,"version":1,"extra":1},
-            "table":{"tableNo":"t-1","name":"H01","status":"IN_USE","checkNo":"C1","version":2}}}""" }
-        val r = api().openTable("NS002", "ev-1", "t-1", 2)
-        assertEquals("C1", r.check.checkNo); assertEquals(2L, r.table.version)
-        val (h, req) = seen.single()
+    @Test fun openCheckUsesBizPathHeadersAndStrictBody() = runBlocking {
+        reply = { 200 to """{"code":0,"msg":"success","data":{"check":{"checkNo":"C1","storeNo":"NS002","businessDate":"2026-11-12","status":"OPEN","partySize":2,"tableNos":["t-1"],"version":1,"extra":1}}}""" }
+        val c = api().openCheck("NS002", "ev-1", listOf("t-1"), 2, listOf(CloudTableVersion("t-1", 3)))
+        assertEquals("C1", c.checkNo); assertEquals(1L, c.version)
+        val (req, h, body) = seen.single()
+        assertEquals("POST /biz/x/food/stores/NS002/checks", req)
         assertEquals("Bearer tok", h["authorization"]); assertEquals("NS002", h["x-store-no"]); assertEquals("S001", h["x-operator"]); assertEquals("ev-1", h["idempotency-key"])
-        assertTrue(req.startsWith("/api/table/open ")); assertTrue(req.contains("\"tableNo\":\"t-1\"")); assertTrue(req.contains("\"guestCount\":2")); assertFalse(req.contains("idempotencyKey"))   // 幂等键只走请求头
+        assertEquals("""{"tableNos":["t-1"],"partySize":2,"tableVersions":[{"tableNo":"t-1","version":3}]}""", body)   // 不带 storeNo、不带幂等键
     }
 
-    @Test fun tableListReadsPagedRecordsWithQuery() = runBlocking {
-        reply = { 200 to """{"code":0,"data":{"records":[{"tableNo":"t-1","name":"H01","status":"IDLE","version":1}],"total":1}}""" }
+    @Test fun cartLineSendsNumberQtyWithoutNulls() = runBlocking {
+        reply = { 200 to """{"code":0,"data":{"cartNo":"CT1","version":5}}""" }
+        val v = api().replaceCartLine("ev-2:line:7", "CT1", "L7", CloudLineInput("L7", "M1", "MI1", "R1", "G1", "S1", 2), 4)
+        assertEquals(5L, v.version)
+        val (req, h, body) = seen.single()
+        assertEquals("PUT /biz/x/food/carts/CT1/lines/L7", req); assertEquals("ev-2:line:7", h["idempotency-key"])
+        assertEquals("""{"line":{"sourceLineRef":"L7","menuNo":"M1","menuItemNo":"MI1","menuRevisionNo":"R1","goodsNo":"G1","skuNo":"S1","qty":2},"version":4}""", body)
+    }
+
+    @Test fun confirmQuoteHasNoIdempotencyKeyAndBatchIsPostpay() = runBlocking {
+        reply = { p -> 200 to if (p.endsWith(":confirm")) """{"code":0,"data":{"quoteNo":"Q1","confirmationDigest":"d2","totals":{}}}""" else """{"code":0,"data":{"batchNo":"B1","status":"ACCEPTED","amountMinor":3800,"version":1}}""" }
+        assertEquals("d2", api().confirmQuote("Q1", "CT1", 5, "d1").confirmationDigest)
+        assertEquals(3800L, api().placeBatch("NS002", "ev-2:batch", "CT1", 5, "Q1", "d2").amountMinor)
+        assertNull(seen[0].second["idempotency-key"]); assertEquals("POST /biz/x/food/quotes/Q1:confirm", seen[0].first)
+        assertTrue(seen[1].third.contains("\"payMode\":\"POSTPAY\""))
+    }
+
+    @Test fun tableListReadsPagedRecordsAndProbe() = runBlocking {
+        reply = { 200 to """{"code":0,"data":{"records":[{"tableNo":"t-1","storeNo":"NS002","name":"H01","capacity":2,"status":"ACTIVE","turnoverState":"IDLE","version":1}],"total":6}}""" }
         assertEquals("H01", api().tableList("NS002").single().name)
-        assertTrue(seen.single().second.startsWith("/api/table/list?storeNo=NS002&page=1&size=500"))
-        assertNull(seen.single().first["idempotency-key"])
+        assertEquals(6, api().probe("NS002").tables)
+        assertEquals("GET /biz/x/food/stores/NS002/tables?page=1&size=500", seen[0].first)
+        assertNull(seen[0].second["idempotency-key"])
     }
 
     @Test fun businessCodesAreClassified() = runBlocking {
-        for ((code, kind) in listOf(10409 to CloudErrorKind.Conflict, 10401 to CloudErrorKind.Unauthorized, 10404 to CloudErrorKind.NotFound, 10400 to CloudErrorKind.Rejected)) {
+        for ((code, kind) in listOf(10409 to CloudErrorKind.Conflict, 10401 to CloudErrorKind.Unauthorized, 10404 to CloudErrorKind.NotFound, 10400 to CloudErrorKind.Rejected, 10500 to CloudErrorKind.Network)) {
             reply = { 200 to """{"code":$code,"msg":"m$code","data":null}""" }
-            val e = runCatching { api().checkDetail("NS002", "C1") }.exceptionOrNull() as CloudException
+            val e = runCatching { api().check("C1") }.exceptionOrNull() as CloudException
             assertEquals(kind, e.kind); assertEquals(code, e.code)
         }
-        reply = { 200 to """{"code":10500,"msg":"处理中","data":null}""" }
-        assertEquals(CloudErrorKind.Network, (runCatching { api().storeInfo("NS002") }.exceptionOrNull() as CloudException).kind)   // 首个请求仍在处理：可重试
         reply = { 401 to "" }
-        assertEquals(CloudErrorKind.Unauthorized, (runCatching { api().storeInfo("NS002") }.exceptionOrNull() as CloudException).kind)
+        assertEquals(CloudErrorKind.Unauthorized, (runCatching { api().probe("NS002") }.exceptionOrNull() as CloudException).kind)
+        reply = { 403 to "" }
+        assertEquals(CloudErrorKind.Unauthorized, (runCatching { api().probe("NS002") }.exceptionOrNull() as CloudException).kind)
         reply = { 503 to "busy" }
-        assertEquals(CloudErrorKind.Network, (runCatching { api().storeInfo("NS002") }.exceptionOrNull() as CloudException).kind)
+        assertEquals(CloudErrorKind.Network, (runCatching { api().probe("NS002") }.exceptionOrNull() as CloudException).kind)
         reply = { 200 to "<html>" }
-        assertEquals(CloudErrorKind.Network, (runCatching { api().storeInfo("NS002") }.exceptionOrNull() as CloudException).kind)
+        assertEquals(CloudErrorKind.Network, (runCatching { api().probe("NS002") }.exceptionOrNull() as CloudException).kind)
     }
 
     @Test fun unreachableIsNetwork() = runBlocking {
         val port = server.address.port; server.stop(0)
-        val e = runCatching { api("http://127.0.0.1:$port").storeInfo("NS002") }.exceptionOrNull() as CloudException
-        assertEquals(CloudErrorKind.Network, e.kind)
-        val bad = runCatching { api("not a url").storeInfo("NS002") }.exceptionOrNull() as CloudException
-        assertEquals(CloudErrorKind.Network, bad.kind)
+        assertEquals(CloudErrorKind.Network, (runCatching { api("http://127.0.0.1:$port").probe("NS002") }.exceptionOrNull() as CloudException).kind)
+        assertEquals(CloudErrorKind.Network, (runCatching { api("not a url").probe("NS002") }.exceptionOrNull() as CloudException).kind)
     }
 }
