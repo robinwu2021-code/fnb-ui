@@ -172,6 +172,8 @@ class WorkspaceCommandException(val receipt: JournalReceipt) : Exception(receipt
  * 保证开台、结账、补发等跨实体操作原子完成；每次修改先串行落盘再发布状态，进程重启后恢复。
  * 阶段三接服务时各接口分别对接远端，界面与 ViewModel 不变。
  */
+private const val DEMO_USER = "体验账号"
+
 class LocalWorkspace(
     private val store: SnapshotStore,
     private val scope: CoroutineScope,
@@ -292,10 +294,11 @@ class LocalWorkspace(
     override val session: StateFlow<Session> = derive { v ->
         val s = v.store
         Session(v.user, s?.id, s?.settings?.shortName ?: "未选择门店",
-            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) DemoCatalog.STAFF else "未上岗", s?.currentTableId ?: "", s?.biz ?: BizType.Dining)
+            // 没设员工：演示门店显示演示收银员，真实门店提示去设员工
+            staffOf(v)?.let { "${it.name} · ${it.role.label}" } ?: if (s?.employees.isNullOrEmpty()) (if (s?.owner.isNullOrEmpty()) DemoCatalog.STAFF else "未设员工") else "未上岗", s?.currentTableId ?: "", s?.biz ?: BizType.Dining)
     }
     override val stores: StateFlow<List<StoreSummary>> = derive { v ->
-        v.stores.values.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }, s.biz) }
+        v.stores.values.filter { visible(v, it) }.map { s -> StoreSummary(s.id, s.settings.shortName, s.code, s.address, s.tables.size, s.tables.count { it.status == TableStatus.Dining }, s.biz) }
     }
     override val current: StateFlow<StoreData?> = derive { it.store }
     // 桌台、订单流由餐饮服务提供
@@ -811,7 +814,8 @@ class LocalWorkspace(
         val id = identity ?: return fail("本机未启用离线授权")
         val issuer = id.devIssuer ?: return fail("发行版不提供开发签发，请导入正式激活包")
         val v = state.value
-        val token = issuer.issue(thumb, v.deviceId, v.tenantId, v.stores.keys.toList(), kind, clock(), authEpoch = maxOf(1, v.knownAuthEpoch))
+        // 授权只覆盖当前账号能看到的门店（真实商户自己的门店，不带演示门店）
+        val token = issuer.issue(thumb, v.deviceId, v.tenantId, v.stores.values.filter { visible(v, it) }.map { it.id }, kind, clock(), authEpoch = maxOf(1, v.knownAuthEpoch))
         return importGrant(token)
     }
 
@@ -832,7 +836,36 @@ class LocalWorkspace(
             authLogged(v.copy(lastSeenWall = clock()), "主管 ${email.trim()} 确认校时") to Result.success(Unit)
         }
     }
-    override suspend fun selectStore(storeId: String) { commit { if (storeId in it.stores) it.copy(storeId = storeId, staffId = if (storeId == it.storeId) it.staffId else "") else it } }
+    override suspend fun selectStore(storeId: String) { commit { v -> val st = v.stores[storeId]; if (st != null && visible(v, st)) v.copy(storeId = storeId, staffId = if (storeId == v.storeId) v.staffId else "") else v } }
+
+    /**
+     * 门店可见范围：体验账号只看演示门店；真实账号建了自己的门店后只看自己的，还没建的先看演示门店（试用）。
+     */
+    private fun visible(v: Vault, s: StoreData): Boolean {
+        val u = v.user
+        if (u == null || u == DEMO_USER) return s.owner.isEmpty()
+        return if (v.stores.values.any { it.owner == u }) s.owner == u else s.owner.isEmpty()
+    }
+
+    override suspend fun createStore(name: String, code: String, address: String, biz: BizType): Result<String> = persistenceResult {
+        transaction { v ->
+            val u = v.user
+            val n = name.trim(); val c = code.trim().uppercase(); val a = address.trim()
+            val why = when {
+                u == null -> "请先登录"
+                u == DEMO_USER -> "体验账号不能新建门店，请注册商户"
+                v.lan.role == LanRole.Secondary -> "副 POS 不能新建门店，请在主 POS 上建"
+                n.isEmpty() || n.length > 20 -> "门店名称 1–20 字"
+                !Regex("^[A-Z0-9-]{2,12}$").matches(c) -> "门店码 2–12 位字母、数字或短横线"
+                v.stores.values.any { it.code.equals(c, true) } -> "门店码 $c 已被使用"
+                a.length > 60 -> "地址最多 60 字"
+                else -> null
+            }
+            if (why != null) return@transaction v to Result.failure(IllegalStateException(why))
+            val st = StoreTemplates.fresh(DemoCatalog.stores(clock()), biz, newId("s"), n, c, a, u!!)
+            v.copy(stores = v.stores + (st.id to st), storeId = st.id, staffId = "") to Result.success(st.id)
+        }
+    }
     override suspend fun selectTable(tableId: String) { storeOp { it.copy(currentTableId = tableId) }.getOrThrow() }
 
     // —— 门店配置 ——

@@ -38,6 +38,8 @@ interface SessionRepository {
     suspend fun logout()
     suspend fun selectStore(storeId: String)
     suspend fun selectTable(tableId: String)
+    /** 真实商户新建门店：按业态从演示门店复制商品、规格、桌台与设置（不带订单、流水、会员、员工），归当前账号；返回门店 ID */
+    suspend fun createStore(name: String, code: String, address: String, biz: ai.neargo.fnb.pos.core.model.BizType): Result<String>
 }
 
 /** 门店配置：区域、桌台、分类、规格组、商品、库存、餐牌、门店设置。 */

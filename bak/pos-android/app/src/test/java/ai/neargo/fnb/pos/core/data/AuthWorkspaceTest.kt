@@ -132,4 +132,12 @@ class AuthWorkspaceTest {
         assertTrue(w.importGrant(DevIssuer().issue("x", "d", "t", listOf("s-main"), GrantKind.Short, 1_800_000_000_000L)).isFailure)
         assertEquals(AuthState.PendingClaim, w.auth.value.state)
     }
+
+    @Test fun newStoreGrantCoversOnlyOwnStores() = runWs { w, _, _, _ ->
+        val id = w.createStore("东门店", "DM01", "", ai.neargo.fnb.pos.core.model.BizType.Retail).getOrThrow()
+        assertTrue(w.devIssue(GrantKind.Long).isSuccess)
+        assertEquals(AuthState.Active, w.auth.value.state)
+        assertEquals(listOf(id), Grants.peek(w.lanSnapshot().offlineGrant!!)!!.storeIds)
+        assertEquals("未设员工", w.session.value.staff)
+    }
 }

@@ -288,6 +288,8 @@ data class StoreData(
     val settings: StoreSettings,
     /** 门店业态（默认餐饮，旧数据兼容） */
     val biz: BizType = BizType.Dining,
+    /** 门店归属账号（邮箱）；空 = 演示 / 旧数据门店 */
+    val owner: String = "",
     /** 零售业务数据（零售门店才有内容） */
     val retail: RetailData = RetailData(),
     val areas: List<Area>,

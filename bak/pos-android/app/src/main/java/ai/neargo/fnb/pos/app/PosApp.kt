@@ -140,6 +140,12 @@ class ShellViewModel(private val session: SessionRepository, device: DeviceRepos
     }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ShellUiState())
     fun selectStore(id: String) = viewModelScope.launchStorage(messages) { session.selectStore(id) }
+    /** 新建门店：成功后直接进入；新门店不在原授权范围内，提示去授权中心签发 */
+    fun createStore(name: String, code: String, address: String, biz: ai.neargo.fnb.pos.core.model.BizType, done: (String?) -> Unit) = viewModelScope.launchStorage(messages) {
+        session.createStore(name, code, address, biz)
+            .onSuccess { done(null); messages.post("已新建门店「${name.trim()}」；请到「系统管理 · 授权中心」为新门店签发授权后营业") }
+            .onFailure { done(it.message ?: "新建失败") }
+    }
     fun logout() = viewModelScope.launchStorage(messages) { session.logout() }
     /** 页头语言图标：中文 ⇄ English，写入显示偏好。 */
     fun toggleLang() = viewModelScope.launchStorage(messages) { prefs.update { it.copy(lang = if (it.lang == Lang.Zh) Lang.En else Lang.Zh) } }
@@ -173,7 +179,9 @@ fun PosApp(shell: ShellViewModel) {
     if (session.user == null) { AuthRoute(); return }
     if (session.storeId == null || pickingStore) {
         StorePicker(state.stores, session.storeId, onPick = { shell.selectStore(it); pickingStore = false }, onLogout = { pickingStore = false; shell.logout() },
-            onCancel = if (session.storeId != null) ({ pickingStore = false }) else null)
+            onCancel = if (session.storeId != null) ({ pickingStore = false }) else null,
+            // 体验账号只用演示门店；真实商户可以新建
+            onCreate = if (session.user != "体验账号") ({ n, c, a, b, done -> shell.createStore(n, c, a, b) { e -> done(e); if (e == null) pickingStore = false } }) else null)
         return
     }
     val container = appContainer()

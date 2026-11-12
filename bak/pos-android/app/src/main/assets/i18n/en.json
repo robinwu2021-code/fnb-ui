@@ -1914,5 +1914,16 @@
   "标签机：未设置（系统管理 · 终端与打印 · 档口路由「标签机」），现在是模拟打印": "Label printer not set (Settings · Terminals & printing · route \"Label printer\"); printing is simulated",
   "标签机": "Label printer",
   "价签（TSPL）": "Price labels (TSPL)",
-  "价签 {0} 张（{1}）": "{0} price labels ({1})"
+  "价签 {0} 张（{1}）": "{0} price labels ({1})",
+  "新建门店": "New store",
+  "新建并进入": "Create and open",
+  "门店名称": "Store name",
+  "门店码": "Store code",
+  "地址（可不填）": "Address (optional)",
+  "例如 东门店": "e.g. East Gate",
+  "2–12 位字母、数字，如 DM01": "2–12 letters or digits, e.g. DM01",
+  "商品、规格、桌台与设置按业态从演示门店复制一份，建好后到「系统管理」里改；订单、会员、员工不复制。": "Products, options, tables and settings are copied from the demo store of the same type; edit them in Admin. Orders, members and staff are not copied.",
+  "已发送开钱箱指令": "Cash drawer opened",
+  "开钱箱失败": "Could not open cash drawer",
+  "未设员工": "No staff yet"
 }
