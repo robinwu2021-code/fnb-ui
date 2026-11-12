@@ -40,6 +40,7 @@ sealed interface RetailOverlay {
     data class Note(val key: Long) : RetailOverlay
     data object Discount : RetailOverlay
     data object Promos : RetailOverlay
+    data object Member : RetailOverlay
     data class Done(val sale: RetailSale, val received: Long, val change: Long, val save: Long, val credit: ai.neargo.fnb.pos.core.model.ExchangeCredit? = null, val refund: Long = 0) : RetailOverlay
 }
 
@@ -63,6 +64,8 @@ data class CartState(
     val discountPct: Int = 100,
     val promoIds: List<String> = emptyList(),
     val approver: String = "",
+    /** 识别到的会员档案 ID（空 = 没识别或只是演示会员） */
+    val memberId: String = "",
 )
 
 data class RetailPosUiState(
@@ -83,10 +86,12 @@ data class RetailPosUiState(
     val promotions: List<ai.neargo.fnb.pos.core.model.Promotion> = emptyList(),
     /** 当班员工能不能直接改价 / 打折（有「退菜、赠送、折扣授权」权限）；不能就要主管输账号和 PIN */
     val canAdjust: Boolean = true,
+    val members: List<ai.neargo.fnb.pos.core.model.Member> = emptyList(),
 ) {
+    val memberRec get() = members.firstOrNull { it.id == cart.memberId }
     /** 现在能用的活动（门槛满足的才算进去） */
     fun promoValid(id: String) = promotions.firstOrNull { it.id == id }?.let { it.enabled && totals.sub >= it.threshold } == true
-    val extras get() = ai.neargo.fnb.pos.core.model.CheckoutExtras(cart.discountPct, cart.promoIds.filter { promoValid(it) }, cart.approver)
+    val extras get() = ai.neargo.fnb.pos.core.model.CheckoutExtras(cart.discountPct, cart.promoIds.filter { promoValid(it) }, cart.approver, cart.memberId)
     /** 快捷购物袋（设置里选的、还在售的商品） */
     val bags get() = settings.bagIds.mapNotNull { product(it) }
     /** 有抵扣时的多退少补 */
@@ -129,6 +134,8 @@ sealed interface RetailPosAction {
     data class Gift(val key: Long) : RetailPosAction
     data class Remove(val key: Long) : RetailPosAction
     data object ToggleMember : RetailPosAction
+    data class PickMember(val id: String) : RetailPosAction
+    data class NewMember(val phone: String, val name: String) : RetailPosAction
     data object AddCustom : RetailPosAction
     /** 购物车里的快捷购物袋 */
     data class AddBag(val productId: String) : RetailPosAction
@@ -175,6 +182,7 @@ class RetailPosViewModel(
     device: DeviceRepository,
     private val messages: MessageBus,
     private val staff: ai.neargo.fnb.pos.core.data.StaffRepository? = null,
+    private val ops: ai.neargo.fnb.pos.core.data.OperationsRepository? = null,
 ) : ViewModel() {
     private val cart = MutableStateFlow(CartState())
     private var seq = System.currentTimeMillis()
@@ -187,7 +195,8 @@ class RetailPosViewModel(
             cart = c, products = products,
             categories = store.categories.filter { cat -> products.any { it.categoryId == cat.id } },
             specGroups = store.specGroups, held = store.retail.held, nextNo = "#R%04d".format(store.retail.saleSeq),
-            payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.walletBalance, online = d.online,
+            payMethods = METHODS.filter { it in store.settings.payMethods }, wallet = store.members.firstOrNull { it.id == c.memberId }?.balance ?: store.walletBalance, online = d.online,
+            members = store.members,
             totals = RetailCheckout.totalsWith(products, store.promotions, c.lines, c.member,
                 ai.neargo.fnb.pos.core.model.CheckoutExtras(c.discountPct, c.promoIds.filter { id -> store.promotions.firstOrNull { it.id == id }?.let { it.enabled } == true }, c.approver)),
             credit = store.retail.credit, settings = store.retail.settings,
@@ -225,7 +234,13 @@ class RetailPosViewModel(
                 if (c.lines.isEmpty()) messages.post("购物车是空的，先扫商品") else set { it.copy(mode = PosMode.Pay, method = "扫码", cash = "") }
                 return
             }
-            BarcodeRules.CodeKind.Member -> { set { it.copy(member = true) }; messages.post("已识别会员"); return }
+            BarcodeRules.CodeKind.Member -> {
+                // 会员码：M + 手机号（或手机号后几位）/ 会员 ID
+                val d = raw.drop(1).filter(Char::isDigit)
+                val m = s().members.firstOrNull { it.id.equals(raw, true) || (d.length >= 4 && it.phone.endsWith(d)) }
+                if (m == null) messages.post("未找到会员 $raw") else { set { it.copy(member = true, memberId = m.id) }; messages.post("已识别会员 ${m.name}") }
+                return
+            }
             BarcodeRules.CodeKind.Weigh -> {
                 val w = BarcodeRules.parseWeigh(raw)!!
                 val p = products.firstOrNull { it.retail?.weighable == true && it.retail.barcodes.any { b -> b.filter(Char::isDigit).toIntOrNull() == w.plu.toInt() } }
@@ -267,7 +282,12 @@ class RetailPosViewModel(
             is RetailPosAction.ToggleOpen -> set { it.copy(open = if (it.open == a.key) null else a.key) }
             is RetailPosAction.Gift -> set { it.copy(lines = RetailCartRules.toggleGift(it.lines, a.key), open = null) }
             is RetailPosAction.Remove -> set { c -> c.copy(lines = RetailCartRules.remove(c.lines, a.key), open = null, last = c.last.takeIf { it != a.key }) }
-            RetailPosAction.ToggleMember -> set { it.copy(member = !it.member) }
+            RetailPosAction.ToggleMember -> set { if (it.member) it.copy(member = false, memberId = "") else it.copy(overlay = RetailOverlay.Member) }
+            is RetailPosAction.PickMember -> set { it.copy(member = true, memberId = a.id, overlay = null) }
+            is RetailPosAction.NewMember -> viewModelScope.launchStorage(messages) {
+                val r = ops?.createMember(a.phone, a.name) ?: Result.failure(IllegalStateException("不能新建会员"))
+                r.onSuccess { m -> set { it.copy(member = true, memberId = m.id, overlay = null) }; messages.post("已新建会员 ${m.name}") }.onFailure { messages.post(it.message ?: "新建会员失败") }
+            }
             RetailPosAction.AddCustom -> set { it.copy(overlay = RetailOverlay.Custom) }
             is RetailPosAction.CustomAdd -> if (a.price > 0) add(CartLine(0, "custom", 1, customName = a.name.trim().ifBlank { "临时商品" }, customPrice = a.price))
             RetailPosAction.OpenDrawer -> messages.post("已发送开钱箱指令（演示）")
@@ -275,9 +295,11 @@ class RetailPosViewModel(
             RetailPosAction.ShowHeld -> set { it.copy(overlay = RetailOverlay.Held) }
             is RetailPosAction.Recall -> viewModelScope.launchStorage(messages) {
                 // 当前购物车有东西：先挂起来，再取
-                if (cart.value.lines.isNotEmpty()) retail.holdCart(cart.value.lines, if (cart.value.member) "会员" else null, "取单时自动挂起").onFailure { messages.post(it.message ?: "挂单失败"); return@launchStorage }
+                if (cart.value.lines.isNotEmpty()) retail.holdCart(cart.value.lines, memberTag(cart.value), "取单时自动挂起").onFailure { messages.post(it.message ?: "挂单失败"); return@launchStorage }
                 retail.recallHeld(a.no).onSuccess { h ->
-                    set { CartState(lines = h.lines, member = h.member != null, last = h.lines.firstOrNull()?.key, cat = it.cat) }
+                    // 挂单里记的是会员 ID（旧挂单记的是名字），能对上档案就恢复
+                    val m = s().members.firstOrNull { it.id == h.member || it.name == h.member }
+                    set { CartState(lines = h.lines, member = h.member != null, memberId = m?.id.orEmpty(), last = h.lines.firstOrNull()?.key, cat = it.cat) }
                     messages.post("已取回挂单 ${h.no}")
                 }.onFailure { messages.post(it.message ?: "取单失败") }
             }
@@ -327,9 +349,11 @@ class RetailPosViewModel(
         retail.authorize(who, secret).onSuccess(ok).onFailure { messages.post(it.message ?: "授权失败") }
     }
 
+    private fun memberTag(c: CartState) = if (!c.member) null else c.memberId.ifBlank { "会员" }
+
     private fun hold(after: () -> Unit) = viewModelScope.launchStorage(messages) {
         val c = cart.value
-        retail.holdCart(c.lines, if (c.member) "会员" else null, "顾客暂离").onSuccess { messages.post("已挂单 $it，可在「取单」取回"); after() }.onFailure { messages.post(it.message ?: "挂单失败") }
+        retail.holdCart(c.lines, memberTag(c), "顾客暂离").onSuccess { messages.post("已挂单 $it，可在「取单」取回"); after() }.onFailure { messages.post(it.message ?: "挂单失败") }
     }
 
     private fun checkout(method: String, received: Long) {

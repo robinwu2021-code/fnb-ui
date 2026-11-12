@@ -163,6 +163,8 @@ internal object DemoCatalog {
             biz = BizType.Retail,
             areas = emptyList(), tables = emptyList(), categories = cats, specGroups = listOf(color, size, sockColor), products = products, menus = emptyList(),
             currentTableId = "", shift = ShiftState(start = now - 2 * h),
+            members = listOf(Member("rm-wang", "13800001234", "王女士", balance = 52_000, points = 860, totalSpent = 186_000, visits = 23, createdAt = now - 90 * 24 * h),
+                Member("rm-li", "13900005678", "李先生", balance = 0, points = 120, totalSpent = 24_000, visits = 4, createdAt = now - 20 * 24 * h)),
             retail = RetailData(sales, held, docs, listOf(LabelJob("milk", LabelWhy.Price, 4290), LabelJob("croissant", LabelWhy.Price, 650), LabelJob("tee", LabelWhy.New)), saleSeq = 158, docSeq = 4),
         )
     }

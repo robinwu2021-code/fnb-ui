@@ -96,7 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun RetailPosRoute() {
-    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages, c.staff) }
+    val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages, c.staff, c.ops) }
     val state by vm.state.collectAsStateWithLifecycle()
     val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
     CustomerSync(state)
@@ -160,6 +160,7 @@ fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
         is RetailOverlay.Note -> state.cart.lines.firstOrNull { it.key == overlay.key }?.let { NoteDialog(state, it, onAction) }
         RetailOverlay.Discount -> DiscountDialog(state, onAction)
         RetailOverlay.Promos -> PromoDialog(state, onAction)
+        RetailOverlay.Member -> MemberDialog(state, onAction)
         is RetailOverlay.Done -> DoneDialog(state, overlay, onAction)
         null -> Unit
     }
@@ -179,7 +180,7 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("购物车", style = t.title, color = c.ink)
                     Text("单号 ${state.nextNo}", style = t.label.num(), color = c.sub)
-                    if (cart.member) Tag("会员", bg = c.tint, fg = c.primary)
+                    if (cart.member) Tag(state.memberRec?.let { "${it.name} · 积分 ${it.points}" } ?: "会员", bg = c.tint, fg = c.primary)
                     Spacer(Modifier.weight(1f))
                     if (!pay) Box {
                         PosIconButton(Icons.Rounded.MoreHoriz, "更多", { menu = true })
@@ -190,7 +191,7 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                     }
                 }
                 if (!pay) Row(Modifier.padding(vertical = 6.dp).padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PosChip("会员", cart.member, { onAction(RetailPosAction.ToggleMember) })
+                    PosChip(if (cart.member) "解除会员" else "会员", cart.member, { onAction(RetailPosAction.ToggleMember) })
                     PosButton("挂单", { onAction(RetailPosAction.Hold) }, size = BtnSize.Small, enabled = !empty)
                     PosButton(if (state.held.isEmpty()) "取单" else "取单 · ${state.held.size}", { onAction(RetailPosAction.ShowHeld) }, size = BtnSize.Small, enabled = state.held.isNotEmpty())
                     state.bags.forEach { b -> PosButton("+ ${b.name.replace("购物袋", "袋")} ${yuan(b.price)}", { onAction(RetailPosAction.AddBag(b.id)) }, size = BtnSize.Small) }
@@ -445,7 +446,7 @@ private fun PayPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
                     }
                     Text(when {
                         !state.online -> "离线：扫码不可用；现金、银行卡、储值本机记账，联网后同步"
-                        "储值卡" in state.payMethods -> if (cart.member) "会员储值余额 ${yuan(state.wallet)}" else "储值卡需先识别会员"
+                        "储值卡" in state.payMethods -> if (cart.member) "${state.memberRec?.name ?: "会员"}储值余额 ${yuan(state.wallet)}" else "储值卡需先识别会员"
                         else -> "本机记账；扫码为演示渠道"
                     }, style = t.label, color = if (state.online) c.sub else c.warning, modifier = Modifier.padding(top = 6.dp))
                 }
@@ -548,7 +549,7 @@ private fun HeldSheet(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                 Row(Modifier.fillMaxWidth().clip(Pos.metrics.card).background(c.tile).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("${h.no} · ${yuan(tot.due)}", style = t.strong.num(), color = c.ink)
-                        Text(listOfNotNull(fmt.format(java.util.Date(h.at)), "${tot.pcs} 件", h.member, h.why.ifBlank { null }).joinToString(" · "), style = t.label.num(), color = c.sub)
+                        Text(listOfNotNull(fmt.format(java.util.Date(h.at)), "${tot.pcs} 件", h.member?.let { id -> state.members.firstOrNull { it.id == id }?.name ?: id }, h.why.ifBlank { null }).joinToString(" · "), style = t.label.num(), color = c.sub)
                     }
                     PosButton("取单", { onAction(RetailPosAction.Recall(h.no)) }, size = BtnSize.Small, variant = BtnVariant.Soft)
                 }
@@ -692,5 +693,36 @@ private fun PromoDialog(state: RetailPosUiState, onAction: (RetailPosAction) -> 
                 }
             }
         }
+    }
+}
+
+/** 识别会员：按手机号或姓名找档案，找不到可以新建（和餐饮共用会员档案） */
+@Composable
+private fun MemberDialog(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit) {
+    val c = Pos.colors; val t = Pos.type
+    var q by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    val hits = state.members.filter { q.isNotBlank() && (it.phone.contains(q.trim()) || it.name.contains(q.trim())) }.take(8)
+    val phoneOk = Regex("^1\\d{10}$").matches(q.trim())
+    PosDialog("识别会员", { onAction(RetailPosAction.Dismiss) }, subtitle = "也可以直接扫会员码（M + 手机号）；会员价、积分、储值按档案算", footer = {
+        PosButton("取消", { onAction(RetailPosAction.Dismiss) }, variant = BtnVariant.Text)
+        if (q.isNotBlank() && hits.isEmpty()) PosButton("新建并识别", { onAction(RetailPosAction.NewMember(q.trim(), name.trim())) }, variant = BtnVariant.Primary, enabled = phoneOk && name.isNotBlank())
+    }) {
+        PosTextField(q, { q = it.take(11) }, "手机号或姓名", keyboard = KeyboardOptions(keyboardType = KeyboardType.Phone))
+        hits.forEach { m ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(Pos.metrics.button).background(c.tile).clickable { onAction(RetailPosAction.PickMember(m.id)) }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${m.name} · ${m.phone}", style = t.strong.num(), color = c.ink)
+                    Text("储值 ${yuan(m.balance)} · 积分 ${m.points} · 来店 ${m.visits} 次", style = t.label.num(), color = c.sub)
+                }
+                Text("识别", style = t.strong, color = c.primary)
+            }
+        }
+        if (q.isNotBlank() && hits.isEmpty()) {
+            Text(if (phoneOk) "没有这个会员，填姓名就能新建" else "没有找到；新建会员请输 11 位手机号", style = t.label, color = c.sub, modifier = Modifier.padding(vertical = 6.dp))
+            if (phoneOk) PosTextField(name, { name = it.take(10) }, "姓名")
+        }
+        if (q.isBlank()) Text("门店共 ${state.members.size} 位会员", style = t.label, color = c.sub, modifier = Modifier.padding(vertical = 6.dp))
     }
 }

@@ -1054,7 +1054,9 @@ class LocalWorkspace(
                 method !in s.settings.payMethods -> "门店未启用「$method」"
                 method == "现金" && received < st.pay -> "实收不足，不能确认收款"
                 !online && method == "扫码" -> "离线时扫码收款不可用"
-                method == "储值卡" && (!member || s.walletBalance < st.pay) -> if (!member) "请先识别会员" else "储值余额不足"
+                extras.memberId.isNotBlank() && s.members.none { it.id == extras.memberId } -> "会员不存在"
+                method == "储值卡" && extras.memberId.isNotBlank() && s.members.first { it.id == extras.memberId }.balance < st.pay -> "会员储值余额不足"
+                method == "储值卡" && extras.memberId.isBlank() && (!member || s.walletBalance < st.pay) -> if (!member) "请先识别会员" else "储值余额不足"
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
@@ -1070,7 +1072,8 @@ class LocalWorkspace(
             ).joinToString(" · ").let { if (it.isNotBlank() && extras.approver.isNotBlank() && RetailCheckout.needsApproval(lines, extras)) "$it（授权：${extras.approver}）" else it }
             val cash = method == "现金"
             val pays = listOfNotNull(credit?.let { SalePay(EXCHANGE, minOf(it.amount, t.due)) }.takeIf { (it?.amount ?: 0) > 0 }, if (st.pay > 0) SalePay(method, st.pay) else null)
-            val x = RetailSale(no, clock(), member = if (member) "会员" else null, lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round + t.coupon + t.manual, pays = pays, adjust = adjust)
+            val mem = s0.members.firstOrNull { it.id == extras.memberId }
+            val x = RetailSale(no, clock(), member = mem?.name ?: if (member) "会员" else null, memberId = mem?.id.orEmpty(), lines = RetailCheckout.saleLines(s0.products, lines, member), discount = t.round + t.coupon + t.manual, pays = pays, adjust = adjust)
             var s = s0
             // 扣库存：按件扣件数，称重扣克；临时商品不管库存
             lines.filter { !it.custom }.forEach { l ->
@@ -1086,8 +1089,19 @@ class LocalWorkspace(
             }
             if (pay != null) {
                 if (!online) s = s.copy(outbox = s.outbox + OutboxItem(pay.id, OutboxKind.Payment, "零售", "$no ${pay.method} ${if (pay.amount < 0) "退差价" else "收款"} ${yuan(kotlin.math.abs(pay.amount))}", clock()))
-                val wallet = when { pay.method != "储值卡" -> s.walletBalance; else -> s.walletBalance - pay.amount }
+                val wallet = when { pay.method != "储值卡" || mem != null -> s.walletBalance; else -> s.walletBalance - pay.amount }
                 s = s.copy(payments = s.payments + pay, walletBalance = wallet)
+            }
+            // 会员：累计消费、到店次数、积分（按实付，换货抵扣部分不再给积分）；储值卡付款扣会员余额并记流水
+            if (mem != null) {
+                val paid = maxOf(0L, pay?.amount ?: 0L)
+                val stored = pay != null && pay.method == "储值卡" && pay.amount > 0
+                val pts = (paid / 100) * s0.settings.pointsPerYuan
+                val m2 = mem.copy(balance = if (stored) mem.balance - paid else mem.balance, points = mem.points + pts, totalSpent = mem.totalSpent + paid, visits = mem.visits + 1)
+                var txns = s.memberTxns
+                if (stored) txns = txns + MemberTxn(newId("MT"), mem.id, MemberTxnKind.Consume, -paid, m2.balance, clock(), no, actor, "储值卡")
+                if (pts > 0) txns = txns + MemberTxn(newId("MT"), mem.id, MemberTxnKind.Points, 0, m2.balance, clock(), no, actor, points = pts)
+                s = s.copy(members = s.members.map { if (it.id == mem.id) m2 else it }, memberTxns = txns)
             }
             val body = saleReceipt(s0, x, credit, pay)
             sale = x
@@ -1165,7 +1179,18 @@ class LocalWorkspace(
             }
             if (!req.exchange) {
                 val pay = PaymentRecord(newId("P"), "零售", -amount, req.method, clock(), synced = online, orderId = ref, currency = s0.settings.currency, state = PaymentState.Refunded, source = "local")
-                s = s.copy(payments = s.payments + pay, walletBalance = if (req.method == "储值卡") s.walletBalance + amount else s.walletBalance,
+                val mem = sale?.memberId?.let { id -> s.members.firstOrNull { it.id == id } }
+                // 会员：退到储值卡就退回会员余额；按退款扣回积分（不扣成负数）
+                if (mem != null) {
+                    val back = if (req.method == "储值卡") amount else 0L
+                    val pts = minOf(mem.points, (amount / 100) * s0.settings.pointsPerYuan)
+                    val m2 = mem.copy(balance = mem.balance + back, points = mem.points - pts, totalSpent = maxOf(0, mem.totalSpent - amount))
+                    var txns = s.memberTxns
+                    if (back > 0) txns = txns + MemberTxn(newId("MT"), mem.id, MemberTxnKind.Consume, back, m2.balance, clock(), "退货 $ref", actor, "储值卡")
+                    if (pts > 0) txns = txns + MemberTxn(newId("MT"), mem.id, MemberTxnKind.Points, 0, m2.balance, clock(), "退货 $ref", actor, points = -pts)
+                    s = s.copy(members = s.members.map { if (it.id == mem.id) m2 else it }, memberTxns = txns)
+                }
+                s = s.copy(payments = s.payments + pay, walletBalance = if (req.method == "储值卡" && mem == null) s.walletBalance + amount else s.walletBalance,
                     outbox = if (online) s.outbox else s.outbox + OutboxItem(pay.id, OutboxKind.Payment, "零售", "$ref ${req.method} 退款 ${yuan(amount)}", clock()))
                 val body = listOf(s0.settings.shortName, "退货小票", "原单 $ref") + back.map { (l, n) -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×$n"}" } +
                     listOfNotNull("退款 ${req.method} ${yuan(amount)}", "原因：${req.reason.label}", approver.ifBlank { null }?.let { "授权：$it" })
