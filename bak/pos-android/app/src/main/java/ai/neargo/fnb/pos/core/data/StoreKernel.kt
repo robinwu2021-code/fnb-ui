@@ -31,6 +31,10 @@ internal interface StoreKernel {
     fun copies(s: StoreData, job: PrintJob): List<PrintJob>
     /** 主管授权：员工姓名 / ID + PIN、主管账号 + 密码或体验账号；返回授权人 */
     fun supervisorAuth(v: Vault, who: String, secret: String): Result<String>
+    /** 桌台 / 订单事件（载荷与聚合按桌台、订单、预订划分） */
+    fun pageEvent(type: String, tableId: String): LocalWorkspace.EventSpec
+    /** 厨房单：按档口拆成打印任务（含副本）；送厨与补打共用 */
+    fun kitchenJob(s: StoreData, tableId: String, batch: String): StoreData
 }
 
 /**
