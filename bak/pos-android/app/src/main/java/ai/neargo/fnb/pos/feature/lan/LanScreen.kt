@@ -88,8 +88,9 @@ fun LanPanel(c: AppContainer = appContainer()) {
             }, variant = BtnVariant.Primary, size = BtnSize.Large, loading = busy)
         }) {
             Text("在主 POS 的「主副 POS」页生成 8 位配对码，填写主机地址（IP:端口）与配对码。配对后本机只认这台主机的密钥。", style = Pos.type.body, color = Pos.colors.sub, modifier = Modifier.padding(bottom = 8.dp))
-            PosTextField(addr, { addr = it }, "主机地址", hint = "例如 192.168.1.20:47600")
-            PosTextField(code, { code = it.filter(Char::isDigit).take(8) }, "配对码", error = error, keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
+            // 改了任何一项，上次的错误提示就收起（不然改对了还挂着红字）
+            PosTextField(addr, { addr = it; error = null }, "主机地址", hint = "例如 192.168.1.20:47600")
+            PosTextField(code, { code = it.filter(Char::isDigit).take(8); error = null }, "配对码", error = error, keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
     }
 }

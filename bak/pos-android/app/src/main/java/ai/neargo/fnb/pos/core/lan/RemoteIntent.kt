@@ -76,13 +76,28 @@ class HostExecutor(
     private val receipts: CommandReceipts, private val ops: ai.neargo.fnb.pos.core.data.OperationsRepository? = null,
     private val kds: ai.neargo.fnb.pos.core.data.KdsRepository? = null,
     private val retail: ai.neargo.fnb.pos.core.data.RetailRepository? = null,
+    /** 主机本机的选桌：副机的开台 / 换桌 / 并台不能把主机收银员正在看的桌换掉 */
+    private val session: ai.neargo.fnb.pos.core.data.SessionRepository? = null,
 ) {
     private val lock = Mutex()
 
     suspend fun execute(storeId: String, deviceId: String, commandId: String, actorId: String, intent: RemoteIntent): IntentResult = lock.withLock {
         if (config.current.value?.id != storeId) return@withLock IntentResult(false, "主机当前门店与请求不一致")
         if (receipts.committed(storeId, deviceId, commandId)) return@withLock IntentResult(true, "重复请求，已返回原结果", duplicate = true)
-        withContext(RemoteOrigin(deviceId, commandId, actorId)) { run(intent) }
+        val keep = config.current.value?.currentTableId
+        val out = withContext(RemoteOrigin(deviceId, commandId, actorId)) { run(intent) }
+        // 开台 / 换桌 / 并台会把当前桌设成目标桌（本机操作时要这样）；副机发起的就还原主机原来的选桌，
+        // 主机原来看的正好是被换走 / 并掉的桌，就跟到新桌
+        if (out.ok && session != null && !keep.isNullOrEmpty()) {
+            val back = when (intent) {
+                is RemoteIntent.ChangeTable -> if (keep == intent.from) intent.to else keep
+                is RemoteIntent.MergeTable -> if (keep == intent.from) intent.into else keep
+                is RemoteIntent.OpenTable, is RemoteIntent.SplitLines -> keep
+                else -> null
+            }
+            if (back != null) runCatching { session?.selectTable(back) }
+        }
+        out
     }
 
     private fun r(x: Result<Unit>) = x.fold({ IntentResult(true) }, { IntentResult(false, it.message ?: "操作失败") })

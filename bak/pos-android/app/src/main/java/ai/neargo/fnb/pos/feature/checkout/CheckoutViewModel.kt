@@ -48,9 +48,11 @@ data class CheckoutUiState(
     val wallet: Long = 50000,
     /** 厨房送达阻止原因（失败/未知）；null 表示无。 */
     val kitchenBlock: String? = null,
+    /** 副 POS 连不上主机：只读原因 */
+    val readOnly: String? = null,
 ) {
     /** 不能结账核对的原因（新加 / 待同步 / 空单）；null 表示可以。 */
-    val block get() = OrderRules.checkoutBlock(totals) ?: kitchenBlock ?: when {
+    val block get() = OrderRules.checkoutBlock(totals) ?: readOnly ?: kitchenBlock ?: when {
         method == PayMethod.Cash && ai.neargo.fnb.pos.core.model.CashRules.change(cash, totals.due) == null -> "请核对现金实收"
         method == PayMethod.Stored && !order.member -> "请先绑定会员"
         method == PayMethod.Stored && wallet < totals.due -> "本机储值余额不足"
@@ -102,7 +104,7 @@ class CheckoutViewModel(
         CheckoutUiState(store?.tables?.firstOrNull { it.id == tableId }, o, OrderRules.totals(o), l.method, d.online, l.processing, l.paid,
             store?.payments.orEmpty().filter { it.tableId == tableId }.sortedByDescending { it.at },
             l.cash, store?.adjustments.orEmpty().filter { it.tableId == tableId }, store?.members?.firstOrNull { it.id == o.memberId }?.balance ?: store?.walletBalance ?: 50000,
-            store?.let { ai.neargo.fnb.pos.core.model.DeliveryRules.checkoutBlock(it, tableId) })
+            store?.let { ai.neargo.fnb.pos.core.model.DeliveryRules.checkoutBlock(it, tableId) }, d.readOnly)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CheckoutUiState())
 
     fun onAction(a: CheckoutAction) {

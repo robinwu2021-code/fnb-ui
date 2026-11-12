@@ -200,7 +200,7 @@ fun PosApp(shell: ShellViewModel) {
     androidx.compose.runtime.LaunchedEffect(session.storeId, session.biz) {
         val bizTabs = TopLevel.entries.filter { it != TopLevel.Manage }
         val mine = ai.neargo.fnb.pos.navigation.topTabs(profile)
-        if (dest == null || (current in bizTabs && current !in mine)) nav.goTop(if (profile.tables) OrderRoute else ai.neargo.fnb.pos.navigation.homeRoute(profile))
+        if (dest == null || (current in bizTabs && current !in mine)) nav.goTop(startRoute(profile))
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Pos.colors.canvas)) {
@@ -214,7 +214,12 @@ fun PosApp(shell: ShellViewModel) {
                 val authStatus by appContainer().auth.auth.collectAsStateWithLifecycle()
                 ai.neargo.fnb.pos.feature.lan.LanBanner()
                 ai.neargo.fnb.pos.feature.authcenter.AuthBanner(authStatus, onOpen = { nav.goTop(ai.neargo.fnb.pos.navigation.AuthRoute) }, onRelogin = shell::logout)
-                Box(Modifier.weight(1f)) { PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }) }
+                // 导航起点按业态（餐饮：点餐；零售：收银）。顶层页签都弹回起点，起点错了按返回键会落到另一业态的页面
+                Box(Modifier.weight(1f)) {
+                    androidx.compose.runtime.key(profile.retail) {
+                        PosNavHost(nav, notice, onDisplay = { displayOpen = true }, onSwitchStore = { pickingStore = true }, start = startRoute(profile))
+                    }
+                }
                 if (!layout.wide) Box(Modifier.fillMaxWidth().background(Pos.colors.surface).padding(vertical = 2.dp), contentAlignment = Alignment.Center) { WorkNav(current, go, onManage, session.biz) }
             }
             ToastHost(shell.messages, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = if (layout.wide) 24.dp else 72.dp))
@@ -224,8 +229,8 @@ fun PosApp(shell: ShellViewModel) {
 }
 
 @Composable
-private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDisplay: () -> Unit, onSwitchStore: () -> Unit) {
-    NavHost(nav, startDestination = OrderRoute, enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None }) {
+private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDisplay: () -> Unit, onSwitchStore: () -> Unit, start: Any = OrderRoute) {
+    NavHost(nav, startDestination = start, enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None }) {
         composable<TablesRoute> { TablesScreenRoute(onOrder = { nav.goTop(OrderRoute) }, onCheckout = { nav.navigate(CheckoutRoute(it)) }) }
         composable<OrderRoute> { OrderScreenRoute(onCheckout = { nav.navigate(CheckoutRoute(it)) }, onChangeTable = { nav.goTop(TablesRoute) }) }
         composable<CheckoutRoute> { CheckoutScreenRoute(onBack = { nav.popBackStack() }, onDone = { nav.goTop(TablesRoute) }) }
@@ -242,6 +247,9 @@ private fun PosNavHost(nav: NavHostController, notice: (String) -> Unit, onDispl
         composable<ai.neargo.fnb.pos.navigation.StockWorkRoute> { ai.neargo.fnb.pos.feature.retail.StockWorkRoute() }
     }
 }
+
+/** 导航起点：餐饮停在点餐（原有行为），零售停在收银台 */
+internal fun startRoute(p: ai.neargo.fnb.pos.core.model.BizProfile): Any = if (p.tables) OrderRoute else ai.neargo.fnb.pos.navigation.homeRoute(p)
 
 /** 顶层页面切换：不堆栈，保留各页状态。 */
 private fun NavHostController.goTop(route: Any) {

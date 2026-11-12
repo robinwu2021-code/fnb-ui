@@ -1,6 +1,7 @@
 package ai.neargo.fnb.pos.core.data
 
 import ai.neargo.fnb.pos.core.lan.IntentResult
+import kotlinx.coroutines.flow.stateIn
 import ai.neargo.fnb.pos.core.lan.LanLink
 import ai.neargo.fnb.pos.core.lan.RemoteIntent
 import ai.neargo.fnb.pos.core.lan.RemoteIntent as I
@@ -18,6 +19,16 @@ import ai.neargo.fnb.pos.core.model.TableOrder
  * 副机的营业写入转为意图交主机仲裁，管理/库存/交班/打印仅主 POS 可执行。单机或主机时直接调用本机仓库。
  */
 private const val HOST_ONLY = "仅主 POS 可执行此操作"
+const val HOST_DOWN = "主 POS 未连接，本机只读"
+
+/** 设备状态加上主副 POS 连接：副 POS 连不上主机时标记只读，确认收款等按钮直接显示原因（不用等点了才弹提示） */
+class RoutedDevice(private val base: DeviceRepository, lan: kotlinx.coroutines.flow.StateFlow<LanState>, link: kotlinx.coroutines.flow.StateFlow<ai.neargo.fnb.pos.core.lan.LinkStatus>,
+                   scope: kotlinx.coroutines.CoroutineScope) : DeviceRepository by base {
+    override val status = kotlinx.coroutines.flow.combine(base.status, lan, link) { d, l, k -> d.copy(readOnly = readOnlyReason(l.role, k.connected)) }
+        .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, base.status.value.copy(readOnly = readOnlyReason(lan.value.role, link.value.connected)))
+}
+
+fun readOnlyReason(role: LanRole, connected: Boolean): String? = if (role == LanRole.Secondary && !connected) HOST_DOWN else null
 
 private fun IntentResult.unit(): Result<Unit> = if (ok) Result.success(Unit) else Result.failure(IllegalStateException(message))
 
@@ -27,14 +38,16 @@ class RoutedFloor(private val ws: LocalWorkspace, private val link: LanLink) : F
         go(I.CreateReservation(tableId, name, phone, guests, arrivesAt, note), "$tableId 预订") { ws.createReservation(tableId, name, phone, guests, arrivesAt, note) }
     override suspend fun cancelReservation(id: String) = go(I.CancelReservation(id), "取消预订") { ws.cancelReservation(id) }
     override suspend fun checkInReservation(id: String) = go(I.CheckInReservation(id), "预订到店") { ws.checkInReservation(id) }
-    override suspend fun openTable(tableId: String, guests: Int) = go(I.OpenTable(tableId, guests), "$tableId 开台") { ws.openTable(tableId, guests) }
+    /** 副机：主机执行成功后，本机的选桌跟到目标桌（主机那边不动本机选桌） */
+    private suspend fun Result<Unit>.thenSelect(tableId: String) = also { if (it.isSuccess && link.isSecondary) runCatching { ws.selectTable(tableId) } }
+    override suspend fun openTable(tableId: String, guests: Int) = go(I.OpenTable(tableId, guests), "$tableId 开台") { ws.openTable(tableId, guests) }.thenSelect(tableId)
     override suspend fun settle(tableId: String, amount: Long, method: String, online: Boolean, received: Long) =
         go(I.Settle(tableId, amount, method, online, received), "$tableId 结账") { ws.settle(tableId, amount, method, online, received) }
     override suspend fun startCleaning(tableId: String) = go(I.StartCleaning(tableId), "$tableId 清台") { ws.startCleaning(tableId) }
     override suspend fun finishCleaning(tableId: String) = go(I.FinishCleaning(tableId), "$tableId 清台完成") { ws.finishCleaning(tableId) }
     override suspend fun setPosition(tableId: String, x: Int, y: Int) = go(I.SetPosition(tableId, x, y), "$tableId 位置") { ws.setPosition(tableId, x, y) }
-    override suspend fun changeTable(from: String, to: String) = go(I.ChangeTable(from, to), "$from 换桌 $to") { ws.changeTable(from, to) }
-    override suspend fun mergeTable(from: String, into: String) = go(I.MergeTable(from, into), "$from 并台 $into") { ws.mergeTable(from, into) }
+    override suspend fun changeTable(from: String, to: String) = go(I.ChangeTable(from, to), "$from 换桌 $to") { ws.changeTable(from, to) }.thenSelect(to)
+    override suspend fun mergeTable(from: String, into: String) = go(I.MergeTable(from, into), "$from 并台 $into") { ws.mergeTable(from, into) }.thenSelect(into)
     override suspend fun splitLines(from: String, uids: Set<Long>, to: String, guests: Int) = go(I.SplitLines(from, uids, to, guests), "$from 拆单 $to") { ws.splitLines(from, uids, to, guests) }
 }
 
