@@ -5,7 +5,8 @@ import ai.neargo.fnb.pos.core.cloud.CloudBadge
 import ai.neargo.fnb.pos.core.cloud.CloudMonitor
 import ai.neargo.fnb.pos.core.cloud.CloudSettings
 import ai.neargo.fnb.pos.core.cloud.CloudState
-import ai.neargo.fnb.pos.core.cloud.CloudStoreInfo
+import ai.neargo.fnb.pos.core.cloud.CloudProbe
+import ai.neargo.fnb.pos.core.cloud.PushState
 import ai.neargo.fnb.pos.core.data.CommandStats
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
@@ -75,6 +76,7 @@ data class SyncUiState(
     val items: List<OutboxItem> = emptyList(), val pending: Int = 0, val device: DeviceStatus = DeviceStatus(),
     val deliveries: List<TicketDelivery> = emptyList(), val payments: List<PaymentRecord> = emptyList(), val stats: CommandStats = CommandStats(),
     val cloud: CloudState = CloudState(),
+    val push: PushState = PushState(),
 ) {
     val kitchenAction get() = deliveries.count { it.needsAction }
     val kitchenPending get() = deliveries.count { g -> !g.needsAction && !g.cancelled && g.records.any { it.state == DeliveryState.Pending && it.supersededBy.isBlank() } }
@@ -83,11 +85,12 @@ data class SyncUiState(
 class SyncViewModel(
     private val sync: SyncRepository, private val device: DeviceRepository, config: StoreConfigRepository,
     private val status: SyncStatusRepository, private val messages: MessageBus,
-    private val cloud: CloudMonitor? = null, private val probe: suspend (CloudSettings) -> Result<CloudStoreInfo> = { Result.failure(IllegalStateException("未接入")) },
+    private val cloud: CloudMonitor? = null, push: kotlinx.coroutines.flow.Flow<PushState> = kotlinx.coroutines.flow.flowOf(PushState()),
+    private val probe: suspend (CloudSettings) -> Result<CloudProbe> = { Result.failure(IllegalStateException("未接入")) },
 ) : ViewModel() {
-    private val cloudState = cloud?.state ?: kotlinx.coroutines.flow.flowOf(CloudState())
+    private val cloudState = combine(cloud?.state ?: kotlinx.coroutines.flow.flowOf(CloudState()), push) { c, ps -> c to ps }
     val state = combine(sync.outbox, sync.pendingCount, device.status, sync.deliveryGroups, combine(config.current, status.stats, cloudState) { s, st, cs -> Triple(s, st, cs) }) { o, p, d, dl, (s, st, cs) ->
-        SyncUiState(o, p, d, dl, s?.payments.orEmpty().sortedByDescending { it.at }, st, cs)
+        SyncUiState(o, p, d, dl, s?.payments.orEmpty().sortedByDescending { it.at }, st, cs.first, cs.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SyncUiState())
 
     init { viewModelScope.launch { status.refresh() } }
@@ -111,7 +114,7 @@ class SyncViewModel(
         }.onFailure { messages.post(it.message ?: "同步失败") }
     }
     fun cloudTest(st: CloudSettings, done: (String) -> Unit) = viewModelScope.launch {
-        probe(st).onSuccess { done("连接成功：${it.store.name}（营业日 ${it.businessDate}）") }.onFailure { done("连接失败：${it.message}") }
+        probe(st).onSuccess { done("连接成功：门店 ${it.storeNo}，服务端桌台 ${it.tables} 张") }.onFailure { done("连接失败：${it.message}") }
     }
     fun cloudSave(st: CloudSettings) { cloud?.configure(st); messages.post(if (st.baseUrl.isBlank()) "已关闭云端上传" else "已保存云端设置") }
     fun cloudRetry(eventId: String) { cloud?.retry(eventId); messages.post("已重新排队上传") }
@@ -130,7 +133,7 @@ class SyncViewModel(
 
 @Composable
 fun SyncRoute() {
-    val vm = posViewModel { c, _ -> SyncViewModel(c.sync, c.device, c.config, c.syncStatus, c.messages, c.cloud, c::testCloud) }
+    val vm = posViewModel { c, _ -> SyncViewModel(c.sync, c.device, c.config, c.syncStatus, c.messages, c.cloud, c.cloudPush.state, c::testCloud) }
     val state by vm.state.collectAsStateWithLifecycle()
     SyncScreen(state, vm::syncNow, vm::confirm, vm::printForScreen, CloudActions(vm::cloudSync, vm::cloudTest, vm::cloudSave, vm::cloudRetry, { vm.cloudSkip(it) }))
 }
@@ -265,11 +268,15 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
             is CloudBadge.NeedsAction -> "在线，${b.count} 条上传被服务端拒绝，需处理后该订单才继续上传"
         }
         KeyValue("云端服务", statusText, valueColor = when (cs.badge) { is CloudBadge.Online, CloudBadge.ViaHost -> c.ink; is CloudBadge.NeedsAction -> c.danger; else -> c.warning })
-        if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (if (cs.businessDate.isNotBlank()) " · 营业日 ${cs.businessDate}" else ""))
+        if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (if (cs.tables > 0) " · 桌台 ${cs.tables} 张" else ""))
         KeyValue("待上传事件", "${state.stats.unackedEvents} 条（其中旧版 ${state.stats.legacyUnacked} 条，旧版不上传）")
         KeyValue("最早未上传", time(state.stats.oldestUnackedAt))
-        cs.lastRound?.let { r -> KeyValue("最近一次上传", "${time(cs.lastSyncAt)} · 上传 ${r.uploaded} 条 · 等服务端接口 ${r.waiting} 条" + (r.stoppedBy?.let { " · 中断：${it.message}" } ?: "")) }
-        KeyValue("已对接", "开台、换桌、日结；点菜、结账、交班待服务端接口")
+        cs.lastRound?.let { r ->  KeyValue("最近一次上传", "${time(cs.lastSyncAt)} · 上传 ${r.uploaded} 条 · 本机事件 ${r.local} 条 · 等服务端接口 ${r.waiting} 条" + (r.stoppedBy?.let { " · 中断：${it.message}" } ?: "")) }
+        if (cs.settings.configured && cs.uploader) KeyValue("门店推送", state.push.let { p ->
+            (if (p.connected) "已连接" else "未连接" + (if (p.lastError.isNotBlank()) "（${p.lastError}）" else "")) +
+                (if (p.received > 0) " · 已收 ${p.received} 条 · 最近 ${p.lastTopic} ${time(p.lastAt)}" else "")
+        }, valueColor = if (state.push.connected) c.ink else c.sub)
+        KeyValue("已对接", "开台、换桌、送厨下单、日结；结账、交班待服务端接口；点菜草稿、备注、挂单、清台、催菜上菜只在本机")
         KeyValue("结账规则", CheckoutPolicy.STATUS)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (cs.uploader) PosButton("云端设置", { editing = true }, size = BtnSize.Small)
@@ -324,7 +331,7 @@ private fun CloudSettingsDialog(current: CloudSettings, actions: CloudActions, o
         PosButton("保存", { actions.save(draft); onClose() }, variant = BtnVariant.Primary, size = BtnSize.Large, enabled = draft.configured || url.isBlank())
     }) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            PosTextField(url, { url = it; result = null }, "服务端地址", hint = "例如 https://api.example.com/biz/pos/fnb", autoFocus = true)
+            PosTextField(url, { url = it; result = null }, "服务端地址", hint = "服务端根地址，例如 https://api.example.com（不带 /biz）", autoFocus = true)
             PosTextField(store, { store = it; result = null }, "服务端门店号", hint = "后台门店的 storeNo")
             PosTextField(token, { token = it; result = null }, "终端令牌", password = true, hint = "后台签发给本机的令牌，可留空（内网测试）")
             result?.let { Text(it, style = Pos.type.body, color = if (it.startsWith("连接成功")) Pos.colors.primary else Pos.colors.warning) }

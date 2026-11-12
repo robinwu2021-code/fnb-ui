@@ -56,3 +56,13 @@ internal class PrefsCloudSettings(context: Context) : CloudSettingsStore {
     }
 }
 
+
+/** 推送：安装号（首次生成）、每个门店的端号与最后事件序号 */
+internal class PrefsPushStore(context: Context) : PushStore {
+    private val sp = context.applicationContext.getSharedPreferences("cloud_push", Context.MODE_PRIVATE)
+    override fun installId(): String = sp.getString("installId", null) ?: java.util.UUID.randomUUID().toString().also { sp.edit().putString("installId", it).apply() }
+    override fun terminalNo(storeNo: String) = sp.getString("terminal/$storeNo", null)
+    override fun saveTerminalNo(storeNo: String, terminalNo: String?) { sp.edit().apply { if (terminalNo == null) remove("terminal/$storeNo") else putString("terminal/$storeNo", terminalNo) }.apply() }
+    override fun lastEventId(storeNo: String) = sp.getString("last/$storeNo", null)
+    override fun saveLastEventId(storeNo: String, id: String) { sp.edit().putString("last/$storeNo", id).apply() }
+}

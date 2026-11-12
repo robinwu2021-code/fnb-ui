@@ -101,9 +101,10 @@ class AppContainer(context: Context) {
 
     /** 云端（服务端 POS 合同）：只有主 POS / 单机上传；地址与门店号在同步中心设置 */
     private val cloudSettings = ai.neargo.fnb.pos.core.cloud.PrefsCloudSettings(context.applicationContext)
-    val cloudApi = ai.neargo.fnb.pos.core.cloud.HttpCloudApi({
+    private val cloudHttp = ai.neargo.fnb.pos.core.cloud.CloudHttp({
         val st = cloudSettings.load(); ai.neargo.fnb.pos.core.cloud.CloudConfig(st.baseUrl, st.storeNo, st.token, workspace::staffIdOnDuty)
     })
+    val cloudApi = ai.neargo.fnb.pos.core.cloud.HttpCloudApi(cloudHttp)
     val cloud = ai.neargo.fnb.pos.core.cloud.CloudMonitor(
         cloudSettings, cloudApi,
         storeId = { workspace.current.value?.id },
@@ -117,9 +118,12 @@ class AppContainer(context: Context) {
         pending = syncStatus.stats.map { it.unackedEvents },
         afterRound = { syncStatus.refresh() },
     )
+    /** 门店推送：收到通知只当「该去拉了」，叫醒同步循环（第一批没有需要拉取的对象，后续批次接订单 / 支付 / 菜单） */
+    val cloudPush = ai.neargo.fnb.pos.core.cloud.CloudPush(cloudHttp, ai.neargo.fnb.pos.core.cloud.PrefsPushStore(context.applicationContext),
+        ai.neargo.fnb.pos.BuildConfig.VERSION_NAME, onFrame = { cloud.nudge() }, onReset = { cloud.nudge() })
     /** 用填写中的设置测连接（不保存） */
     suspend fun testCloud(st: ai.neargo.fnb.pos.core.cloud.CloudSettings) = cloud.test(st) {
-        ai.neargo.fnb.pos.core.cloud.HttpCloudApi({ ai.neargo.fnb.pos.core.cloud.CloudConfig(it.baseUrl.trim().trimEnd('/'), it.storeNo.trim(), it.token.trim()) }).storeInfo(it.storeNo.trim())
+        ai.neargo.fnb.pos.core.cloud.HttpCloudApi({ ai.neargo.fnb.pos.core.cloud.CloudConfig(it.baseUrl.trim().trimEnd('/'), it.storeNo.trim(), it.token.trim()) }).probe(it.storeNo.trim())
     }
     /** 本机电子秤（零售称重）：按本机偏好里的地址连接 */
     val scale = ai.neargo.fnb.pos.core.hardware.NetworkScale(appScope)
@@ -128,6 +132,9 @@ class AppContainer(context: Context) {
         SyncEngine(device, sync, messages, appScope).start()
         PrintEngine(device, print, messages, appScope).start()
         cloud.start(appScope)
+        cloudPush.start(appScope, combine(cloud.state, device.status) { c, d ->
+            if (c.settings.configured && c.uploader && d.online) "${c.settings.baseUrl}@${c.settings.storeNo}" else null
+        })
         if (workspace.lanState.value.role == LanRole.Host) appScope.launch(Dispatchers.IO) { runCatching { lanHost.start() }.onFailure { messages.post("主 POS 服务启动失败：${it.message}") } }
         lanLink.start()
         appScope.launch { prefs.prefs.collect { p -> scale.configure(p.scaleHost, p.scalePort, p.scalePoll, if (p.scaleGrams) ai.neargo.fnb.pos.core.model.ScaleRules.Unit.G else ai.neargo.fnb.pos.core.model.ScaleRules.Unit.Kg) } }

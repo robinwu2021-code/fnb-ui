@@ -17,17 +17,23 @@ class CloudMonitorTest {
         var openFail: CloudException? = null
         val opened = mutableListOf<String>()
         private fun f() { fail?.let { throw it } }
-        override suspend fun storeInfo(storeNo: String) = run { f(); CloudStoreInfo(CloudStore(storeNo, "店"), "2026-11-12") }
-        override suspend fun tableList(storeNo: String) = run { f(); listOf(CloudTable("t-1", "H01", status = "IDLE", version = 1)) }
-        override suspend fun openTable(storeNo: String, key: String, tableNo: String, guestCount: Int): CloudOpen {
+        override suspend fun probe(storeNo: String) = run { f(); CloudProbe(storeNo, 6) }
+        override suspend fun tableList(storeNo: String) = run { f(); listOf(CloudTable("t-1", "H01", version = 1)) }
+        override suspend fun openCheck(storeNo: String, key: String, tableNos: List<String>, partySize: Int, tableVersions: List<CloudTableVersion>): CloudCheck {
             f(); openFail?.let { throw it }; opened += key
-            return CloudOpen(CloudCheck("C1", "OPEN", listOf(tableNo), guestCount, version = 1), CloudTable(tableNo, "H01", status = "IN_USE", version = 2))
+            return CloudCheck("C1", status = "OPEN", partySize = partySize, tableNos = tableNos, version = 1)
         }
-        override suspend fun checkDetail(storeNo: String, checkNo: String) = error("unused")
-        override suspend fun transferTable(storeNo: String, key: String, checkNo: String, toTableNo: String, version: Long) = error("unused")
-        override suspend fun menuList(storeNo: String) = emptyList<CloudMenu>()
-        override suspend fun closePreview(storeNo: String, key: String, businessDate: String) = error("unused")
-        override suspend fun closeSign(storeNo: String, key: String, closeNo: String, version: Long) = error("unused")
+        override suspend fun check(checkNo: String) = error("unused")
+        override suspend fun transferCheck(key: String, checkNo: String, version: Long, targetTableNos: List<String>, tableVersions: List<CloudTableVersion>) = error("unused")
+        override suspend fun catalog(storeNo: String) = error("unused")
+        override suspend fun createCart(storeNo: String, key: String, checkNo: String) = error("unused")
+        override suspend fun cart(cartNo: String) = error("unused")
+        override suspend fun replaceCartLine(key: String, cartNo: String, sourceLineRef: String, line: CloudLineInput, version: Long) = error("unused")
+        override suspend fun quote(storeNo: String, key: String, cartNo: String, version: Long) = error("unused")
+        override suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String) = error("unused")
+        override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String) = error("unused")
+        override suspend fun closePreview(key: String, businessDate: String, currency: String) = error("unused")
+        override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = error("unused")
     }
     private class Events : EventSource {
         val list = mutableListOf(JournalEvent(1, "ev-1", "order-1", 1, "TableOpened",
@@ -57,7 +63,7 @@ class CloudMonitorTest {
         assertTrue(events.list.isEmpty())
         pending.value = 0; m.tick()
         assertEquals(CloudBadge.Online(0), m.state.value.badge)
-        assertEquals("2026-11-12", m.state.value.businessDate)
+        assertEquals(6, m.state.value.tables)
     }
 
     @Test fun networkLossAndUnauthorized() = runTest(UnconfinedTestDispatcher()) {
