@@ -9,6 +9,7 @@ import ai.neargo.fnb.pos.core.model.Perm
 import ai.neargo.fnb.pos.core.model.PrintJob
 import ai.neargo.fnb.pos.core.model.PrintKind
 import ai.neargo.fnb.pos.core.model.StoreData
+import ai.neargo.fnb.pos.core.model.TaskLogKind
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -35,6 +36,10 @@ internal interface StoreKernel {
     fun pageEvent(type: String, tableId: String): LocalWorkspace.EventSpec
     /** 厨房单：按档口拆成打印任务（含副本）；送厨与补打共用 */
     fun kitchenJob(s: StoreData, tableId: String, batch: String): StoreData
+    /** 本机能处理后台写入（打印网关、超时检查）：数据可写且不是副 POS */
+    fun hostWritable(): Boolean
+    /** 任务日志（打印、同步的尝试记录），有条数上限 */
+    fun taskLog(s: StoreData, kind: TaskLogKind, refId: String, result: String, source: String, detail: String = ""): StoreData
 }
 
 /**
