@@ -101,6 +101,8 @@ data class RetailData(
     /** 价签打印记录（最近的在前） */
     val labelPrints: List<LabelPrint> = emptyList(),
     val settings: RetailSettings = RetailSettings(),
+    /** 挂单序号（H 开头）；0 表示旧数据，按现有挂单号接着编 */
+    val heldSeq: Int = 0,
 )
 
 /**

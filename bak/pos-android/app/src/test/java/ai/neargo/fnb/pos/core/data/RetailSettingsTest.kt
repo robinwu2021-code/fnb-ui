@@ -96,3 +96,25 @@ class RetailReportExchangeTest {
         assertEquals(1, r.exchangeCount)
     }
 }
+
+/** 挂单号单独编号，取走后也不复用 */
+@OptIn(ExperimentalCoroutinesApi::class)
+class RetailHeldNumberTest {
+    private class Disk : SnapshotStore {
+        var data: String? = null
+        override suspend fun load() = data
+        override suspend fun saveCommand(source: String, command: JournalCommand): JournalReceipt { save(source); return testReceipt(command) }
+        override suspend fun save(json: String) { data = json }
+    }
+    @Test fun heldNumbersIncrease() = runTest(UnconfinedTestDispatcher()) {
+        val w = LocalWorkspace(Disk(), backgroundScope) { 1_000_000L }.also { it.enterDemo(); it.selectStore(DemoCatalog.RETAIL_STORE_ID) }
+        val a = w.holdCart(listOf(CartLine(1, "cola", 1)), null, "").getOrThrow()
+        val b = w.holdCart(listOf(CartLine(1, "cola", 1)), null, "").getOrThrow()
+        assertEquals(listOf("H0157", "H0158"), listOf(a, b)) // 演示挂单最大 H0156
+        w.recallHeld(b).getOrThrow()
+        assertEquals("H0159", w.holdCart(listOf(CartLine(1, "cola", 1)), null, "").getOrThrow())
+        // 收款不影响挂单号
+        w.checkoutRetail(listOf(CartLine(1, "cola", 1)), false, "现金", 1000, true).getOrThrow()
+        assertEquals("H0160", w.holdCart(listOf(CartLine(1, "cola", 1)), null, "").getOrThrow())
+    }
+}

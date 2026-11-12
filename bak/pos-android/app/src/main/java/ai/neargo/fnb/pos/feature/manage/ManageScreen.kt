@@ -301,8 +301,12 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
         PosTextField(hours, { hours = it }, "营业时段（示例说明）")
         PosTextField(footer, { footer = it }, "小票页脚", singleLine = false)
         Block("计价与会员") {
-            PosTextField(service, { service = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, "服务费率（%，0–20）")
-            PosTextField(memberRate, { memberRate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(4) }, "会员折扣（折，例如 9.5）")
+            if (store.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) {
+                Text("零售不收服务费；会员优惠按各商品的会员价（在「商品」页签设置），不用整单折扣", style = Pos.type.label, color = Pos.colors.sub)
+            } else {
+                PosTextField(service, { service = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, "服务费率（%，0–20）")
+                PosTextField(memberRate, { memberRate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(4) }, "会员折扣（折，例如 9.5）")
+            }
             PosTextField(points, { points = it.filter(Char::isDigit).take(3) }, "每消费 1 元积分（0 不积分）")
         }
         Block("收款方式") {

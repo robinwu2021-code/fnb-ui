@@ -166,7 +166,11 @@ fun ReportsRoute() {
             }, variant = BtnVariant.Primary, size = BtnSize.Large, enabled = block == null)
         }) {
             if (block != null) Text(block, style = Pos.type.body, color = Pos.colors.danger, modifier = Modifier.padding(bottom = 8.dp))
-            KeyValue("营业额", yuan(today.revenue)); KeyValue("单数 / 客数", "${today.orders} / ${today.guests}"); KeyValue("优惠", yuan(today.discount))
+            KeyValue("营业额", yuan(today.revenue))
+            if (s.biz == ai.neargo.fnb.pos.core.model.BizType.Retail) {
+                val x = ai.neargo.fnb.pos.core.model.RetailReportRules.build(s, dayStart, now + 1)
+                KeyValue("销售单数 / 件数", "${x.sales} / ${x.pieces}"); KeyValue("退款", "${x.refundCount} 笔 · ${yuan(x.refund)}")
+            } else { KeyValue("单数 / 客数", "${today.orders} / ${today.guests}"); KeyValue("优惠", yuan(today.discount)) }
             today.byMethod.forEach { (m, v) -> KeyValue("  $m", yuan(v)) }
             KeyValue("会员充值", yuan(today.recharge))
             Text("日结后生成日结单，营业日重新开始；已结账数据保留，可在历史日结中查看。", style = Pos.type.label, color = Pos.colors.sub, modifier = Modifier.padding(top = 8.dp))

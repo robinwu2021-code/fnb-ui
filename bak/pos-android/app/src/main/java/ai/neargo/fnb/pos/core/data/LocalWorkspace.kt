@@ -953,8 +953,10 @@ class LocalWorkspace(
     override suspend fun holdCart(lines: List<CartLine>, member: String?, why: String): Result<String> {
         var no = ""
         return storeOp(event = retailEvent("RetailCartHeld", """{"lines":${lines.size}}"""), check = { s -> retailOnly(s) ?: if (lines.isEmpty()) "购物车是空的" else null }) { s ->
-            no = "H%04d".format(s.retail.saleSeq + s.retail.held.size)
-            s.withRetail { it.copy(held = it.held + RetailHeld(no, clock(), lines, member, why.trim().take(30))) }
+            // 挂单号单独编，不和零售单号混：取已用过的最大号 + 1
+            val n = maxOf(s.retail.heldSeq, s.retail.held.maxOfOrNull { it.no.drop(1).toIntOrNull() ?: 0 } ?: 0) + 1
+            no = "H%04d".format(n)
+            s.withRetail { it.copy(held = it.held + RetailHeld(no, clock(), lines, member, why.trim().take(30)), heldSeq = n) }
         }.map { no }
     }
 
