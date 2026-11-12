@@ -100,8 +100,11 @@ fun RetailPosRoute() {
     val vm = posViewModel { c, _ -> RetailPosViewModel(c.config, c.retail, c.device, c.messages, c.staff, c.ops, c.cartDrafts) }
     val state by vm.state.collectAsStateWithLifecycle()
     val prefs by appContainer().prefs.prefs.collectAsStateWithLifecycle(null)
+    val editor = appContainer().layoutEditor
+    val draft by editor.draft.collectAsStateWithLifecycle()
     CustomerSync(state)
-    RetailPosScreen(state, vm::onAction, prefs?.layout?.bill ?: BillSide.Left)
+    val p = draft ?: prefs
+    RetailPosScreen(state, vm::onAction, p?.layout?.bill ?: BillSide.Left, p ?: ai.neargo.fnb.pos.core.model.DisplayPrefs(), editor.takeIf { draft != null })
 }
 
 /**
@@ -136,7 +139,12 @@ private fun CustomerSync(state: RetailPosUiState) {
  * 扫码枪按键盘输入：扫码框有焦点时回车提交；没有焦点时由页面根节点按按键间隔识别（ScanBuffer），不弹软键盘。
  */
 @Composable
-fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, side: BillSide = BillSide.Left) {
+fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, side: BillSide = BillSide.Left,
+                    prefs: ai.neargo.fnb.pos.core.model.DisplayPrefs = ai.neargo.fnb.pos.core.model.DisplayPrefs(),
+                    editor: ai.neargo.fnb.pos.feature.common.LayoutEditor? = null) {
+    val hybrid = prefs.retailMode == ai.neargo.fnb.pos.core.model.ActionMode.Hybrid
+    val editing = editor != null
+    val cfg = prefs.railOf(ai.neargo.fnb.pos.core.model.BizType.Retail)
     val layout = LocalPosLayout.current
     val root = remember { FocusRequester() }
     var fieldFocused by remember { mutableStateOf(false) }
@@ -146,7 +154,17 @@ fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
     Box(
         Modifier.fillMaxSize().hidScanner(root, { fieldFocused }) { onAction(RetailPosAction.Scan(it)) },
     ) {
-        Workbench(side, if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW, aside = { m -> CartPanel(state, onAction, m) }) { m ->
+        val base = (if (layout.wide) maxOf(layout.dockW, 400.dp) else layout.dockW).value.toInt()
+        Workbench(side, ai.neargo.fnb.pos.core.model.ActionLayout.billWidth(prefs.billWidth, base).dp, aside = { m -> CartPanel(state, onAction, m, hybrid) },
+            // 竖条只在扫码态出现（收款态没有行操作）
+            rail = if (!hybrid || !layout.wide || state.cart.mode == PosMode.Pay) null else ({ m ->
+                if (editor != null) ai.neargo.fnb.pos.feature.common.RailEditor(m, ai.neargo.fnb.pos.core.model.BizType.Retail, cfg,
+                    { editor.rail(ai.neargo.fnb.pos.core.model.BizType.Retail, it) }, { onAction(RetailPosAction.Notice(it)) })
+                else RetailRail(state, onAction, cfg, m)
+            }),
+            railWidth = (if (editing) 120 else ai.neargo.fnb.pos.core.model.ActionLayout.railWidth(prefs.railWidth)).dp,
+            editing = editing, onSideWidth = { editor?.widenBill(it, base) }, onRailWidth = { editor?.widenRail(it) }, onSide = { editor?.billSide(it) },
+        ) { m ->
             if (state.cart.mode == PosMode.Pay) PayPane(state, onAction, m) else ScanPane(state, onAction, m) { fieldFocused = it }
         }
     }
@@ -181,7 +199,7 @@ fun RetailPosScreen(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
 /* ---------------- 左：购物车 ---------------- */
 
 @Composable
-private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, modifier: Modifier) {
+private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, modifier: Modifier, hybrid: Boolean = false) {
     val c = Pos.colors; val t = Pos.type
     val cart = state.cart; val tot = state.totals
     val pay = cart.mode == PosMode.Pay; val empty = cart.lines.isEmpty()
@@ -194,7 +212,8 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                     Text("单号 ${state.nextNo}", style = t.label.num(), color = c.sub)
                     if (cart.member) Tag(state.memberRec?.let { "${it.name} · 积分 ${it.points}" } ?: "会员", bg = c.tint, fg = c.primary)
                     Spacer(Modifier.weight(1f))
-                    if (!pay) Box {
+                    // 混合模式：低频操作在竖条底「更多」
+                    if (!pay && !hybrid) Box {
                         PosIconButton(Icons.Rounded.MoreHoriz, "更多", { menu = true })
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text("开钱箱") }, { menu = false; onAction(RetailPosAction.OpenDrawer) })
@@ -202,7 +221,14 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                         }
                     }
                 }
-                if (!pay) Row(Modifier.padding(vertical = 6.dp).padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 混合模式：整单操作做成一行小按钮（竖条只放选中行的操作）
+                if (!pay && hybrid) ai.neargo.fnb.pos.feature.common.OrderIcons(listOf(
+                    ai.neargo.fnb.pos.feature.common.RailItem("order.member", if (cart.member) "解除会员" else "会员", true) { onAction(RetailPosAction.ToggleMember) },
+                    ai.neargo.fnb.pos.feature.common.RailItem("order.hold", "挂单", !empty) { onAction(RetailPosAction.Hold) },
+                    ai.neargo.fnb.pos.feature.common.RailItem("order.recall", if (state.held.isEmpty()) "取单" else "取单 ${state.held.size}", state.held.isNotEmpty()) { onAction(RetailPosAction.ShowHeld) },
+                    ai.neargo.fnb.pos.feature.common.RailItem("order.discount", "折扣", !empty) { onAction(RetailPosAction.AskDiscount) },
+                ) + state.bags.map { b -> ai.neargo.fnb.pos.feature.common.RailItem("bag.${b.id}", "+袋 ${yuan(b.price)}", true) { onAction(RetailPosAction.AddBag(b.id)) } })
+                else if (!pay) Row(Modifier.padding(vertical = 6.dp).padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PosChip(if (cart.member) "解除会员" else "会员", cart.member, { onAction(RetailPosAction.ToggleMember) })
                     PosButton("挂单", { onAction(RetailPosAction.Hold) }, size = BtnSize.Small, enabled = !empty)
                     PosButton(if (state.held.isEmpty()) "取单" else "取单 · ${state.held.size}", { onAction(RetailPosAction.ShowHeld) }, size = BtnSize.Small, enabled = state.held.isNotEmpty())
@@ -227,7 +253,7 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                 }
             } else {
                 LazyColumn(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                    items(cart.lines, key = { it.key }) { l -> CartLineRow(state, l, onAction) }
+                    items(cart.lines, key = { it.key }) { l -> CartLineRow(state, l, onAction, hybrid) }
                     item {
                         Column(Modifier.padding(8.dp).clip(Pos.metrics.card).background(c.tile).padding(10.dp)) {
                             Text("整单优惠", style = t.label, color = c.sub)
@@ -274,7 +300,7 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
 }
 
 @Composable
-private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailPosAction) -> Unit) {
+private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailPosAction) -> Unit, hybrid: Boolean = false) {
     val c = Pos.colors; val t = Pos.type
     val pay = state.cart.mode == PosMode.Pay
     val info = state.lineInfo(l)
@@ -283,7 +309,7 @@ private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailP
     val open = !pay && state.cart.open == l.key
     val hl = !pay && state.cart.last == l.key
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(Pos.metrics.card).background(if (hl) c.tint else c.surface)
-        .clickable(enabled = !pay) { onAction(RetailPosAction.ToggleOpen(l.key)) }.padding(horizontal = 8.dp, vertical = 8.dp)) {
+        .clickable(enabled = !pay) { onAction(if (hybrid) RetailPosAction.SelectLine(l.key) else RetailPosAction.ToggleOpen(l.key)) }.padding(horizontal = 8.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(lineTitle(state, l), style = t.line, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -302,7 +328,7 @@ private fun CartLineRow(state: RetailPosUiState, l: CartLine, onAction: (RetailP
             Column(horizontalAlignment = Alignment.End) {
                 Text(yuan(state.lineAmount(l)), style = t.strong.num(), color = c.ink)
                 if (l.grams == null) {
-                    if (pay) Text("×${l.qty}", style = t.label.num(), color = c.sub)
+                    if (pay || hybrid) Text("×${l.qty}", style = t.label.num(), color = c.sub)
                     else QuantityStepper(l.qty, { d -> onAction(RetailPosAction.Bump(l.key, d)) }, Modifier.padding(top = 4.dp))
                 }
             }
@@ -768,4 +794,28 @@ private fun MemberDialog(state: RetailPosUiState, onAction: (RetailPosAction) ->
         }
         if (q.isBlank()) Text("门店共 ${state.members.size} 位会员", style = t.label, color = c.sub, modifier = Modifier.padding(vertical = 6.dp))
     }
+}
+
+/** 混合模式的中间竖条（零售）：选中行（默认最后扫的）的数量步进 + 行操作 + 临时商品，「更多」放清空、开钱箱 */
+@Composable
+private fun RetailRail(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit, cfg: ai.neargo.fnb.pos.core.model.RailConfig, modifier: Modifier) {
+    val sel = state.last
+    fun item(id: String): ai.neargo.fnb.pos.feature.common.RailItem? {
+        val label = ai.neargo.fnb.pos.core.model.ActionLayout.spec(ai.neargo.fnb.pos.core.model.BizType.Retail, id)?.label ?: return null
+        return when (id) {
+            "line.delete" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, sel != null) { sel?.let { onAction(RetailPosAction.Remove(it.key)) } }
+            "line.reprice" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, sel != null && !sel.custom && !sel.gift) { sel?.let { onAction(RetailPosAction.AskReprice(it.key)) } }
+            "line.note" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, sel != null) { sel?.let { onAction(RetailPosAction.AskNote(it.key)) } }
+            "line.gift" -> ai.neargo.fnb.pos.feature.common.RailItem(id, if (sel?.gift == true) "取消赠送" else label, sel != null) { sel?.let { onAction(RetailPosAction.Gift(it.key)) } }
+            "add.custom" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, true) { onAction(RetailPosAction.AddCustom) }
+            "order.clear" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, state.cart.lines.isNotEmpty()) { onAction(RetailPosAction.AskClear) }
+            "device.drawer" -> ai.neargo.fnb.pos.feature.common.RailItem(id, label, true) { onAction(RetailPosAction.OpenDrawer) }
+            else -> null
+        }
+    }
+    ai.neargo.fnb.pos.feature.common.ActionRail(
+        modifier, title = sel?.let { "选中 · ${state.lineName(it)}" } ?: "未选中",
+        qty = sel?.takeIf { it.grams == null }?.qty, onQty = if (sel != null && sel.grams == null) ({ d -> onAction(RetailPosAction.Bump(sel.key, d)) }) else null,
+        items = cfg.rail.mapNotNull(::item), more = cfg.more.mapNotNull(::item),
+    )
 }

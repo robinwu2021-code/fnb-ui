@@ -146,6 +146,10 @@ sealed interface RetailPosAction {
     data class ToggleOpen(val key: Long) : RetailPosAction
     data class Gift(val key: Long) : RetailPosAction
     data class Remove(val key: Long) : RetailPosAction
+    /** 混合模式：点购物车行选中（竖条的行操作作用于它） */
+    data class SelectLine(val key: Long) : RetailPosAction
+    /** 一句提示（编辑布局时拖放不合规等） */
+    data class Notice(val message: String) : RetailPosAction
     data object ToggleMember : RetailPosAction
     data class PickMember(val id: String) : RetailPosAction
     data class PickProduct(val id: String) : RetailPosAction
@@ -316,6 +320,8 @@ class RetailPosViewModel(
             is RetailPosAction.Undo -> set { c -> val l = RetailCartRules.undoLast(c.lines, a.key); c.copy(lines = l, last = a.key.takeIf { k -> l.any { it.key == k } }) }
             is RetailPosAction.ToggleOpen -> set { it.copy(open = if (it.open == a.key) null else a.key) }
             is RetailPosAction.Gift -> set { it.copy(lines = RetailCartRules.toggleGift(it.lines, a.key), open = null) }
+            is RetailPosAction.SelectLine -> set { it.copy(last = a.key, open = null) }
+            is RetailPosAction.Notice -> messages.post(a.message)
             is RetailPosAction.Remove -> set { c -> c.copy(lines = RetailCartRules.remove(c.lines, a.key), open = null, last = c.last.takeIf { it != a.key }) }
             RetailPosAction.ToggleMember -> set { if (it.member) it.copy(member = false, memberId = "") else it.copy(overlay = RetailOverlay.Member) }
             is RetailPosAction.PickProduct -> s().product(a.id)?.let { p -> set { it.copy(overlay = null) }; pick(p) }

@@ -88,6 +88,8 @@ class AppContainer(context: Context) {
     /** 零售（R3 起）：先只走本机；副 POS 经主机仲裁放在后面做。 */
     val retail: RetailRepository = RoutedRetail(workspace, lanLink)
     val prefs: PreferencesRepository = DataStorePreferences(dataStore)
+    /** 编辑收银页布局（草稿非空 = 编辑中） */
+    val layoutEditor by lazy { ai.neargo.fnb.pos.feature.common.LayoutEditor(prefs) }
     /** 收银台购物车草稿（本机） */
     val cartDrafts: CartDraftStore = DataStoreCartDrafts(dataStore)
     val device: DeviceRepository = RoutedDevice(NetworkDevice(context.applicationContext, appScope), workspace.lanState, lanLink.status, appScope)
@@ -216,6 +218,12 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
         val scalePort = intPreferencesKey("scale_port")
         val scalePoll = stringPreferencesKey("scale_poll")
         val scaleGrams = booleanPreferencesKey("scale_grams")
+        val diningMode = stringPreferencesKey("dining_action_mode")
+        val retailMode = stringPreferencesKey("retail_action_mode")
+        val billWidth = intPreferencesKey("bill_width")
+        val railWidth = intPreferencesKey("rail_width")
+        val diningRail = stringPreferencesKey("dining_rail")
+        val retailRail = stringPreferencesKey("retail_rail")
     }
 
     private inline fun <reified E : Enum<E>> Preferences.enum(key: Preferences.Key<String>, default: E): E =
@@ -230,6 +238,9 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             font = p.enum(K.font, d.font), lang = p.enum(K.lang, d.lang),
             customerDisplay = p[K.cd] ?: d.customerDisplay, customerLines = p[K.cdLines] ?: d.customerLines, customerSlides = p[K.cdSlides] ?: d.customerSlides,
             scaleHost = p[K.scaleHost] ?: d.scaleHost, scalePort = p[K.scalePort] ?: d.scalePort, scalePoll = p[K.scalePoll] ?: d.scalePoll, scaleGrams = p[K.scaleGrams] ?: d.scaleGrams,
+            diningMode = p.enum(K.diningMode, d.diningMode), retailMode = p.enum(K.retailMode, d.retailMode),
+            billWidth = p[K.billWidth] ?: 0, railWidth = p[K.railWidth] ?: 0,
+            diningRail = ai.neargo.fnb.pos.core.model.ActionLayout.decode(p[K.diningRail]), retailRail = ai.neargo.fnb.pos.core.model.ActionLayout.decode(p[K.retailRail]),
         )
     }
 
@@ -241,6 +252,8 @@ private class DataStorePreferences(private val ds: DataStore<Preferences>) : Pre
             it[K.photos] = n.photos; it[K.font] = n.font.name; it[K.lang] = n.lang.name
             it[K.cd] = n.customerDisplay; it[K.cdLines] = n.customerLines; it[K.cdSlides] = n.customerSlides
             it[K.scaleHost] = n.scaleHost; it[K.scalePort] = n.scalePort; it[K.scalePoll] = n.scalePoll; it[K.scaleGrams] = n.scaleGrams
+            it[K.diningMode] = n.diningMode.name; it[K.retailMode] = n.retailMode.name; it[K.billWidth] = n.billWidth; it[K.railWidth] = n.railWidth
+            it[K.diningRail] = ai.neargo.fnb.pos.core.model.ActionLayout.encode(n.diningRail); it[K.retailRail] = ai.neargo.fnb.pos.core.model.ActionLayout.encode(n.retailRail)
         }
     }
 }

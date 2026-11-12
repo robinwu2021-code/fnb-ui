@@ -34,6 +34,7 @@ import ai.neargo.fnb.pos.core.designsystem.component.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
@@ -110,23 +111,30 @@ fun OrderLineRow(
     onAdvance: ((LineStatus) -> Unit)?,
     modifier: Modifier = Modifier,
     onNote: (() -> Unit)? = null,
+    /** 混合模式：行可选中（操作在中间竖条），行上不放步进和催菜按钮 */
+    selected: Boolean = false,
+    onSelect: (() -> Unit)? = null,
 ) {
     val c = Pos.colors
     val t = Pos.type
-    Column(modifier.fillMaxWidth()) {
+    val compact = onSelect != null
+    Column(modifier.fillMaxWidth().then(if (compact) Modifier.clip(Pos.metrics.button).background(if (selected) c.tint else c.surface)
+        .clickable(role = Role.Button, onClickLabel = "选中 ${line.name}", onClick = onSelect).padding(horizontal = 6.dp) else Modifier)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
             Text(line.name, style = t.line, color = c.ink, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.width(8.dp))
             Text(yuan(if (line.gifted) 0 else line.unit * line.qty), style = t.line.num(), color = c.ink, maxLines = 1, softWrap = false)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).then(if (onNote != null) Modifier.clickable(role = Role.Button, onClickLabel = "菜品备注", onClick = onNote) else Modifier)) {
+            Column(Modifier.weight(1f).then(if (onNote != null && !compact) Modifier.clickable(role = Role.Button, onClickLabel = "菜品备注", onClick = onNote) else Modifier)) {
                 Text(line.spec, style = t.label, color = c.sub, maxLines = 2)
                 if (line.note.isNotBlank()) Text("备注：${line.note}", style = t.label, color = c.warning, maxLines = 2)
-                else if (onNote != null) Text("+ 备注", style = t.label, color = c.primary)
+                else if (onNote != null && !compact) Text("+ 备注", style = t.label, color = c.primary)
             }
             if (line.gifted) Text("赠送 · ×${line.qty}", style = t.label, color = c.primary)
-            else if (line.status == LineStatus.New) {
+            else if (line.status == LineStatus.New && compact) {
+                Text("新加 · ×${line.qty}", style = t.label.num(), color = c.sub)
+            } else if (line.status == LineStatus.New) {
                 QuantityStepper(line.qty, onQty)
             } else {
                 val stateColor = when (line.status) {
@@ -137,7 +145,7 @@ fun OrderLineRow(
                 Text("${line.status.label} · ×${line.qty}", style = t.label.num(), color = stateColor)
             }
         }
-        if (onAdvance != null && (line.status == LineStatus.Sent || line.status == LineStatus.Rushing)) {
+        if (!compact && onAdvance != null && (line.status == LineStatus.Sent || line.status == LineStatus.Rushing)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (line.status == LineStatus.Sent) PosButton("催菜", { onAdvance(LineStatus.Rushing) }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)
                 PosButton("已上菜", { onAdvance(LineStatus.Served) }, variant = BtnVariant.Text, size = BtnSize.Small, textStyle = t.label)

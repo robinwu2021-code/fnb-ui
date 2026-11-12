@@ -150,6 +150,24 @@ fun DisplaySheet(state: DisplayUiState, onAction: (DisplayAction) -> Unit, onDis
                     }
                 }
                 Group.Layout -> {
+                    // 收银页操作布局：按当前门店业态（餐饮 / 零售各存一份）
+                    val container = ai.neargo.fnb.pos.app.appContainer()
+                    val session by container.session.session.collectAsStateWithLifecycle()
+                    val staff by container.staff.staff.collectAsStateWithLifecycle()
+                    val biz = session.biz
+                    Label("${if (biz == ai.neargo.fnb.pos.core.model.BizType.Retail) "收银页" else "点餐页"}操作布局")
+                    Options(ai.neargo.fnb.pos.core.model.ActionMode.entries, p.modeOf(biz), { it.label }) { v -> set { it.withMode(biz, v) } }
+                    Text(if (p.modeOf(biz) == ai.neargo.fnb.pos.core.model.ActionMode.Hybrid) "混合：选中行的操作集中在菜单和账单之间的竖条，整单操作在账单头，低频的在竖条底「更多」"
+                        else "分散：按钮在各自对象旁（行上 − / +、账单头按钮行）", style = t.label, color = c.sub, modifier = Modifier.padding(top = 6.dp))
+                    val canEdit = ai.neargo.fnb.pos.core.model.Perm.Settings in staff.perms
+                    PosButton("编辑收银页布局（拖动）", {
+                        container.layoutEditor.start(p); onDismiss()
+                    }, Modifier.padding(top = 8.dp), variant = BtnVariant.Soft, enabled = canEdit && LocalPosLayout.current.wide)
+                    Text(when {
+                        !canEdit -> "需要「门店设置」权限"
+                        !LocalPosLayout.current.wide -> "当前屏幕太窄，不支持编辑布局"
+                        else -> "拖动把手调账单 / 竖条宽度，拖账单换左右、拖分类栏换位置，混合模式下长按竖条按钮排序"
+                    }, style = t.label, color = c.sub, modifier = Modifier.padding(top = 4.dp))
                     Label("分类 / 账单位置")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OrderLayout.entries.forEach { l -> LayoutOption(l, p.layout == l) { set { it.copy(layout = l) } } }

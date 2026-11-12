@@ -23,7 +23,23 @@ data class DisplayPrefs(
     val scalePort: Int = 4001,
     val scalePoll: String = "",
     val scaleGrams: Boolean = false,
-)
+    /** 收银页操作模式（分散 / 混合），餐饮、零售分开存 */
+    val diningMode: ActionMode = ActionMode.Scatter,
+    val retailMode: ActionMode = ActionMode.Scatter,
+    /** 拖动调整的账单宽、竖条宽（dp）；0 = 默认 */
+    val billWidth: Int = 0,
+    val railWidth: Int = 0,
+    /** 竖条与「更多」里的操作顺序；null = 默认 */
+    val diningRail: RailConfig? = null,
+    val retailRail: RailConfig? = null,
+) {
+    fun modeOf(biz: BizType) = if (biz == BizType.Retail) retailMode else diningMode
+    fun railOf(biz: BizType) = ActionLayout.normalize(if (biz == BizType.Retail) retailRail else diningRail, biz)
+    fun withMode(biz: BizType, m: ActionMode) = if (biz == BizType.Retail) copy(retailMode = m) else copy(diningMode = m)
+    fun withRail(biz: BizType, c: RailConfig?) = if (biz == BizType.Retail) copy(retailRail = c) else copy(diningRail = c)
+    /** 「恢复默认」只恢复布局相关的（分类 / 账单位置、宽度、竖条） */
+    fun resetLayout(biz: BizType) = withRail(biz, null).copy(layout = DisplayPrefs().layout, billWidth = 0, railWidth = 0)
+}
 
 /** 字体随包提供，中文按字形回退系统 Noto Sans CJK。 */
 enum class FontChoice(val label: String) { Manrope("Manrope"), Inter("Inter"), Roboto("Roboto"), NotoSans("Noto Sans"), IBMPlexSans("IBM Plex Sans"), Outfit("Outfit + Inter"), System("系统字体") }
