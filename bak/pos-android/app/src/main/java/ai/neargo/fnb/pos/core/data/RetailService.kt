@@ -68,7 +68,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
     override suspend fun newStockDoc(kind: StockDocKind, supplier: String, scope: String, toStore: String): Result<String> {
         var no = ""
         val actor = actorName(state.value)
-        return storeOp(event = retailEvent("StockDocCreated", """{"kind":"$kind"}"""), check = { s ->
+        return storeOp(event = EventSpec { b, a -> Triple("StockDocCreated", RetailEventPayloads.stockDoc(b, a, null), listOf("retail")) }, check = { s ->
             val to = state.value.stores[toStore]
             when {
                 kind == StockDocKind.Transfer && (to == null || to.id == s.id) -> "请选择调入门店"
@@ -90,7 +90,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
     private suspend fun transferOut(no: String): Result<StockDocState> {
         val actor = actorName(state.value)
         return persistenceResult {
-            transaction(retailEvent("StockDocPosted", """{"no":"$no","transfer":true}""")) { v ->
+            transaction(EventSpec { b, a -> Triple("StockDocPosted", RetailEventPayloads.stockDoc(b, a, no, mapOf("transfer" to kotlinx.serialization.json.JsonPrimitive(true))), listOf("retail")) }) { v ->
                 val s = v.store ?: return@transaction v to Result.failure<StockDocState>(IllegalStateException("请先选择门店"))
                 val d = s.retail.stockDocs.firstOrNull { it.no == no } ?: return@transaction v to Result.failure(IllegalStateException("单据不存在"))
                 val to = v.stores[d.toStore] ?: return@transaction v to Result.failure(IllegalStateException("调入门店不存在"))
@@ -110,7 +110,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
     }
 
     override suspend fun setStockDocLines(no: String, lines: List<StockDocLine>): Result<Unit> =
-        storeOp(event = retailEvent("StockDocUpdated", """{"no":"$no","lines":${lines.size}}"""), check = { s ->
+        storeOp(event = EventSpec { b, a -> Triple("StockDocUpdated", RetailEventPayloads.stockDoc(b, a, no), listOf("retail")) }, check = { s ->
             val d = s.retail.stockDocs.firstOrNull { it.no == no }
             when {
                 d == null -> "单据不存在"
@@ -127,7 +127,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
         var next = StockDocState.Draft
         return storeOp(event = EventSpec { b, a ->
             val d = a.retail.stockDocs.first { it.no == no }
-            Triple(if (d.state == StockDocState.Pending) "StockDocSubmitted" else "StockDocPosted", """{"no":"$no","state":"${d.state}"}""", listOf("retail") + d.lines.map { "stock:${it.productId}" })
+            Triple(if (d.state == StockDocState.Pending) "StockDocSubmitted" else "StockDocPosted", RetailEventPayloads.stockDoc(b, a, no), listOf("retail") + d.lines.map { "stock:${it.productId}" })
         }, check = { s ->
             val d = s.retail.stockDocs.firstOrNull { it.no == no }
             when {
@@ -176,7 +176,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
     override suspend fun checkoutRetail(lines: List<CartLine>, member: Boolean, method: String, received: Long, online: Boolean, extras: CheckoutExtras): Result<RetailSale> {
         var sale: RetailSale? = null
         val actor = actorName(state.value)
-        return storeOp(event = EventSpec { _, a -> val x = a.retail.sales.first(); Triple("RetailSaleCompleted", """{"no":"${x.no}","amount":${x.paid},"method":"$method"}""", listOf("retail") + x.lines.filter { it.productId.isNotBlank() }.map { "stock:${it.productId}" }) }, check = { s ->
+        return storeOp(event = EventSpec { b, a -> val x = a.retail.sales.first(); Triple("RetailSaleCompleted", RetailEventPayloads.sale(b, a, method), listOf("retail") + x.lines.filter { it.productId.isNotBlank() }.map { "stock:${it.productId}" }) }, check = { s ->
             val ps = RetailCheckout.priced(s.products, s.retail.settings, today())
             val t = RetailCheckout.totalsWith(ps, s.promotions, lines, member, extras)
             val credit = s.retail.credit
@@ -270,7 +270,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
         val rs = state.value.store?.retail?.settings ?: RetailSettings()
         // 无单退货：按设置要主管授权；不要授权时记当前操作员
         val approver = if (req.saleNo == null) { if (rs.noReceiptAuth) supervisorAuth(state.value, req.approver, req.secret).getOrElse { return Result.failure(it) } else actor } else ""
-        return storeOp(event = retailEvent("RetailReturned", """{"sale":"${req.saleNo.orEmpty()}","exchange":${req.exchange},"method":"${req.method}"}"""), check = { s ->
+        return storeOp(event = EventSpec { b, a -> Triple("RetailReturned", RetailEventPayloads.returned(b, a, req.saleNo, req.exchange, req.method, req.restock), listOf("retail")) }, check = { s ->
             val sale = req.saleNo?.let { no -> s.retail.sales.firstOrNull { it.no == no } }
             val pieces = sale?.let { ReturnRules.pickedPieces(it.soldLines, req.pick) } ?: req.pick.values.sum()
             when {
@@ -490,7 +490,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
     }) { s -> s.withRetail { it.copy(settings = settings) } }
 
     override suspend fun voidStockDoc(no: String): Result<Unit> =
-        storeOp(event = retailEvent("StockDocVoided", """{"no":"$no"}"""), check = { s ->
+        storeOp(event = EventSpec { b, a -> Triple("StockDocVoided", RetailEventPayloads.stockDoc(b, a, no), listOf("retail")) }, check = { s ->
             val d = s.retail.stockDocs.firstOrNull { it.no == no }
             when { d == null -> "单据不存在"; !d.editable -> "只有草稿和盘点中的单据能作废"; else -> retailOnly(s) ?: need(Perm.Settings) }
         }) { s -> s.withRetail { r -> r.copy(stockDocs = r.stockDocs.map { if (it.no == no) it.copy(state = StockDocState.Void) else it }) } }

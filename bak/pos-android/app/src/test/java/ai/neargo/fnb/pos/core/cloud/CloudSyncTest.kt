@@ -234,6 +234,21 @@ class CloudSyncTest {
         assertTrue(server.calls.any { it.startsWith("closePreview:") && it.endsWith(":CNY") }); assertTrue(server.calls.contains("closeSign:D1@h1"))
     }
 
+    @Test fun retailBlocksPerSaleAndConfigIsLocal() = runTest(UnconfinedTestDispatcher()) {
+        val disk = Disk()
+        val w = LocalWorkspace(disk, backgroundScope) { 1_800_000_000_000L }
+        w.enterDemo(); w.selectStore(ai.neargo.fnb.pos.core.data.DemoCatalog.RETAIL_STORE_ID); disk.commands.clear()
+        w.checkoutRetail(listOf(ai.neargo.fnb.pos.core.model.CartLine(1, "cola", 1)), false, "现金", 10_00, true).getOrThrow()
+        w.checkoutRetail(listOf(ai.neargo.fnb.pos.core.model.CartLine(1, "water", 2)), false, "现金", 10_00, true).getOrThrow()
+        w.setRetailPrice("cola", 380).getOrThrow()                                  // 改价：配置类
+        w.holdCart(listOf(ai.neargo.fnb.pos.core.model.CartLine(1, "cola", 1)), null, "稍后").getOrThrow()   // 挂单：只在本机
+        val src = Source(disk)
+        val r = CloudSync(FakeServer(), MemoryCloudRefs(), src).run("s", "NS")
+        assertEquals(0, r.uploaded); assertEquals(2, r.waiting)                  // 两张销售单各自等后端接口
+        assertTrue(r.local >= 2)                                                  // 改价（及其价签）+ 挂单直接处理
+        assertEquals(disk.commands.count { it.type == "RetailSaleCompleted" }, disk.commands.size - src.acked.size)
+    }
+
     @Test fun healthDebounce() {
         var h = CloudHealth()
         h = h.success(); assertFalse(h.online); h = h.success(); assertTrue(h.online)

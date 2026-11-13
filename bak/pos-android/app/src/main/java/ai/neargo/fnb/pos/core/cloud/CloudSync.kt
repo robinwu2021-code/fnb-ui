@@ -98,24 +98,49 @@ class CloudSync(
          */
         val LOCAL_ONLY = setOf("DishAdded", "DishQuantityChanged", "DishNoteChanged", "OrderDraftCleared", "OrderHeld", "OrderRetrieved",
             "OrderNoteChanged", "TablePositionChanged", "TableCleaningStarted", "TableCleaningFinished",
-            "KdsTicketAdvanced", "KdsTicketReleased", "KdsTicketReassigned", "DishRushed", "DishServed")
+            "KdsTicketAdvanced", "KdsTicketReleased", "KdsTicketReassigned", "DishRushed", "DishServed",
+            // 零售本机操作：挂单 / 取单、补打小票、开钱箱
+            "RetailCartHeld", "RetailCartRecalled", "RetailReceiptReprinted", "DrawerOpened")
+        /**
+         * 配置类：菜品、菜单、桌台、员工、改价、价签、门店设置等。不走营业回放——配置以云端为准、由云端下发到店（后续批次），
+         * 本机改动不上传，直接标已处理，不占待上传数。
+         */
+        val CONFIG = setOf("PromotionSaved", "StoreSettingsUpdated", "AreaCreated", "TableConfigCreated", "TableConfigUpdated", "CategoryCreated",
+            "SpecGroupCreated", "ProductCreated", "ProductUpdated", "MenuCreated", "MenuUpdated", "MenuPublished", "MenuUnpublished",
+            "KitchenStationsSaved", "KitchenDeliveryPolicySaved", "KitchenDispatchSaved", "EmployeeSaved", "ProductsDeleted", "ProductsRepriced",
+            "TablesDeleted", "RetailPriceChanged", "LabelQueued", "LabelsPrinted", "RetailSettingsSaved")
+    }
+
+    /**
+     * 「需处理 / 等后端」时挡住哪些后续事件：默认按事件主聚合（订单、桌台）；
+     * 零售事件的主聚合都是整个零售（retail），改按单号挡——一张销售单被拒不挡其他销售单。
+     */
+    private fun blockKeyOf(e: JournalEvent): String {
+        if (e.aggregateId != "retail") return e.aggregateId
+        val p = runCatching { json.parseToJsonElement(e.payload).jsonObject }.getOrNull() ?: return "retail:${e.eventId}"
+        return when (e.type) {
+            "RetailSaleCompleted" -> "sale:" + p.str("no")
+            "RetailReturned" -> "sale:" + p.str("ref").ifBlank { p.str("sale") }
+            else -> if (e.type.startsWith("StockDoc")) "stockdoc:" + p.str("no") else "retail:${e.eventId}"
+        }
     }
 
     suspend fun run(storeId: String, storeNo: String, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): SyncRound {
         val list = events.pending(storeId, 500)
-        val blocked = refs.issues().map { it.aggregateId }.toMutableSet()
+        val blocked = refs.issues().map { it.aggregateId }.toMutableSet()   // 需处理记的是挡住的键（见 blockKeyOf）
         var uploaded = 0; var waiting = 0; var local = 0
         if (list.any { it.type in SUPPORTED }) try { refreshTables(storeNo) } catch (x: CloudException) {
             return SyncRound(0, list.size, refs.issues().size, x)
         }
         list.forEachIndexed { i, e ->
             progress(i, list.size)
+            val key = blockKeyOf(e)
             when {
-                e.aggregateId in blocked -> waiting++
+                key in blocked -> waiting++
                 // 旧版事件（envelope 为空，迁移前的本机流）不上传
-                e.envelope.isBlank() -> { waiting++; blocked += e.aggregateId }
-                e.type in LOCAL_ONLY -> { events.ack(storeId, e.eventId); local++ }
-                e.type !in SUPPORTED -> { waiting++; blocked += e.aggregateId }   // 等后端接口；同单后续事件要等它
+                e.envelope.isBlank() -> { waiting++; blocked += key }
+                e.type in LOCAL_ONLY || e.type in CONFIG -> { events.ack(storeId, e.eventId); local++ }
+                e.type !in SUPPORTED -> { waiting++; blocked += key }   // 等后端接口；同单后续事件要等它
                 else -> try {
                     upload(e, storeNo)
                     events.ack(storeId, e.eventId); uploaded++
@@ -123,11 +148,11 @@ class CloudSync(
                 catch (x: CloudException) {
                     when (x.kind) {
                         CloudErrorKind.Network, CloudErrorKind.Unauthorized -> return SyncRound(uploaded, list.size - uploaded - local, refs.issues().size, x, local)
-                        else -> { refs.addIssue(CloudIssue(e.eventId, e.type, e.aggregateId, x.code, x.message.orEmpty(), clock())); blocked += e.aggregateId }
+                        else -> { refs.addIssue(CloudIssue(e.eventId, e.type, key, x.code, x.message.orEmpty(), clock())); blocked += key }
                     }
                 } catch (x: Exception) {
                     // 本机载荷无法转换（字段缺失、格式不符）：不重试，交人工，不影响其他聚合
-                    refs.addIssue(CloudIssue(e.eventId, e.type, e.aggregateId, 0, "本机事件无法转换：${x.message ?: x.javaClass.simpleName}", clock())); blocked += e.aggregateId
+                    refs.addIssue(CloudIssue(e.eventId, e.type, key, 0, "本机事件无法转换：${x.message ?: x.javaClass.simpleName}", clock())); blocked += key
                 }
             }
         }
