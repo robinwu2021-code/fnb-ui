@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.ops
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.app.appContainer
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
@@ -80,7 +81,7 @@ fun MembersPanel() {
     }
     recharging?.let { m ->
         var amount by remember { mutableStateOf("") }
-        var method by remember { mutableStateOf("现金") }
+        var method by remember { mutableStateOf(PayMethods.CASH) }
         var error by remember { mutableStateOf<String?>(null) }
         PosDialog("会员充值", { recharging = null }, subtitle = "${m.name} · ${m.phone} · 当前余额 ${yuan(m.balance)}", footer = {
             PosButton("取消", { recharging = null }, size = BtnSize.Large)
@@ -92,7 +93,7 @@ fun MembersPanel() {
         }) {
             PosTextField(amount, { amount = it.filter { ch -> ch.isDigit() || ch == '.' }.take(9) }, "充值金额（元）", keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal), error = error)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
-                listOf("现金", "扫码", "银行卡").filter { it in s.settings.payMethods }.forEach { k -> PosButton(k, { method = k }, size = BtnSize.Small, selected = method == k) }
+                listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD).filter { it in s.settings.payMethods }.forEach { k -> PosButton(k, { method = k }, size = BtnSize.Small, selected = method == k) }
             }
         }
     }

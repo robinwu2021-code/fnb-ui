@@ -1,5 +1,7 @@
 package ai.neargo.fnb.pos.core.model
 
+import ai.neargo.fnb.pos.core.common.PayMethods
+
 /**
  * 客显屏（顾客面向的副屏）：收银员所在桌台的点单明细与金额、结账时应收与找零、收款成功致谢、空闲时轮播。
  * 只读展示，不接受顾客输入；内容全部由本机状态推导。
@@ -106,7 +108,7 @@ object CustomerDisplayRules {
             )
         }
         val lastName = lines.firstOrNull { it.key == last }?.let { l -> (l.customName ?: byId[l.productId]?.name ?: "") + (l.sku?.let { " · $it" } ?: "") }
-        val pay = method?.let { m -> CustomerCheckout(m, received, received?.takeIf { m == "现金" && it >= due }?.minus(due)) }
+        val pay = method?.let { m -> CustomerCheckout(m, received, received?.takeIf { m == PayMethods.CASH && it >= due }?.minus(due)) }
         return RetailCustomerCart(rows, lastName, t.pcs, t.sub, t.save, due, member, credit, if (credit > 0) st.refund else 0, pay)
     }
 }

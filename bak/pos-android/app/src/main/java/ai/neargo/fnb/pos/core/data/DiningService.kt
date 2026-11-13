@@ -1,5 +1,8 @@
 package ai.neargo.fnb.pos.core.data
 
+import ai.neargo.fnb.pos.core.common.PayMethods
+import ai.neargo.fnb.pos.core.common.PayWording
+import ai.neargo.fnb.pos.core.common.PaymentRules
 import ai.neargo.fnb.pos.core.model.*
 
 /**
@@ -7,6 +10,12 @@ import ai.neargo.fnb.pos.core.model.*
  * 和 [RetailService] 一样只依赖公共内核 [StoreKernel] 与公共收款 [Settlement]，不碰零售代码。
  * 两业态按门店业态切换（BizProfile）；厨房屏、打印网关、交班、同步等设备与运营能力仍在 LocalWorkspace。
  */
+/** 餐饮结账的提示措辞（规则在公共 PaymentRules） */
+private val DINING_WORDING = PayWording(
+    scanOffline = "离线时该收款方式不可用", noMember = "请先绑定会员", walletShort = "请先绑定会员",
+    balanceShort = { "会员余额不足（余额 ${yuan(it)}）" }, memberMustExistForAnyMethod = false,
+)
+
 internal class DiningService(private val k: StoreKernel) : FloorRepository, OrderRepository {
     // 内核薄封装：业务代码照原样调用
     private val state get() = k.vault
@@ -87,42 +96,23 @@ internal class DiningService(private val k: StoreKernel) : FloorRepository, Orde
     override suspend fun settle(tableId: String, amount: Long, method: String, online: Boolean, received: Long): Result<Unit> {
         val pid = newId("P")
         // 储值支付同时修改会员余额：事件参与会员聚合
-        val memberAgg = currentStore()?.order(tableId)?.memberId?.takeIf { it.isNotBlank() && method == "储值卡" }
+        val memberAgg = currentStore()?.order(tableId)?.memberId?.takeIf { it.isNotBlank() && method == PayMethods.STORED }
         val spec = page("PaymentRecorded", tableId).let { base -> if (memberAgg == null) base else EventSpec { b, a -> base.resolve(b, a).let { (t, p, ag) -> Triple(t, p, ag + "member:$memberAgg") } } }
         return storeOp(event = spec, check = { s ->
             val totals = OrderRules.totals(s.order(tableId))
             OrderRules.checkoutBlock(totals) ?: DeliveryRules.checkoutBlock(s, tableId) ?: when {
                 amount != totals.due -> "账单已变化，请重新核对"
-                !Money.withinBill(amount) || !Money.withinBill(received) -> "金额超出上限"
-                s.settings.currency !in Money.SUPPORTED -> "不支持的币种：${s.settings.currency}"
-                method == "现金" && received < amount -> "实收不足，不能确认收款"
-                method !in listOf("现金", "银行卡", "扫码", "储值卡") -> "请选择收款方式"
-                method !in s.settings.payMethods -> "门店未启用「$method」"
-                !online && method == "扫码" -> "离线时该收款方式不可用"
-                method == "储值卡" -> {
-                    val o = s.order(tableId)
-                    val m = s.members.firstOrNull { it.id == o.memberId }
-                    when {
-                        o.memberId.isNotBlank() && m == null -> "会员不存在"
-                        m != null && m.balance < amount -> "会员余额不足（余额 ${yuan(m.balance)}）"
-                        m == null && (!o.member || s.walletBalance < amount) -> "请先绑定会员"
-                        else -> null
-                    }
-                }
-                else -> null
+                else -> PaymentRules.amountBlock(amount, received)
+                    ?: s.order(tableId).let { o -> PaymentRules.collectBlock(s, method, amount, received, online, o.memberId, o.member, DINING_WORDING) }
             }
         }) { s ->
-            val pay = PaymentRecord(pid, tableId, amount, method, clock(), synced = online, received = if (method == "现金") received else amount, change = if (method == "现金") received - amount else 0L,
-                orderId = s.order(tableId).orderId.ifBlank { null }, currency = s.settings.currency,
-                state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
+            val pay = PaymentRules.record(pid, tableId, amount, method, clock(), online, received, s.order(tableId).orderId.ifBlank { null }, s.settings.currency)
             val receipt = PrintJob(newId("R"), PrintKind.Receipt, "$tableId 结账单", Receipts.bill("结账单", s, tableId, s.order(tableId), clock(), pay), clock())
             val o = s.order(tableId); val t = OrderRules.totals(o)
             val snap = SettledOrder(o.orderId, tableId, pid, clock(), o.lines, t.sub, t.service, t.discount, t.due, method, o.memberId, o.promotions.map { it.name }, s.table(tableId)?.guests ?: 0)
             val member = s.members.firstOrNull { it.id == o.memberId }
             // 收款记录、离线同步队列、会员积分 / 储值：公共收款 Settlement（零售收银同一份）
-            var next = settlement.record(s, pay, online, tableId, "$tableId $method 收款 ${yuan(amount)}")
-            next = if (member != null) settlement.memberSpend(next, member.id, amount, method == "储值卡", pid, actorName(state.value), method)
-                else if (method == "储值卡") next.copy(walletBalance = next.walletBalance - amount) else next // 旧版演示余额
+            var next = settlement.collect(s, pay, online, tableId, "$tableId $method 收款 ${yuan(amount)}", member?.id, null, pid, actorName(state.value))
             next.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
                 .copy(printJobs = next.printJobs + next.withCopies(receipt), settledOrders = next.settledOrders + snap)
         }

@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.data
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.model.Area
 import ai.neargo.fnb.pos.core.model.Category
 import ai.neargo.fnb.pos.core.model.DiningTable
@@ -144,14 +145,14 @@ internal object DemoCatalog {
             RetailSaleLine("L$i", id, byId.getValue(id).name, sku, q, grams, unit, amount ?: if (grams != null) ai.neargo.fnb.pos.core.model.Money.roundHalfUp(unit * grams, 1000) else unit * q, returned)
         val h = 3_600_000L; val m = 60_000L
         val sales = listOf(
-            RetailSale("#R0157", now - 9 * m, member = "王女士", lines = listOf(line(1, "cola", 2), line(2, "milk", 1, unit = 3690), line(3, "apple", 1, grams = 1236), line(4, "croissant", 3)), discount = 72, pays = listOf(SalePay("扫码", 7700))),
-            RetailSale("#R0155", now - 25 * m, lines = listOf(line(1, "tee", 1, sku = "白 · M"), line(2, "socks", 1, sku = "灰")), discount = 880, pays = listOf(SalePay("现金", 7920))),
-            RetailSale("#R0152", now - 50 * m, member = "王女士", lines = listOf(line(1, "water", 4, amount = 600), line(2, "chips", 2, returned = 1), line(3, "coffee", 1)), pays = listOf(SalePay("储值卡", 3680)),
-                returns = listOf(SaleReturn(now - 32 * m, 790, 1, ReturnRules.Reason.Unwanted, "储值卡"))),
-            RetailSale("#R0150", now - 78 * m, channel = SaleChannel.Mini, lines = listOf(line(1, "toast", 2), line(2, "eggtart", 4)), discount = 160, pays = listOf(SalePay("扫码", 5000))),
-            RetailSale("#R0149", now - 95 * m, lines = listOf(line(1, "cherry", 1, grams = 512, returned = 1), line(2, "grape", 1, grams = 862, returned = 1)), discount = 7, pays = listOf(SalePay("银行卡", 7580)),
-                returns = listOf(SaleReturn(now - 70 * m, 7580, 2, ReturnRules.Reason.Quality, "银行卡"))),
-            RetailSale("#R0146", now - 2 * h, channel = SaleChannel.Platform, lines = listOf(line(1, "nuts", 3)), pays = listOf(SalePay("扫码", 1470))),
+            RetailSale("#R0157", now - 9 * m, member = "王女士", lines = listOf(line(1, "cola", 2), line(2, "milk", 1, unit = 3690), line(3, "apple", 1, grams = 1236), line(4, "croissant", 3)), discount = 72, pays = listOf(SalePay(PayMethods.QR, 7700))),
+            RetailSale("#R0155", now - 25 * m, lines = listOf(line(1, "tee", 1, sku = "白 · M"), line(2, "socks", 1, sku = "灰")), discount = 880, pays = listOf(SalePay(PayMethods.CASH, 7920))),
+            RetailSale("#R0152", now - 50 * m, member = "王女士", lines = listOf(line(1, "water", 4, amount = 600), line(2, "chips", 2, returned = 1), line(3, "coffee", 1)), pays = listOf(SalePay(PayMethods.STORED, 3680)),
+                returns = listOf(SaleReturn(now - 32 * m, 790, 1, ReturnRules.Reason.Unwanted, PayMethods.STORED))),
+            RetailSale("#R0150", now - 78 * m, channel = SaleChannel.Mini, lines = listOf(line(1, "toast", 2), line(2, "eggtart", 4)), discount = 160, pays = listOf(SalePay(PayMethods.QR, 5000))),
+            RetailSale("#R0149", now - 95 * m, lines = listOf(line(1, "cherry", 1, grams = 512, returned = 1), line(2, "grape", 1, grams = 862, returned = 1)), discount = 7, pays = listOf(SalePay(PayMethods.CARD, 7580)),
+                returns = listOf(SaleReturn(now - 70 * m, 7580, 2, ReturnRules.Reason.Quality, PayMethods.CARD))),
+            RetailSale("#R0146", now - 2 * h, channel = SaleChannel.Platform, lines = listOf(line(1, "nuts", 3)), pays = listOf(SalePay(PayMethods.QR, 1470))),
         )
         val held = listOf(
             RetailHeld("H0156", now - 18 * m, listOf(CartLine(1, "cola", 2), CartLine(2, "chips", 1), CartLine(3, "bag", 1)), why = "顾客回去拿钱包"),
@@ -168,7 +169,7 @@ internal object DemoCatalog {
         )
         return StoreData(
             id = RETAIL_STORE_ID, name = "虹选便利 · 科技园店", code = "HX001", address = "深圳市南山区科技园中区 6 号",
-            settings = StoreSettings("虹选便利 · 科技园店", serviceBp = 0, payMethods = listOf("现金", "扫码", "银行卡", "储值卡")),
+            settings = StoreSettings("虹选便利 · 科技园店", serviceBp = 0, payMethods = listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD, PayMethods.STORED)),
             biz = BizType.Retail,
             areas = emptyList(), tables = emptyList(), categories = cats, specGroups = listOf(color, size, sockColor), products = products, menus = emptyList(),
             currentTableId = "", shift = ShiftState(start = now - 2 * h),

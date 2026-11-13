@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.retail
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.MessageBus
 import ai.neargo.fnb.pos.core.data.RetailRepository
@@ -151,11 +152,11 @@ class RetailOrdersViewModel(
             is RetailOrdersAction.Open -> {
                 if (a.mode == ReturnMode.Exchange && st.credit != null) { messages.post("上一笔换货（${st.credit.no}）还没在收银结算"); return }
                 val s = st.sale(a.no)
-                local.update { it.copy(flow = ReturnFlow(a.mode, if (s != null) 2 else 1, s?.no, method = s?.pays?.firstOrNull { p -> p.method != EXCHANGE }?.method ?: "现金")) }
+                local.update { it.copy(flow = ReturnFlow(a.mode, if (s != null) 2 else 1, s?.no, method = s?.pays?.firstOrNull { p -> p.method != EXCHANGE }?.method ?: PayMethods.CASH)) }
             }
             is RetailOrdersAction.PickSale -> {
                 val s = st.sale(a.no)
-                flow { it.copy(step = 2, saleNo = s?.no, pick = emptyMap(), method = s?.pays?.firstOrNull { p -> p.method != EXCHANGE }?.method ?: "现金") }
+                flow { it.copy(step = 2, saleNo = s?.no, pick = emptyMap(), method = s?.pays?.firstOrNull { p -> p.method != EXCHANGE }?.method ?: PayMethods.CASH) }
             }
             is RetailOrdersAction.Pick -> flow { f -> f.copy(pick = (f.pick + (a.key to a.qty)).filterValues { it > 0 }) }
             is RetailOrdersAction.Reason -> flow { it.copy(reason = a.reason, restock = ReturnRules.restockByDefault(a.reason)) }

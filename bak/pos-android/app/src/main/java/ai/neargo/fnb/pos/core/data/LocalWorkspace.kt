@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.data
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.model.AdjustmentAudit
 import ai.neargo.fnb.pos.core.model.AdjustmentKind
 import ai.neargo.fnb.pos.core.model.AdjustmentRequest
@@ -561,7 +562,7 @@ class LocalWorkspace(
             when {
                 s.members.none { it.id == memberId } -> "会员不存在"
                 amount <= 0 || amount > 5_000_000 -> "充值金额应为 0.01–50000 元"
-                method !in listOf("现金", "扫码", "银行卡") -> "请选择充值方式"
+                method !in listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD) -> "请选择充值方式"
                 method !in s.settings.payMethods -> "门店未启用「$method」"
                 else -> null
             }
@@ -897,7 +898,7 @@ class LocalWorkspace(
                 settings.memberBp !in 0..5000 -> "会员折扣应为 5–10 折"
                 settings.pointsPerYuan !in 0..100 -> "积分倍率应为 0–100"
                 settings.payMethods.isEmpty() -> "至少启用一种收款方式"
-                settings.payMethods.any { it !in listOf("现金", "扫码", "银行卡", "储值卡") } -> "收款方式无效"
+                settings.payMethods.any { it !in listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD, PayMethods.STORED) } -> "收款方式无效"
                 else -> null
             }
         }) { s ->

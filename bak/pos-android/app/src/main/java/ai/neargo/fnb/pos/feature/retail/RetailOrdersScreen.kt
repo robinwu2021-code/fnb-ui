@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.retail
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.app.appContainer
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
@@ -323,7 +324,7 @@ private fun ReasonStep(state: RetailOrdersUiState, f: ReturnFlow, sale: RetailSa
 }
 
 /** 要联网才能退的方式 */
-private val OFFLINE_BLOCKED = setOf("扫码", ONLINE_PAY)
+private val OFFLINE_BLOCKED = setOf(PayMethods.QR, ONLINE_PAY)
 
 @Composable
 private fun RefundStep(state: RetailOrdersUiState, f: ReturnFlow, onAction: (RetailOrdersAction) -> Unit) {
@@ -331,7 +332,7 @@ private fun RefundStep(state: RetailOrdersUiState, f: ReturnFlow, onAction: (Ret
     Text(if (f.noReceipt) "退款方式（无单只能退现金或储值）" else if (state.settings.originalMethod) "退款方式（按原收款方式退）" else "退款方式", style = t.section, color = c.ink)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         // 小程序单原路退回线上支付：原单有这种收款才多一个按钮
-        (listOf("现金", "扫码", "银行卡", "储值卡") + listOf(ONLINE_PAY).filter { it in state.methods }).forEach { m ->
+        (listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD, PayMethods.STORED) + listOf(ONLINE_PAY).filter { it in state.methods }).forEach { m ->
             PosButton(m, { onAction(RetailOrdersAction.Method(m)) }, Modifier.weight(1f), size = BtnSize.Large, selected = f.method == m,
                 enabled = m in state.methods && !(m in OFFLINE_BLOCKED && !state.online))
         }

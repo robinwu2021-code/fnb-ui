@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.checkout
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.data.launchStorage
 import ai.neargo.fnb.pos.core.data.DeviceRepository
 import ai.neargo.fnb.pos.core.data.FloorRepository
@@ -29,7 +30,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class PayMethod(val label: String, val needsNetwork: Boolean) {
-    Cash("现金", false), Scan("扫码", true), Card("银行卡", false), Stored("储值卡", false),
+    Cash(PayMethods.CASH, false), Scan(PayMethods.QR, true), Card(PayMethods.CARD, false), Stored(PayMethods.STORED, false),
 }
 
 data class CheckoutUiState(

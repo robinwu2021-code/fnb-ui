@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.model
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import kotlinx.serialization.Serializable
 
 /**
@@ -273,7 +274,7 @@ data class StoreSettings(
     /** 会员折扣（万分比，500=95 折）。 */
     val memberBp: Int = 500,
     /** 启用的收款方式。 */
-    val payMethods: List<String> = listOf("现金", "扫码", "银行卡", "储值卡"),
+    val payMethods: List<String> = listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD, PayMethods.STORED),
     /** 每消费 1 元积 N 分（0=不积分）。 */
     val pointsPerYuan: Int = 1,
 )

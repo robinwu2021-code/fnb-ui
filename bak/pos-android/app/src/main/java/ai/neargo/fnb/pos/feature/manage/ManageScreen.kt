@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.manage
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.model.profile
 
 import ai.neargo.fnb.pos.feature.retail.RetailSettingsPage
@@ -329,7 +330,7 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
         }
         Block("收款方式") {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("现金", "扫码", "银行卡", "储值卡").forEach { m ->
+                listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD, PayMethods.STORED).forEach { m ->
                     PosButton(m, { methods = if (m in methods) methods - m else methods + m }, size = BtnSize.Small, selected = m in methods)
                 }
             }
@@ -338,7 +339,7 @@ private fun ColumnScope.StoreSection(store: StoreData, vm: ManageViewModel) {
             val bp = service.toDoubleOrNull()?.let { Math.round(it * 100).toInt() } ?: -1
             val mb = memberRate.toDoubleOrNull()?.let { 10_000 - Math.round(it * 1000).toInt() } ?: -1
             vm.saveSettings(store.settings.copy(shortName = short, receiptFooter = footer, hours = hours, serviceBp = bp, memberBp = mb,
-                pointsPerYuan = points.toIntOrNull() ?: -1, payMethods = listOf("现金", "扫码", "银行卡", "储值卡").filter { it in methods })) { error = it }
+                pointsPerYuan = points.toIntOrNull() ?: -1, payMethods = listOf(PayMethods.CASH, PayMethods.QR, PayMethods.CARD, PayMethods.STORED).filter { it in methods })) { error = it }
         }, Modifier.padding(top = 8.dp), variant = BtnVariant.Primary, size = BtnSize.Large)
     }
 }
@@ -364,7 +365,7 @@ private fun ColumnScope.PaymentsSection(state: ManageUiState) {
     PageHeader("收款与费用", "当前计费为本地演示规则，不修改真实费率或支付凭证")
     val cols = listOf(Col("渠道"), Col("离线可用"), Col("说明", 2f))
     DataTable(cols, Modifier.weight(1f)) {
-        listOf(Triple("现金", "是", "本地记账，联网后同步"), Triple("银行卡", "是", "外接刷卡终端，本地记账"), Triple("扫码", "否", "需联网"), Triple("储值卡", "是", "本机会员演示余额，本地扣减"), Triple("服务费", "—", "菜品小计 × 5%（演示）"))
+        listOf(Triple(PayMethods.CASH, "是", "本地记账，联网后同步"), Triple(PayMethods.CARD, "是", "外接刷卡终端，本地记账"), Triple(PayMethods.QR, "否", "需联网"), Triple(PayMethods.STORED, "是", "本机会员演示余额，本地扣减"), Triple("服务费", "—", "菜品小计 × 5%（演示）"))
             .forEach { (a, b, c) -> item { TableRow(listOf({ Cell(a) }, { Cell(b) }, { Cell(c, sub = true) }), cols) } }
     }
     Text(if (state.device.online) "当前在线" else "当前离线：扫码与储值卡在结账页禁用", style = Pos.type.label, color = Pos.colors.sub)

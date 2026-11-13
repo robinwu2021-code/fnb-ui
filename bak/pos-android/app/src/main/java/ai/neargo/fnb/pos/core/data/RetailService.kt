@@ -1,5 +1,8 @@
 package ai.neargo.fnb.pos.core.data
 
+import ai.neargo.fnb.pos.core.common.PayMethods
+import ai.neargo.fnb.pos.core.common.PayWording
+import ai.neargo.fnb.pos.core.common.PaymentRules
 import ai.neargo.fnb.pos.core.model.*
 import kotlinx.coroutines.flow.StateFlow
 
@@ -8,6 +11,12 @@ import kotlinx.coroutines.flow.StateFlow
  * 只依赖公共内核 [StoreKernel]（门店事务、权限、单号、打印副本、主管授权）和公共收款 [Settlement]，不碰餐饮代码。
  * 餐饮的对应接口是 FloorRepository + OrderRepository；两业态按门店业态切换（BizProfile）。
  */
+/** 零售收银的提示措辞（规则在公共 PaymentRules；这些文案有测试逐字断言） */
+private val RETAIL_WORDING = PayWording(
+    scanOffline = "离线时扫码收款不可用", noMember = "请先识别会员", walletShort = "储值余额不足",
+    balanceShort = { "会员储值余额不足" }, memberMustExistForAnyMethod = true,
+)
+
 internal class RetailService(private val k: StoreKernel) : RetailRepository {
     // 内核薄封装：业务代码照原样调用
     private val state get() = k.vault
@@ -193,17 +202,10 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 lines.any { (it.price ?: 0) < 0 } -> "改后单价不能为负"
                 RetailCheckout.needsApproval(lines, extras) && extras.approver.isBlank() -> "改价、整单折扣需要主管授权"
                 ruleBlock() != null -> ruleBlock()
-                !Money.withinBill(t.due) || !Money.withinBill(received) -> "金额超出上限"
+                PaymentRules.amountBlock(t.due, received) != null -> PaymentRules.amountBlock(t.due, received)
                 // 换货抵扣后不用再收钱：收款方式不看
                 credit != null && st.pay == 0L -> retailOnly(s) ?: need(Perm.Checkout)
-                method !in listOf("现金", "银行卡", "扫码", "储值卡") -> "请选择收款方式"
-                method !in s.settings.payMethods -> "门店未启用「$method」"
-                method == "现金" && received < st.pay -> "实收不足，不能确认收款"
-                !online && method == "扫码" -> "离线时扫码收款不可用"
-                extras.memberId.isNotBlank() && s.members.none { it.id == extras.memberId } -> "会员不存在"
-                method == "储值卡" && extras.memberId.isNotBlank() && s.members.first { it.id == extras.memberId }.balance < st.pay -> "会员储值余额不足"
-                method == "储值卡" && extras.memberId.isBlank() && (!member || s.walletBalance < st.pay) -> if (!member) "请先识别会员" else "储值余额不足"
-                else -> retailOnly(s) ?: need(Perm.Checkout)
+                else -> PaymentRules.collectBlock(s, method, st.pay, received, online, extras.memberId, member, RETAIL_WORDING) ?: retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
             val ps0 = RetailCheckout.priced(s0.products, s0.retail.settings, today())
@@ -217,7 +219,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 extras.discountPct.takeIf { it < 100 }?.let { "整单 ${it / 10.0} 折".replace(".0 折", " 折") },
                 s0.promotions.filter { it.id in extras.promotionIds }.joinToString("、") { it.name }.ifBlank { null },
             ).joinToString(" · ").let { if (it.isNotBlank() && extras.approver.isNotBlank() && RetailCheckout.needsApproval(lines, extras)) "$it（授权：${extras.approver}）" else it }
-            val cash = method == "现金"
+            val cash = method == PayMethods.CASH
             val pays = listOfNotNull(credit?.let { SalePay(EXCHANGE, minOf(it.amount, t.due)) }.takeIf { (it?.amount ?: 0) > 0 }, if (st.pay > 0) SalePay(method, st.pay) else null)
             val mem = s0.members.firstOrNull { it.id == extras.memberId }
             val x = RetailSale(no, clock(), member = mem?.name ?: if (member) "会员" else null, memberId = mem?.id.orEmpty(), lines = RetailCheckout.saleLines(ps0, lines, member), discount = t.round + t.coupon + t.manual, pays = pays, adjust = adjust)
@@ -228,27 +230,16 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 s = s.setBook(l.productId, key, s.bookOf(l.productId, key) - (l.grams ?: l.qty).toLong(), "销售 $no", actor)
             }
             // 收款记录：补收按所选方式；换货退差价按原单收款方式记负数
-            val pay = when {
-                st.pay > 0 -> PaymentRecord(newId("P"), "零售", st.pay, method, clock(), synced = online, received = if (cash) received else st.pay, change = if (cash) received - st.pay else 0L,
-                    orderId = no, currency = s0.settings.currency, state = if (method == "扫码") PaymentState.Succeeded else PaymentState.LocalRecorded, source = if (method == "扫码") "simulation" else "local")
+            val pay0 = when {
+                st.pay > 0 -> PaymentRules.record(newId("P"), "零售", st.pay, method, clock(), online, received, no, s0.settings.currency)
                 st.refund > 0 -> PaymentRecord(newId("P"), "零售", -st.refund, credit!!.method, clock(), synced = online, orderId = no, currency = s0.settings.currency, state = PaymentState.Refunded, source = "local")
                 else -> null
             }
-            // 收款记录、离线同步队列、会员积分 / 储值：公共收款 Settlement（餐饮结账同一份）
-            if (pay != null) {
-                s = settlement.record(s, pay, online, "零售", "$no ${pay.method} ${if (pay.amount < 0) "退差价" else "收款"} ${yuan(kotlin.math.abs(pay.amount))}")
-                val creditMember = credit?.memberId?.ifBlank { null }
-                when {
-                    // 换货退差价到储值卡：退回原单会员；没有会员才记旧版演示余额
-                    pay.amount < 0 && pay.method == "储值卡" && creditMember != null -> s = settlement.memberRefund(s, creditMember, -pay.amount, true, no, actor)
-                    pay.method == "储值卡" && mem == null -> s = s.copy(walletBalance = s.walletBalance - pay.amount)
-                }
-            }
-            // 会员：按实付给积分（换货抵扣部分不再给）；储值卡付款扣会员余额
-            if (mem != null) {
-                val paid = maxOf(0L, pay?.amount ?: 0L)
-                s = settlement.memberSpend(s, mem.id, paid, pay != null && pay.method == "储值卡" && pay.amount > 0, no, actor, "储值卡")
-            }
+            // 收款记录、离线同步队列、会员积分 / 储值：公共收款 Settlement（餐饮结账同一份）；
+            // 换货退差价到储值卡退回原单会员，没有会员才记旧版演示余额；会员按实付给积分（换货抵扣部分不再给）
+            val pay = pay0
+            s = settlement.collect(s, pay, online, "零售", pay?.let { "$no ${it.method} ${if (it.amount < 0) "退差价" else "收款"} ${yuan(kotlin.math.abs(it.amount))}" }.orEmpty(),
+                mem?.id, credit?.memberId?.ifBlank { null }, no, actor)
             val body = saleReceipt(s0, x, credit, pay)
             sale = x
             s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no", body, clock())))
@@ -287,7 +278,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 // 线上支付（小程序单）原路退回，不看门店收款方式
                 sale != null && req.method == ONLINE_PAY && sale.pays.none { it.method == ONLINE_PAY } -> "原单没有线上支付"
                 sale != null && req.method != ONLINE_PAY && req.method !in s.settings.payMethods -> "门店未启用「${req.method}」"
-                !online && (req.method == "扫码" || req.method == ONLINE_PAY) -> "离线时${req.method}退款不可用"
+                !online && (req.method == PayMethods.QR || req.method == ONLINE_PAY) -> "离线时${req.method}退款不可用"
                 else -> retailOnly(s) ?: need(Perm.Checkout)
             }
         }) { s0 ->
@@ -318,8 +309,8 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 val mem = sale?.memberId?.let { id -> s.members.firstOrNull { it.id == id } }
                 // 退款记录与会员退款：公共收款 Settlement
                 s = settlement.record(s, pay, online, "零售", "$ref ${req.method} 退款 ${yuan(amount)}")
-                s = if (mem != null) settlement.memberRefund(s, mem.id, amount, req.method == "储值卡", "退货 $ref", actor)
-                    else if (req.method == "储值卡") s.copy(walletBalance = s.walletBalance + amount) else s
+                s = if (mem != null) settlement.memberRefund(s, mem.id, amount, req.method == PayMethods.STORED, "退货 $ref", actor)
+                    else if (req.method == PayMethods.STORED) s.copy(walletBalance = s.walletBalance + amount) else s
                 val body = listOf(s0.settings.shortName, "退货小票", "原单 $ref") + back.map { (l, n) -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×$n"}" } +
                     listOfNotNull("退款 ${req.method} ${yuan(amount)}", "原因：${req.reason.label}", approver.ifBlank { null }?.let { "授权：$it" })
                 s = s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "退货小票 $ref", body, clock())))
@@ -331,7 +322,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                         val applied = ReturnRules.applyReturn(x.soldLines, req.pick).associateBy { it.key }
                         x.copy(lines = x.lines.map { it.copy(returned = applied.getValue(it.key).returned) }, returns = x.returns + r)
                     }
-                }, credit = if (req.exchange) ExchangeCredit(sale.no, amount, pieces, sale.pays.firstOrNull { it.method != EXCHANGE }?.method ?: "现金", sale.memberId) else d.credit)
+                }, credit = if (req.exchange) ExchangeCredit(sale.no, amount, pieces, sale.pays.firstOrNull { it.method != EXCHANGE }?.method ?: PayMethods.CASH, sale.memberId) else d.credit)
                 else d.copy(looseReturns = listOf(LooseReturn(ref, r.at, back.map { it.first }, amount, req.reason, req.method, approver, req.restock)) + d.looseReturns)
             }
         }.map { out!! }
