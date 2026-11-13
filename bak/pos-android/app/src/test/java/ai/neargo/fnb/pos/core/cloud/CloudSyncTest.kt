@@ -110,6 +110,20 @@ class CloudSyncTest {
             return st.copy(status = "SETTLED", receivedMinor = total, changeMinor = total - st.dueMinor, receiptNo = "RC1", checkStatus = "CLOSED", tableReleased = true).also { settlements[settlementNo] = it }
         }
         override suspend fun counterSettlement(settlementNo: String) = run { net(); settlements.getValue(settlementNo).let { if (it.status == "FROZEN") it.copy(dueMinor = due) else it } }
+        // —— 进销存 ——
+        var invItems: Map<String, String> = emptyMap()   // 条码 → 物料
+        var failPostOnce = false
+        val inbounds = mutableMapOf<String, CloudInboundBody>(); val outbounds = mutableMapOf<String, CloudOutboundBody>()
+        val counts = mutableMapOf<String, MutableMap<String, Int>>(); val posted = mutableListOf<String>(); val adjusts = mutableListOf<Pair<String, Int>>()
+        override suspend fun inventoryItemByBarcode(code: String) = run { net(); invItems[code]?.let { CloudInvItem(it) } }
+        override suspend fun createInbound(body: CloudInboundBody) = run { net(); "IN${++seq}".also { inbounds[it] = body } }
+        override suspend fun postInbound(no: String) { net(); if (failPostOnce) { failPostOnce = false; throw CloudException(CloudErrorKind.Network, 0, "超时") }; if (no !in posted) posted += no }
+        override suspend fun createOutbound(body: CloudOutboundBody) = run { net(); "OUT${++seq}".also { outbounds[it] = body } }
+        override suspend fun postOutbound(no: String) { net(); if (no !in posted) posted += no }
+        override suspend fun openCount(itemIds: List<String>) = run { net(); "CNT${++seq}".also { counts[it] = mutableMapOf() } }
+        override suspend fun fillCount(no: String, lines: List<CloudCountLine>) { net(); lines.forEach { counts.getValue(no)[it.itemId] = it.countedQty } }
+        override suspend fun postCount(no: String) { net(); if (no !in posted) posted += no }
+        override suspend fun adjustInventory(itemId: String, countedQty: Int, reasonCode: String) { net(); adjusts += itemId to countedQty }
         override suspend fun cancelCounterSettlement(settlementNo: String) = run { net(); calls += "cancel:$settlementNo"; settlements.getValue(settlementNo).copy(status = "CANCELLED").also { settlements[settlementNo] = it } }
     }
 
@@ -334,6 +348,84 @@ class CloudSyncTest {
         CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
         assertEquals(2, server.settlements.size)                                       // 撤销后重建了新结算单
         assertTrue(server.calls.any { it.startsWith("finalize:") })
+    }
+
+    private suspend fun retailShop(scope: kotlinx.coroutines.CoroutineScope): Pair<LocalWorkspace, Disk> {
+        val disk = Disk()
+        val w = LocalWorkspace(disk, scope) { 1_800_000_000_000L }
+        w.enterDemo(); w.selectStore(ai.neargo.fnb.pos.core.data.DemoCatalog.RETAIL_STORE_ID); disk.commands.clear()
+        return w to disk
+    }
+    /** 服务端物料：演示零售门店全部商品按第一个条码建账 */
+    private fun itemsOf(w: LocalWorkspace) = w.current.value!!.products.mapNotNull { p -> p.retail?.barcodes?.firstOrNull()?.let { it to "ITM-${p.id}" } }.toMap()
+
+    private fun line(pid: String, qty: Long, reason: ai.neargo.fnb.pos.core.model.LossReason? = null) = ai.neargo.fnb.pos.core.model.StockDocLine(pid, null, qty, reason)
+
+    @Test fun receivePostedCreatesDraftThenPostsAndDraftStepsStayLocal() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = retailShop(backgroundScope)
+        val no = w.newStockDoc(ai.neargo.fnb.pos.core.model.StockDocKind.Receive, supplier = "供应商A").getOrThrow()
+        w.setStockDocLines(no, listOf(line("cola", 24), line("water", 12))).getOrThrow()
+        w.advanceStockDoc(no).getOrThrow()
+        val server = FakeServer().apply { invItems = itemsOf(w); failPostOnce = true }
+        val refs = MemoryCloudRefs(); val src = Source(disk)
+        val r1 = CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        assertEquals(CloudErrorKind.Network, r1.stoppedBy?.kind); assertEquals(2, r1.local)      // 建单、改单只在本机
+        CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        assertEquals(1, server.inbounds.size)                                                     // 过账失败重试：不重复建单
+        val body = server.inbounds.values.single()
+        assertEquals("POS $no", body.remark); assertEquals("供应商A", body.supplierName)
+        assertEquals(setOf("ITM-cola" to 24, "ITM-water" to 12), body.lines.map { it.itemId to it.qty }.toSet())
+        assertEquals(listOf(server.inbounds.keys.single()), server.posted)
+        assertTrue(Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}""").matches(body.occurredAt))   // 不带时区的本地时间
+    }
+
+    @Test fun lossSplitsByReasonIntoScrapOutbounds() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = retailShop(backgroundScope)
+        val no = w.newStockDoc(ai.neargo.fnb.pos.core.model.StockDocKind.Loss).getOrThrow()
+        w.setStockDocLines(no, listOf(line("milk", 1, ai.neargo.fnb.pos.core.model.LossReason.Expired), line("chips", 2, ai.neargo.fnb.pos.core.model.LossReason.Damaged))).getOrThrow()
+        w.advanceStockDoc(no).getOrThrow()
+        val server = FakeServer().apply { invItems = itemsOf(w) }
+        CloudSync(server, MemoryCloudRefs(), Source(disk), inventory = true).run("s", "NS")
+        assertEquals(setOf("SCRAP/EXPIRED/ITM-milk", "SCRAP/BROKEN/ITM-chips"), server.outbounds.values.map { "${it.purpose}/${it.reasonCode}/${it.lines.single().itemId}" }.toSet())
+        assertEquals(2, server.posted.size)
+    }
+
+    @Test fun approvedCountUploadsCountedQuantities() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = retailShop(backgroundScope)
+        val no = w.newStockDoc(ai.neargo.fnb.pos.core.model.StockDocKind.Count).getOrThrow()
+        w.setStockDocLines(no, listOf(line("cola", 7))).getOrThrow()
+        w.advanceStockDoc(no).getOrThrow()                        // 提交待审批：只在本机
+        val server = FakeServer().apply { invItems = itemsOf(w) }
+        val refs = MemoryCloudRefs(); val src = Source(disk)
+        CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        assertTrue(server.counts.isEmpty())
+        w.advanceStockDoc(no).getOrThrow()                        // 审批过账
+        CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        assertEquals(mapOf("ITM-cola" to 7), server.counts.values.single()); assertEquals(1, server.posted.size)
+    }
+
+    @Test fun weighedWaitsAndUnknownBarcodeNeedsAction() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = retailShop(backgroundScope)
+        val a = w.newStockDoc(ai.neargo.fnb.pos.core.model.StockDocKind.Receive).getOrThrow(); w.setStockDocLines(a, listOf(line("apple", 5000))).getOrThrow(); w.advanceStockDoc(a).getOrThrow()
+        val b = w.newStockDoc(ai.neargo.fnb.pos.core.model.StockDocKind.Receive).getOrThrow(); w.setStockDocLines(b, listOf(line("cola", 6))).getOrThrow(); w.advanceStockDoc(b).getOrThrow()
+        val server = FakeServer().apply { invItems = itemsOf(w) - "6954767423579" }   // 可乐在服务端没建账
+        val refs = MemoryCloudRefs()
+        val r = CloudSync(server, refs, Source(disk), inventory = true).run("s", "NS")
+        assertTrue(r.waiting >= 1)                                                     // 称重：等后端支持小数
+        assertTrue(refs.issues().single().message.contains("6954767423579"))           // 条码对不上：需处理
+        assertTrue(server.inbounds.isEmpty())
+    }
+
+    @Test fun stockAdjustUploadsAbsoluteOnlyForRetail() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = retailShop(backgroundScope)
+        w.adjustStock("cola", null, 30, "盘点").getOrThrow()
+        val server = FakeServer().apply { invItems = itemsOf(w) }
+        CloudSync(server, MemoryCloudRefs(), Source(disk), inventory = true).run("s", "NS")
+        assertEquals(listOf("ITM-cola" to 30), server.adjusts)
+        val (d, disk2) = shop(backgroundScope)                                       // 餐饮门店：只在本机
+        d.adjustStock(d.current.value!!.products.first().id, null, 9, "沽清").getOrThrow()
+        val r = CloudSync(FakeServer(), MemoryCloudRefs(), Source(disk2)).run("s-coast", "NS002")
+        assertEquals(1, r.local); assertEquals(0, r.uploaded)
     }
 
     @Test fun healthDebounce() {

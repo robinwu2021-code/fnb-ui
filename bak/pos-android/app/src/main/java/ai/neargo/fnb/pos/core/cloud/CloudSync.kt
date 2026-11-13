@@ -88,13 +88,19 @@ class CloudSync(
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val currency: String = "CNY",
+    /** 当前门店是零售（进销存单据上传）；餐饮门店的库存调整只在本机 */
+    private val inventory: Boolean = false,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private var catalog: CloudCatalog? = null
 
     companion object {
         /** 已对接：开台、换桌、送厨（购物车 → 报价 → 员工下单）、结账（柜台结算单 → 外部记账 → 确认）、日结 */
-        val SUPPORTED = setOf("TableOpened", "TableChanged", "KitchenSubmitted", "PaymentRecorded", "DayClosed")
+        val SUPPORTED = setOf("TableOpened", "TableChanged", "KitchenSubmitted", "PaymentRecorded", "DayClosed",
+            // 零售进销存：过账的入库 / 报损 / 盘点、单品调整
+            "StockDocPosted", "StockAdjusted")
+        /** 库存单的草稿、修改、提交待审批、作废：只在本机，过账时一次上传 */
+        val STOCK_DRAFT = setOf("StockDocCreated", "StockDocUpdated", "StockDocSubmitted", "StockDocVoided")
         /** 本机收款方式 → 外部记账方式码；扫码、储值走平台通道（未对接） */
         val OFFLINE_METHOD = mapOf("现金" to "CASH", "银行卡" to "EXTERNAL_POS")
         /**
@@ -144,7 +150,7 @@ class CloudSync(
                 key in blocked -> waiting++
                 // 旧版事件（envelope 为空，迁移前的本机流）不上传
                 e.envelope.isBlank() -> { waiting++; blocked += key }
-                e.type in LOCAL_ONLY || e.type in CONFIG -> { events.ack(storeId, e.eventId); local++ }
+                e.type in LOCAL_ONLY || e.type in CONFIG || e.type in STOCK_DRAFT || (!inventory && e.type == "StockAdjusted") -> { events.ack(storeId, e.eventId); local++ }
                 e.type !in SUPPORTED -> { waiting++; blocked += key }   // 等后端接口；同单后续事件要等它
                 else -> try {
                     upload(e, storeNo)
@@ -209,6 +215,8 @@ class CloudSync(
             }
             "KitchenSubmitted" -> submitBatch(p, storeNo, key)
             "PaymentRecorded" -> settle(p, key, e.eventId)
+            "StockDocPosted" -> stockDoc(p, e.eventId)
+            "StockAdjusted" -> stockAdjust(p)
             "DayClosed" -> {
                 val d = json.decodeFromJsonElement(DayClose.serializer(), p)
                 val date = Instant.ofEpochMilli(d.end).atZone(zone).toLocalDate().toString()
@@ -288,6 +296,87 @@ class CloudSync(
             throw x
         }
     }
+
+    // —— 零售进销存 ——
+    private val ts = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+    /** 服务端时间字段是不带时区的本地时间 */
+    private fun local(at: Long) = java.time.Instant.ofEpochMilli(at).atZone(zone).toLocalDateTime().format(ts)
+
+    /** 本机商品（规格）→ 进销存物料：按条码找，找过的记住。称重商品服务端只收整数，等后端支持小数 */
+    private suspend fun itemOf(productId: String, sku: String?, barcode: String, weighable: Boolean): String {
+        val local = productId + (sku?.let { "#$it" } ?: "")
+        refs.get("item", local)?.let { return it.remoteNo }
+        if (weighable) throw WaitForBackend("称重商品按克计量，服务端库存只收整数，等后端支持小数")
+        if (barcode.isBlank()) throw CloudException(CloudErrorKind.Rejected, 10400, "商品 $productId 没有条码，无法对应服务端物料，请补条码后重试")
+        val item = try { api.inventoryItemByBarcode(barcode) } catch (x: CloudException) {
+            // 门店没开进销存时这组接口不存在（推测为 10500 / 10404）：保留等待，不停整轮、不进需处理
+            if (x.code == 10500 || x.kind == CloudErrorKind.NotFound) throw WaitForBackend("服务端门店未开启进销存") else throw x
+        } ?: throw CloudException(CloudErrorKind.Rejected, 10400, "服务端没有条码 $barcode 对应的物料（或物料未启用），请在后台建账后重试")
+        refs.put(CloudRef("item", local, item.itemId))
+        return item.itemId
+    }
+
+    private fun qtyOf(v: Long): Int = if (v in 0..Int.MAX_VALUE) v.toInt() else throw CloudException(CloudErrorKind.Rejected, 10400, "数量 $v 超出范围")
+
+    /**
+     * 库存单过账 → 进销存单据。服务端没有幂等键、备注读不回来，所以先建草稿、立即记住服务端单号，再按单号过账（过账幂等）。
+     * 建单请求超时时服务端可能多出一张未过账草稿（不影响库存），需人工在后台作废。
+     */
+    private suspend fun stockDoc(p: JsonObject, eventId: String) {
+        val doc = p.obj("doc")
+        val no = doc.str("no"); val kind = doc.str("kind"); val state = doc.str("state")
+        val items = (p["items"] as? JsonArray)?.map { it.jsonObject }.orEmpty().associateBy { it.str("productId") + (it.str("sku").ifBlank { null }?.let { k -> "#$k" } ?: "") }
+        val lines = doc["lines"]!!.jsonArray.map { it.jsonObject }
+        suspend fun item(l: JsonObject): String {
+            val k = l.str("productId") + (l.str("sku").ifBlank { null }?.let { "#$it" } ?: "")
+            val it = items[k] ?: throw CloudException(CloudErrorKind.Rejected, 10400, "库存单缺少商品条码信息（旧版本数据）")
+            return itemOf(l.str("productId"), l.str("sku").ifBlank { null }, it.str("barcode"), it["weighable"]?.jsonPrimitive?.content == "true")
+        }
+        val at = local(doc.num("at")); val remark = "POS $no"
+        when (kind) {
+            "Receive" -> {
+                val inv = lines.map { l -> CloudInvLine(item(l), qtyOf(l.num("qty")), unitCostMinor = items.values.firstOrNull { it.str("productId") == l.str("productId") }?.get("costPrice")?.jsonPrimitive?.content?.toLongOrNull()) }
+                val source = if (inv.all { it.unitCostMinor != null }) "PURCHASE" else "OTHER"
+                val docNo = remembered(eventId) { api.createInbound(CloudInboundBody(source, doc.str("supplier").ifBlank { null }, at, remark, inv)) }
+                api.postInbound(docNo)
+            }
+            "Loss" -> {
+                // 一张报损单的行可能原因不同：服务端一张出库单一个原因，按原因拆单
+                val byReason = lines.groupBy { reasonCode(it.str("reason")) }
+                byReason.forEach { (code, ls) ->
+                    val inv = ls.map { l -> CloudInvLine(item(l), qtyOf(l.num("qty"))) }
+                    val docNo = remembered("$eventId#$code") { api.createOutbound(CloudOutboundBody("SCRAP", code, at, "$remark $code", inv)) }
+                    api.postOutbound(docNo)
+                }
+            }
+            "Count" -> {
+                if (state != "Posted" && state != "Variance") return   // 只有审批过账的盘点上传
+                val counted = lines.map { l -> item(l) to qtyOf(l.num("qty")) }
+                val docNo = remembered(eventId) { api.openCount(counted.map { it.first }) }
+                api.fillCount(docNo, counted.map { (id, q) -> CloudCountLine(id, q, "CHECK") })
+                api.postCount(docNo)
+            }
+            "Transfer" -> throw WaitForBackend("跨店调拨需服务端库位对应，待对接")
+            else -> throw CloudException(CloudErrorKind.Rejected, 10400, "未知库存单类型 $kind")
+        }
+    }
+
+    /** 单品调整：上传实盘绝对值（重放结果不变） */
+    private suspend fun stockAdjust(p: JsonObject) {
+        val m = p.obj("movement"); val prod = p.obj("product")
+        val sku = m.str("skuKey").ifBlank { null }
+        val retail = prod["retail"] as? JsonObject
+        val barcode = sku?.let { k -> prod["skus"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { it.str("key") == k }?.str("barcode") }?.ifBlank { null }
+            ?: (retail?.get("barcodes") as? JsonArray)?.firstOrNull()?.jsonPrimitive?.content.orEmpty()
+        val id = itemOf(m.str("productId"), sku, barcode, retail?.get("weighable")?.jsonPrimitive?.content == "true")
+        api.adjustInventory(id, qtyOf(m.num("after")), "CHECK")
+    }
+
+    private fun reasonCode(r: String) = when (r) { "Expired" -> "EXPIRED"; "Damaged" -> "BROKEN"; else -> "OTHER" }
+
+    /** 建单拿到服务端单号后立即记住；重试只过账，不重复建单 */
+    private suspend fun remembered(local: String, create: suspend () -> String): String =
+        refs.get("invdoc", local)?.remoteNo?.takeIf { it.isNotBlank() } ?: create().also { refs.put(CloudRef("invdoc", local, it)) }
 
     private fun minor(v: Long) = "%d.%02d".format(v / 100, v % 100)
 

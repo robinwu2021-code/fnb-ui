@@ -41,6 +41,15 @@ class CloudMonitorTest {
         override suspend fun finalizeCounterSettlement(settlementNo: String, offlineRecordNos: List<String>) = error("unused")
         override suspend fun cancelCounterSettlement(settlementNo: String) = error("unused")
         override suspend fun counterSettlement(settlementNo: String) = error("unused")
+        override suspend fun inventoryItemByBarcode(code: String) = error("unused")
+        override suspend fun createInbound(body: CloudInboundBody) = error("unused")
+        override suspend fun postInbound(no: String) = error("unused")
+        override suspend fun createOutbound(body: CloudOutboundBody) = error("unused")
+        override suspend fun postOutbound(no: String) = error("unused")
+        override suspend fun openCount(itemIds: List<String>) = error("unused")
+        override suspend fun fillCount(no: String, lines: List<CloudCountLine>) = error("unused")
+        override suspend fun postCount(no: String) = error("unused")
+        override suspend fun adjustInventory(itemId: String, countedQty: Int, reasonCode: String) = error("unused")
         override suspend fun recordOffline(key: String, body: CloudOfflineRecordBody) = error("unused")
     }
     private class Events : EventSource {

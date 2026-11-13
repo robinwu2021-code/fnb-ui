@@ -44,7 +44,7 @@ def fresh():
         "tables": {f"T{i + 1:03d}": {"tableNo": f"T{i + 1:03d}", "storeNo": CFG["store"], "areaNo": "A1", "code": n, "name": n, "capacity": 4,
                                     "sortNo": i, "status": "ACTIVE", "turnoverState": "IDLE", "version": 1}
                    for i, n in enumerate(CFG["tables"])},
-        "checks": {}, "carts": {}, "quotes": {}, "batches": {}, "closes": {}, "settlements": {}, "records": {},
+        "checks": {}, "carts": {}, "quotes": {}, "batches": {}, "closes": {}, "settlements": {}, "records": {}, "invdocs": {}, "onhand": {},
         "idem": {}, "calls": [], "fail": {"times": 0, "code": 0, "http": 0},
         "terminals": {}, "events": [], "seq": 0,
     }
@@ -342,6 +342,99 @@ def w_offline_record(store, q, b):
     return {k: v for k, v in rec.items() if k != "usedBy"}
 
 
+# —— 进销存（/biz/inventory，零售）：没有幂等键；单号字段 no；过账 / 作废按单号幂等；数量只收整数 ——
+INV = "/biz/inventory"
+
+
+def r_item_by_barcode(store, q, b):
+    code = q.get("code", "")
+    if not code or code.startswith("NONE"):
+        return None                                   # 没命中返回 data=null
+    return {"itemId": "ITM-" + code, "skuNo": None, "name": code, "specText": "", "baseUom": "PIECE", "onHand": DB["onhand"].get("ITM-" + code, 0),
+            "reserved": 0, "available": DB["onhand"].get("ITM-" + code, 0), "safetyStock": None, "lastMovedAt": None, "flags": []}
+
+
+def inv_lines(lines, cost_required=False):
+    if not lines:
+        raise Err(10400, "lines 不能为空")
+    for l in lines:
+        if not isinstance(l.get("qty"), int) or isinstance(l.get("qty"), bool) or l["qty"] <= 0:
+            raise Err(10400, "qty 必须是正整数")
+        if cost_required and l.get("unitCostMinor") is None:
+            raise Err(10400, "采购入库每行要 unitCostMinor")
+    return lines
+
+
+def new_doc(kind, prefix, body, lines):
+    no = prefix + time.strftime("%Y%m%d%H%M%S") + uuid.uuid4().hex[:4]
+    DB["invdocs"][no] = {"no": no, "kind": kind, "status": "DRAFT", "body": body, "lines": lines}
+    return {"no": no}
+
+
+def w_inbound(store, q, b):
+    return new_doc("IN", "IN", b, inv_lines(b.get("lines"), b.get("sourceType") == "PURCHASE"))
+
+
+def w_outbound(store, q, b):
+    if b.get("purpose") == "SALE":
+        raise Err(10403, "SALE 不能手工建")
+    if b.get("purpose") == "SCRAP" and not b.get("reasonCode"):
+        raise Err(10400, "报损要 reasonCode")
+    return new_doc("OUT", "OUT", b, inv_lines(b.get("lines")))
+
+
+def w_doc_post(store, no, q, b):
+    d = DB["invdocs"].get(no)
+    if not d:
+        raise Err(10404, "单据不存在")
+    if d["status"] == "POSTED":
+        return None                                   # 幂等
+    sign = -1 if d["kind"] == "OUT" else 1
+    for l in d["lines"]:
+        DB["onhand"][l["itemId"]] = DB["onhand"].get(l["itemId"], 0) + sign * l["qty"]
+    d["status"] = "POSTED"
+    return None
+
+
+def w_count_open(store, q, b):
+    if not b.get("itemIds"):
+        raise Err(10400, "itemIds 不能为空")
+    if any(d["kind"] == "COUNT" and d["status"] == "COUNTING" for d in DB["invdocs"].values()):
+        raise Err(10409, "已有开着的盘点单")
+    no = "CNT" + time.strftime("%Y%m%d%H%M%S") + uuid.uuid4().hex[:4]
+    DB["invdocs"][no] = {"no": no, "kind": "COUNT", "status": "COUNTING", "lines": {i: None for i in b["itemIds"]}}
+    return {"no": no}
+
+
+def w_count_lines(store, no, q, b):
+    d = DB["invdocs"].get(no)
+    if not d or d["kind"] != "COUNT":
+        raise Err(10404, "盘点单不存在")
+    for l in b:
+        if l["itemId"] not in d["lines"]:
+            raise Err(10404, "物料不在单里")
+        d["lines"][l["itemId"]] = l["countedQty"]
+    return None
+
+
+def w_count_post(store, no, q, b):
+    d = DB["invdocs"].get(no)
+    if d["status"] == "POSTED":
+        return None
+    if any(v is None for v in d["lines"].values()):
+        raise Err(10409, "还有物料没录实盘")
+    for i, v in d["lines"].items():
+        DB["onhand"][i] = v
+    d["status"] = "POSTED"
+    return None
+
+
+def w_adjust(store, q, b):
+    need(b, "itemId")
+    DB["onhand"][b["itemId"]] = int(b["countedQty"])
+    return None
+
+
 # —— 日结 ——
 def w_close_preview(store, q, b):
     strict(b, {"businessDate", "currency"})
@@ -397,6 +490,15 @@ ROUTES = [
     ("POST", FOOD + "/counter-settlements/{x}:cancel", w_settle_cancel, False),
     ("GET", FOOD + "/counter-settlements/{x}", r_settlement, False),
     ("POST", "/biz/payment/offline-records", w_offline_record, True),
+    ("GET", INV + "/items/by-barcode", r_item_by_barcode, False),
+    ("POST", INV + "/inbounds", w_inbound, False),
+    ("POST", INV + "/inbounds/{x}/post", w_doc_post, False),
+    ("POST", INV + "/outbounds", w_outbound, False),
+    ("POST", INV + "/outbounds/{x}/post", w_doc_post, False),
+    ("POST", INV + "/counts", w_count_open, False),
+    ("PUT", INV + "/counts/{x}/lines", w_count_lines, False),
+    ("POST", INV + "/counts/{x}/post", w_count_post, False),
+    ("POST", INV + "/adjust", w_adjust, False),
     ("POST", FOOD + "/closes:preview", w_close_preview, True),
     ("POST", FOOD + "/closes:sign", w_close_sign, True),
     ("POST", "/biz/push/terminals", w_terminal, False),

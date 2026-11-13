@@ -53,11 +53,21 @@ internal object RetailEventPayloads {
             "lines" to json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(ReturnedLine.serializer()), lines))
     }
 
+    /** 库存单行对应的商品事实：条码（规格自己的条码优先，否则商品第一个条码）、是否称重、进价（分） */
+    @Serializable data class DocItem(val productId: String, val sku: String? = null, val barcode: String = "", val weighable: Boolean = false, val costPrice: Long? = null)
+
+    private fun itemsOf(s: StoreData, d: StockDoc) = d.lines.map { l ->
+        val p = s.products.firstOrNull { it.id == l.productId }
+        val skuCode = l.sku?.let { k -> p?.skus?.firstOrNull { it.key == k }?.barcode }
+        DocItem(l.productId, l.sku, skuCode ?: p?.retail?.barcodes?.firstOrNull().orEmpty(), p?.retail?.weighable == true, p?.retail?.costPrice)
+    }.distinctBy { it.productId to it.sku }
+
     /** 库存单：no 已知时取该单，否则取本次新建的单 */
     fun stockDoc(b: StoreData, a: StoreData, no: String?, extra: Map<String, JsonElement> = emptyMap()): String {
         val d: StockDoc = (no?.let { n -> a.retail.stockDocs.firstOrNull { it.no == n } }
             ?: a.retail.stockDocs.firstOrNull { n -> b.retail.stockDocs.none { it.no == n.no } })
             ?: return JsonObject(extra + ("no" to s(no.orEmpty()))).toString()
-        return JsonObject(extra + mapOf("no" to s(d.no), "kind" to s(d.kind.name), "state" to s(d.state.name), "doc" to json.encodeToJsonElement(StockDoc.serializer(), d))).toString()
+        return JsonObject(extra + mapOf("no" to s(d.no), "kind" to s(d.kind.name), "state" to s(d.state.name), "doc" to json.encodeToJsonElement(StockDoc.serializer(), d),
+            "items" to json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(DocItem.serializer()), itemsOf(a, d)))).toString()
     }
 }

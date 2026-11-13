@@ -70,6 +70,8 @@ class CloudMonitor(
     private val clock: () -> Long = System::currentTimeMillis,
     /** 一轮上传后（ack 改了待上传数）刷新统计 */
     private val afterRound: suspend () -> Unit = {},
+    /** 当前门店是零售（上传进销存单据） */
+    private val retailStore: () -> Boolean = { false },
 ) {
     private val s = MutableStateFlow(CloudState(settings = settingsStore.load(), lastOnlineAt = settingsStore.lastOnlineAt()))
     val state: StateFlow<CloudState> = s.asStateFlow()
@@ -182,7 +184,7 @@ class CloudMonitor(
         val st = s.value.settings
         val id = storeId() ?: throw IllegalStateException("未进入门店")
         val refs = refsFor("$id@${st.storeNo}")
-        val r = CloudSync(api, refs, events, clock).run(id, st.storeNo) { done, total ->
+        val r = CloudSync(api, refs, events, clock, inventory = retailStore()).run(id, st.storeNo) { done, total ->
             if (total > 0) s.update { it.copy(badge = CloudBadge.Syncing(done, total)) }
         }
         s.update { cur ->

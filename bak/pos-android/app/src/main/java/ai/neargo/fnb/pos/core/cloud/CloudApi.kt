@@ -1,6 +1,7 @@
 package ai.neargo.fnb.pos.core.cloud
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -45,6 +46,21 @@ interface CloudApi {
     suspend fun counterSettlement(settlementNo: String): CloudSettlement
     /** 外部记账（平台 /biz/payment/offline-records）：柜台结账 bizNo 必须等于结算单号；现金按实收面额记 */
     suspend fun recordOffline(key: String, body: CloudOfflineRecordBody): CloudOfflineRecord
+
+    // —— 进销存（/biz/inventory，零售门店；没有幂等键：先建草稿记住单号，再按单号过账，过账幂等） ——
+    /** 按条码找物料；没命中返回 null */
+    suspend fun inventoryItemByBarcode(code: String): CloudInvItem?
+    suspend fun createInbound(body: CloudInboundBody): String
+    suspend fun postInbound(no: String)
+    suspend fun createOutbound(body: CloudOutboundBody): String
+    suspend fun postOutbound(no: String)
+    /** 开盘点单（同库位已有开着的盘点单 → 冲突） */
+    suspend fun openCount(itemIds: List<String>): String
+    /** 录实盘（逐行覆盖，可重复） */
+    suspend fun fillCount(no: String, lines: List<CloudCountLine>)
+    suspend fun postCount(no: String)
+    /** 单品调整：countedQty 为实盘绝对值 */
+    suspend fun adjustInventory(itemId: String, countedQty: Int, reasonCode: String)
     suspend fun closeSign(key: String, closeNo: String, snapshotHash: String): CloudClose
 }
 
@@ -85,6 +101,15 @@ data class CloudProbe(val storeNo: String, val tables: Int)
 @Serializable data class CloudOfflineRecordBody(val amountMinor: Long, val currency: String, val method: String, val bizNo: String? = null,
     val note: String? = null, val receivedAt: String? = null)
 @Serializable data class CloudOfflineRecord(val recordNo: String, val amountMinor: Long = 0, val method: String = "", val bizNo: String? = null, val status: String = "")
+/** 物料（BalanceVO）：itemId 形如 ITM…；baseUom 为基本单位 */
+@Serializable data class CloudInvItem(val itemId: String, val skuNo: String? = null, val name: String = "", val baseUom: String = "")
+/** 单据行：数量只收整数；出库行只用 itemId / qty / uom */
+@Serializable data class CloudInvLine(val itemId: String, val qty: Int, val uom: String? = null, val unitCostMinor: Long? = null)
+/** 入库：sourceType PURCHASE 时每行要 unitCostMinor；occurredAt 为不带时区的本地时间 yyyy-MM-ddTHH:mm:ss */
+@Serializable data class CloudInboundBody(val sourceType: String, val supplierName: String? = null, val occurredAt: String, val remark: String, val lines: List<CloudInvLine>)
+/** 出库：报损 purpose=SCRAP，reasonCode 取 CHECK / BROKEN / EXPIRED / GIFT / OTHER，不能带 targetNo */
+@Serializable data class CloudOutboundBody(val purpose: String, val reasonCode: String, val occurredAt: String, val remark: String, val lines: List<CloudInvLine>)
+@Serializable data class CloudCountLine(val itemId: String, val countedQty: Int, val reasonCode: String)
 @Serializable data class CloudClose(val closeNo: String, val status: String = "", val snapshotHash: String = "", val version: Long = 0)
 
 /** 服务端错误分类：决定同步怎么处理（重读、交人工、重试） */
@@ -205,11 +230,26 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.get("$FOOD/counter-settlements/${enc(settlementNo)}", emptyMap(), CloudSettlement.serializer())
     override suspend fun recordOffline(key: String, body: CloudOfflineRecordBody) =
         http.send("POST", "/biz/payment/offline-records", key, body, CloudOfflineRecordBody.serializer(), CloudOfflineRecord.serializer())
+    override suspend fun inventoryItemByBarcode(code: String) =
+        http.get("$INV/items/by-barcode", mapOf("code" to code), CloudInvItem.serializer().nullable)
+    override suspend fun createInbound(body: CloudInboundBody) = http.send("POST", "$INV/inbounds", null, body, CloudInboundBody.serializer(), DocNo.serializer()).no
+    override suspend fun postInbound(no: String) { http.postEmpty("$INV/inbounds/${enc(no)}/post", null, kotlinx.serialization.json.JsonElement.serializer().nullable) }
+    override suspend fun createOutbound(body: CloudOutboundBody) = http.send("POST", "$INV/outbounds", null, body, CloudOutboundBody.serializer(), DocNo.serializer()).no
+    override suspend fun postOutbound(no: String) { http.postEmpty("$INV/outbounds/${enc(no)}/post", null, kotlinx.serialization.json.JsonElement.serializer().nullable) }
+    override suspend fun openCount(itemIds: List<String>) = http.send("POST", "$INV/counts", null, CountOpen(itemIds), CountOpen.serializer(), DocNo.serializer()).no
+    override suspend fun fillCount(no: String, lines: List<CloudCountLine>) {
+        http.send("PUT", "$INV/counts/${enc(no)}/lines", null, lines, kotlinx.serialization.builtins.ListSerializer(CloudCountLine.serializer()), kotlinx.serialization.json.JsonElement.serializer().nullable)
+    }
+    override suspend fun postCount(no: String) { http.postEmpty("$INV/counts/${enc(no)}/post", null, kotlinx.serialization.json.JsonElement.serializer().nullable) }
+    override suspend fun adjustInventory(itemId: String, countedQty: Int, reasonCode: String) {
+        http.send("POST", "$INV/adjust", null, AdjustBody(itemId, countedQty, reasonCode), AdjustBody.serializer(), kotlinx.serialization.json.JsonElement.serializer().nullable)
+    }
     override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) =
         http.send("POST", "$FOOD/closes:sign", key, SignBody(closeNo, snapshotHash), SignBody.serializer(), CloudClose.serializer())
 
     companion object {
         const val FOOD = "/biz/x/food"
+        const val INV = "/biz/inventory"
         internal fun enc(v: String): String = URLEncoder.encode(v, "UTF-8").replace("+", "%20")
     }
 }
@@ -225,6 +265,9 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
 @Serializable internal data class BatchBody(val cartNo: String, val version: Long, val quoteNo: String, val confirmationDigest: String, val payMode: String = "POSTPAY")
 @Serializable internal data class PreviewBody(val businessDate: String, val currency: String)
 @Serializable internal data class SignBody(val closeNo: String, val snapshotHash: String)
+@Serializable internal data class DocNo(val no: String)
+@Serializable internal data class CountOpen(val itemIds: List<String>)
+@Serializable internal data class AdjustBody(val itemId: String, val countedQty: Int, val reasonCode: String)
 @Serializable internal data class FinalizeBody(val offlineRecordNos: List<String>)
 @Serializable internal data class CheckEnvelope(val check: CloudCheck)
 @Serializable internal data class OperationEnvelope(val operation: CloudOperation)
