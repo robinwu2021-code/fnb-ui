@@ -225,7 +225,9 @@ class CloudSync(
                 api.openBusinessDay("$key:open", date)   // 幂等；没开过营业日 preview 会返回 10404
                 val preview = api.closePreview("$key:preview", date, currency)
                 if (preview.snapshotHash.isBlank()) throw CloudException(CloudErrorKind.Rejected, 10400, "日结预览未生成快照（状态 ${preview.status}），请到后台查看日结异常项")
-                api.closeSign("$key:sign", preview.closeNo, preview.snapshotHash)
+                // 签核不在终端做：服务端要求签核人 ≠ 预览发起人（二人复核）、营业日已结束、且用同一次预览的 closeNo + snapshotHash。
+                // 终端只开营业日 + 预览，记下待复核；店长用另一个账号在后台签核。
+                refs.put(CloudRef("dayclose", date, "${preview.closeNo}|${preview.snapshotHash}", preview.version))
             }
         }
     }

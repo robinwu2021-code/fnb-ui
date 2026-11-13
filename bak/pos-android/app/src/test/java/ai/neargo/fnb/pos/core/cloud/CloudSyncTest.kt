@@ -285,14 +285,17 @@ class CloudSyncTest {
         assertEquals(2, r.uploaded); assertEquals(2, r.local); assertEquals(0, r.waiting)
     }
 
-    @Test fun dayCloseUsesPreviewThenSignWithSnapshotHash() = runTest(UnconfinedTestDispatcher()) {
+    @Test fun dayCloseOpensDayAndPreviewsThenWaitsForReview() = runTest(UnconfinedTestDispatcher()) {
         val (w, disk) = shop(backgroundScope)
         w.closeDay("店长").getOrThrow()
-        val server = FakeServer()
-        CloudSync(server, MemoryCloudRefs(), Source(disk), currency = "CNY", buyerNo = "U1").run("s-coast", "NS002")
-        assertTrue(server.calls.any { it.startsWith("closePreview:") && it.endsWith(":CNY") }); assertTrue(server.calls.contains("closeSign:D1@h1"))
+        val server = FakeServer(); val refs = MemoryCloudRefs(); val src = Source(disk)
+        val r = CloudSync(server, refs, src, currency = "CNY", buyerNo = "U1").run("s-coast", "NS002")
+        assertEquals(1, r.uploaded); assertEquals(0, r.issues); assertEquals(disk.commands.size, src.acked.size)   // 日结事件已完成，不留需处理
+        val review = refs.all("dayclose").single(); assertTrue(review.remoteNo.startsWith("D1|h1"))                 // 记下待复核的 closeNo 与快照哈希
+        assertTrue(server.calls.any { it.startsWith("closePreview:") && it.endsWith(":CNY") })
         val order = server.calls.filter { it.startsWith("openDay:") || it.startsWith("closePreview:") || it.startsWith("closeSign:") }.map { it.substringBefore(':') }
-        assertEquals(listOf("openDay", "closePreview", "closeSign"), order)      // 先开营业日，再预览，再签核
+        assertEquals(listOf("openDay", "closePreview"), order)                    // 终端只开营业日 + 预览；签核要另一个账号（二人复核）
+        assertTrue(server.calls.none { it.startsWith("closeSign:") })
     }
 
     @Test fun retailBlocksPerSaleAndConfigIsLocal() = runTest(UnconfinedTestDispatcher()) {

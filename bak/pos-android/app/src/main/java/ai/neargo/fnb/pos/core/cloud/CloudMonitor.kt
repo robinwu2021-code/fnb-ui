@@ -31,6 +31,9 @@ interface CloudSettingsStore {
     fun saveLastOnlineAt(at: Long) {}
 }
 
+/** 日结已在云端预览、等另一个账号签核（二人复核）：营业日、日结单号 */
+data class CloudCloseReview(val businessDate: String, val closeNo: String)
+
 /** 送厨下单时服务端金额与本机不一致（本机批次 id、本机金额、服务端金额，分） */
 data class CloudPriceDiff(val batchId: String, val localMinor: Long, val remoteMinor: Long)
 
@@ -49,6 +52,7 @@ data class CloudState(
     val lastOnlineAt: Long = 0,
     val limit: CloudLimit = CloudLimit.None,
     val priceDiffs: List<CloudPriceDiff> = emptyList(),
+    val closeReviews: List<CloudCloseReview> = emptyList(),
 )
 
 /**
@@ -141,7 +145,7 @@ class CloudMonitor(
         settingsStore.save(clean)
         // 新设置从现在起算离线时长（不把设置前的时间算进去）
         val at = clock().also(settingsStore::saveLastOnlineAt)
-        s.update { it.copy(settings = clean, health = CloudHealth(), issues = issuesOf(clean), priceDiffs = diffsOf(clean), lastOnlineAt = at).withBadge() }
+        s.update { it.copy(settings = clean, health = CloudHealth(), issues = issuesOf(clean), priceDiffs = diffsOf(clean), closeReviews = reviewsOf(clean), lastOnlineAt = at).withBadge() }
         wake.trySend(Unit)
     }
 
@@ -168,6 +172,7 @@ class CloudMonitor(
     private fun scopeKey(st: CloudSettings) = storeId()?.let { "$it@${st.storeNo}" }
     private fun refs() = scopeKey(s.value.settings)?.let(refsFor)
     private fun issuesOf(st: CloudSettings) = scopeKey(st)?.let { refsFor(it).issues() }.orEmpty()
+    private fun reviewsOf(st: CloudSettings) = scopeKey(st)?.let { refsFor(it).all("dayclose") }.orEmpty().map { CloudCloseReview(it.localId, it.remoteNo.substringBefore('|')) }
     private fun diffsOf(st: CloudSettings) = scopeKey(st)?.let { refsFor(it).all("pricediff") }.orEmpty().mapNotNull { r ->
         r.remoteNo.split('/').takeIf { it.size == 2 }?.let { (l, rm) -> CloudPriceDiff(r.localId, l.toLongOrNull() ?: return@let null, rm.toLongOrNull() ?: return@let null) }
     }
@@ -180,7 +185,7 @@ class CloudMonitor(
     }
 
     /** 当前门店的价差、需处理（进店 / 换店后刷新） */
-    fun refreshLocal() { s.update { it.copy(issues = issuesOf(it.settings), priceDiffs = diffsOf(it.settings)).withBadge() } }
+    fun refreshLocal() { s.update { it.copy(issues = issuesOf(it.settings), priceDiffs = diffsOf(it.settings), closeReviews = reviewsOf(it.settings)).withBadge() } }
 
     private suspend fun runRound(): SyncRound = roundLock.withLock {
         val st = s.value.settings
@@ -196,7 +201,7 @@ class CloudMonitor(
                 else -> cur.health
             }
             val reached = r.stoppedBy?.kind != CloudErrorKind.Network
-            cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues(), priceDiffs = diffsOf(cur.settings),
+            cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues(), priceDiffs = diffsOf(cur.settings), closeReviews = reviewsOf(cur.settings),
                 lastOnlineAt = if (reached) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
         }
         if (r.uploaded + r.local > 0) runCatching { afterRound() }

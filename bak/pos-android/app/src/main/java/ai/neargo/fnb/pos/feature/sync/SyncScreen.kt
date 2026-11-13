@@ -281,6 +281,8 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
             is ai.neargo.fnb.pos.core.cloud.CloudLimit.Warn -> KeyValue("离线时限", lim.message, valueColor = c.warning)
             else -> {}
         }
+        if (cs.closeReviews.isNotEmpty()) KeyValue("日结待复核", cs.closeReviews.takeLast(3).joinToString("；") { "${it.businessDate} · ${it.closeNo}" } +
+            "（已在云端预览，请店长用另一个账号在后台签核；签核要等营业日结束，预览后又有交易需重新预览）", valueColor = c.warning)
         if (cs.priceDiffs.isNotEmpty()) KeyValue("价差", cs.priceDiffs.takeLast(3).joinToString("；") { d ->
             "${d.batchId.takeLast(8)} 服务端 ${ai.neargo.fnb.pos.core.model.yuan(d.remoteMinor)} / 本机 ${ai.neargo.fnb.pos.core.model.yuan(d.localMinor)}"
         } + (if (cs.priceDiffs.size > 3) " 等 ${cs.priceDiffs.size} 批" else "") + "（联网结账以服务端为准）", valueColor = c.warning)
