@@ -51,7 +51,7 @@ interface CloudApi {
     /** 收齐确认：按结算单号幂等、可安全重试；整桌 PAID、关单、能放台就放台 */
     suspend fun finalizeCounterSettlement(settlementNo: String, offlineRecordNos: List<String>): CloudSettlement
     suspend fun cancelCounterSettlement(settlementNo: String): CloudSettlement
-    /** 读结算单（GET 时 received / change 恒为空，找零以 finalize 响应为准） */
+    /** 读结算单（新部署之后结的单带 receivedMinor / changeMinor） */
     suspend fun counterSettlement(settlementNo: String): CloudSettlement
     // —— 结账后放台（R4：菜没上齐不放台；POS 不上报上菜，结账时代表这桌已吃完，把该账单的厨房任务推到已上菜再放台） ——
     suspend fun stations(storeNo: String): List<CloudStation>
@@ -116,7 +116,7 @@ data class CloudProbe(val storeNo: String, val profile: CloudProfile) {
     val receivableMinor: Long = 0, val remainingDueMinor: Long = 0, val feeMinor: Long? = null)
 @Serializable data class CloudBatch(val batchNo: String, val checkNo: String? = null, val status: String = "", val currency: String? = null,
     val amountMinor: Long? = null, val version: Long = 0)
-/** CounterSettlementVO：应收 dueMinor；status FROZEN / COLLECTING / SETTLED / CANCELLED；received / change / receiptNo 只在 finalize 响应里有 */
+/** CounterSettlementVO：应收 dueMinor；status FROZEN / COLLECTING / SETTLED / CANCELLED；received / change / receiptNo 在 finalize 响应里有，GET 也返回 received / change（新部署之后结的单才有，之前的要重调一次 finalize 才补上） */
 @Serializable data class CloudSettlement(val settlementNo: String, val checkNo: String = "", val status: String = "", val currency: String = "",
     val dueMinor: Long = 0, val receivedMinor: Long? = null, val changeMinor: Long? = null, val receiptNo: String? = null,
     val checkStatus: String = "", val tableReleased: Boolean = false)
