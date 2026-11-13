@@ -399,7 +399,8 @@ private fun StatusIcon(a: HeaderActions) {
     val online = a.device.online
     val c = Pos.colors
     val (icon, cloudText, tint) = when (val b = a.cloud) {
-        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Online -> Triple(Icons.Outlined.CloudDone, if (b.pending > 0) "云端在线 · 待上传 ${b.pending} 条" else "云端在线 · 已全部上传", c.primary)
+        is ai.neargo.fnb.pos.core.cloud.CloudBadge.Online -> Triple(Icons.Outlined.CloudDone, (if (b.pending > 0) "云端在线 · 待上传 ${b.pending} 条" else "云端在线 · 已全部上传") +
+            (if (b.waiting > 0) "（另有 ${b.waiting} 条等服务端接口，留在本机）" else ""), c.primary)
         is ai.neargo.fnb.pos.core.cloud.CloudBadge.Syncing -> Triple(Icons.Outlined.CloudSync, "正在上传云端 ${b.done}/${b.total}", c.primary)
         is ai.neargo.fnb.pos.core.cloud.CloudBadge.Offline -> when (val lim = b.limit) {
             is ai.neargo.fnb.pos.core.cloud.CloudLimit.Block -> Triple(Icons.Outlined.CloudOff, lim.message, c.danger)

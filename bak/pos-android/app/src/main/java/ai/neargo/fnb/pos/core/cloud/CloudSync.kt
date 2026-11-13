@@ -30,7 +30,7 @@ data class CloudHealth(val online: Boolean = false, val okStreak: Int = 0, val f
 /** 页头云图标四态（方案 §6） */
 sealed interface CloudBadge {
     data object NotConfigured : CloudBadge
-    data class Online(val pending: Int) : CloudBadge
+    data class Online(val pending: Int, val waiting: Int = 0) : CloudBadge
     data class Offline(val pending: Int, val reason: String, val limit: CloudLimit = CloudLimit.None) : CloudBadge
     data class Syncing(val done: Int, val total: Int) : CloudBadge
     data class NeedsAction(val count: Int) : CloudBadge
@@ -50,7 +50,8 @@ interface CloudRefs {
     fun resolve(eventId: String)
 }
 @Serializable data class CloudRef(val kind: String, val localId: String, val remoteNo: String, val version: Long = 0)
-@Serializable data class CloudIssue(val eventId: String, val type: String, val aggregateId: String, val code: Int, val message: String, val at: Long)
+/** label：给店员看的对象（桌 H01、销售单 R0158、库存单 RK0003…）；aggregateId 是内部阻塞键 */
+@Serializable data class CloudIssue(val eventId: String, val type: String, val aggregateId: String, val code: Int, val message: String, val at: Long, val label: String = "")
 
 class MemoryCloudRefs : CloudRefs {
     private val refs = LinkedHashMap<String, CloudRef>(); private val list = mutableListOf<CloudIssue>()
@@ -72,7 +73,11 @@ interface EventSource {
 class WaitForBackend(message: String) : Exception(message)
 
 /** 一轮回放的结果：uploaded 已上传；local 只在本机的事件（直接标为已处理）；waiting 等后端接口或被同单前序事件挡住 */
-data class SyncRound(val uploaded: Int, val waiting: Int, val issues: Int, val stoppedBy: CloudException? = null, val local: Int = 0)
+/**
+ * 一轮回放的结果：uploaded 已上传；local 只在本机的事件（直接标为已处理）；waiting 被挡住没上传的（等后端接口，或被需处理的同单前序事件挡住）；
+ * backendWait 其中「等服务端接口」的那部分——它们按设计一直留在本机，不算待上传（页头、离线时限都不该受它们影响）。
+ */
+data class SyncRound(val uploaded: Int, val waiting: Int, val issues: Int, val stoppedBy: CloudException? = null, val local: Int = 0, val backendWait: Int = 0)
 
 /**
  * 云端同步适配（下一批对接方案 §0–§2）：在主 POS / 单机上按命令日志顺序回放到餐饮 Biz 接口。
@@ -140,8 +145,9 @@ class CloudSync(
 
     suspend fun run(storeId: String, storeNo: String, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): SyncRound {
         val list = events.pending(storeId, 500)
-        val blocked = refs.issues().map { it.aggregateId }.toMutableSet()   // 需处理记的是挡住的键（见 blockKeyOf）
-        var uploaded = 0; var waiting = 0; var local = 0
+        // 挡住的键 → 是否因「等服务端接口」（false = 因需处理）；需处理记的是挡住的键（见 blockKeyOf）
+        val blocked = refs.issues().associate { it.aggregateId to false }.toMutableMap()
+        var uploaded = 0; var waiting = 0; var local = 0; var backendWait = 0
         if (list.any { it.type in SUPPORTED }) try { refreshTables(storeNo) } catch (x: CloudException) {
             return SyncRound(0, list.size, refs.issues().size, x)
         }
@@ -149,30 +155,44 @@ class CloudSync(
             progress(i, list.size)
             val key = blockKeyOf(e)
             when {
-                key in blocked -> waiting++
+                key in blocked -> { waiting++; if (blocked[key] == true) backendWait++ }
                 // 旧版事件（envelope 为空，迁移前的本机流）不上传
-                e.envelope.isBlank() -> { waiting++; blocked += key }
+                e.envelope.isBlank() -> { waiting++; backendWait++; blocked[key] = true }
                 e.type in LOCAL_ONLY || e.type in CONFIG || e.type in STOCK_DRAFT || (!inventory && e.type == "StockAdjusted") -> { events.ack(storeId, e.eventId); local++ }
-                e.type !in SUPPORTED -> { waiting++; blocked += key }   // 等后端接口；同单后续事件要等它
+                e.type !in SUPPORTED -> { waiting++; backendWait++; blocked[key] = true }   // 等后端接口；同单后续事件要等它
                 else -> try {
                     upload(e, storeNo)
                     events.ack(storeId, e.eventId); uploaded++
                 } catch (x: CancellationException) { throw x }
-                catch (x: WaitForBackend) { waiting++; blocked += key }   // 这条按载荷判定还不能上传（如扫码收款）：保留并挡同单
+                catch (x: WaitForBackend) { waiting++; backendWait++; blocked[key] = true }   // 这条按载荷判定还不能上传（如扫码收款）：保留并挡同单
                 catch (x: CloudException) {
                     when (x.kind) {
                         CloudErrorKind.Network, CloudErrorKind.Unauthorized -> return SyncRound(uploaded, list.size - uploaded - local, refs.issues().size, x, local)
-                        else -> { refs.addIssue(CloudIssue(e.eventId, e.type, key, x.code, x.message.orEmpty(), clock())); blocked += key }
+                        else -> { refs.addIssue(CloudIssue(e.eventId, e.type, key, x.code, x.message.orEmpty(), clock(), labelOf(e))); blocked.putIfAbsent(key, false) }
                     }
                 } catch (x: Exception) {
                     // 本机载荷无法转换（字段缺失、格式不符）：不重试，交人工，不影响其他聚合
-                    refs.addIssue(CloudIssue(e.eventId, e.type, key, 0, "本机事件无法转换：${x.message ?: x.javaClass.simpleName}", clock())); blocked += key
+                    refs.addIssue(CloudIssue(e.eventId, e.type, key, 0, "本机事件无法转换：${x.message ?: x.javaClass.simpleName}", clock(), labelOf(e))); blocked.putIfAbsent(key, false)
                 }
             }
         }
         progress(list.size, list.size)
-        return SyncRound(uploaded, waiting, refs.issues().size, local = local)
+        return SyncRound(uploaded, waiting, refs.issues().size, local = local, backendWait = backendWait)
     }
+
+    /** 需处理里显示的对象：从事件载荷取桌号 / 单号，取不到留空（界面回退显示内部键） */
+    private fun labelOf(e: JournalEvent): String = runCatching {
+        val p = json.parseToJsonElement(e.payload).jsonObject
+        when (e.type) {
+            "TableOpened", "TableChanged", "KitchenSubmitted", "PaymentRecorded" -> p.str("tableId").takeIf { it.isNotBlank() }?.let { "桌 $it" }
+            "DayClosed" -> "日结"
+            "RetailSaleCompleted" -> p.str("no").takeIf { it.isNotBlank() }?.let { "销售单 $it" }
+            "RetailReturned" -> p.str("ref").ifBlank { p.str("sale") }.takeIf { it.isNotBlank() }?.let { "退货 $it" }
+            "StockDocPosted" -> p.str("no").takeIf { it.isNotBlank() }?.let { "库存单 $it" }
+            "StockAdjusted" -> p.obj("movement").str("productName").takeIf { it.isNotBlank() }?.let { "库存调整 $it" }
+            else -> null
+        }
+    }.getOrNull().orEmpty()
 
     /** 桌台：本机桌号 = 服务端桌台 name（门店里写在桌上的号）；拉服务端桌台表建立映射并带回桌台版本 */
     private suspend fun refreshTables(storeNo: String) {
@@ -221,7 +241,7 @@ class CloudSync(
             "StockAdjusted" -> stockAdjust(p)
             "DayClosed" -> {
                 val d = json.decodeFromJsonElement(DayClose.serializer(), p)
-                val date = Instant.ofEpochMilli(d.end).atZone(zone).toLocalDate().toString()
+                val date = businessDate(d.end, storeNo)
                 api.openBusinessDay("$key:open", date)   // 幂等；没开过营业日 preview 会返回 10404
                 val preview = api.closePreview("$key:preview", date, currency)
                 if (preview.snapshotHash.isBlank()) throw CloudException(CloudErrorKind.Rejected, 10400, "日结预览未生成快照（状态 ${preview.status}），请到后台查看日结异常项")
@@ -304,6 +324,24 @@ class CloudSync(
             if (x.code == 20027) { runCatching { api.cancelCounterSettlement(st.settlementNo) }; refs.put(CloudRef("settlement", eventId, "", 0)) }
             throw x
         }
+    }
+
+    private var policy: CloudPolicy? = null
+    private var policyLoaded = false
+
+    /**
+     * 营业日 = 门店本地时间减去切日分钟后的日期（服务端按门店时区和切日点划营业日；设备时区可能不同）。
+     * 读不到策略（没权限、没配）时回退设备时区、不减切日；网络 / 登录问题照常抛出让整轮停下。
+     */
+    private suspend fun businessDate(at: Long, storeNo: String): String {
+        if (!policyLoaded) {
+            policy = try { api.storePolicy(storeNo) } catch (x: CloudException) {
+                if (x.kind == CloudErrorKind.Network || x.kind == CloudErrorKind.Unauthorized) throw x else null
+            }
+            policyLoaded = true
+        }
+        val z = policy?.timezone?.takeIf { it.isNotBlank() }?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: zone
+        return Instant.ofEpochMilli(at).atZone(z).minusMinutes((policy?.cutoverMinute ?: 0).toLong()).toLocalDate().toString()
     }
 
     // —— 零售进销存 ——

@@ -495,6 +495,11 @@ def w_adjust(store, q, b):
     return None
 
 
+# —— 门店营业策略 ——
+def r_policy(store, q, b):
+    return {"policyNo": "POL1", "timezone": CFG["timezone"], "cutoverMinute": CFG["cutover"], "payPolicy": "POSTPAY", "capabilities": [], "version": 1}
+
+
 # —— 日结 ——
 def w_open_day(store, no, q, b):
     d = DB.setdefault("days", {})
@@ -573,6 +578,7 @@ ROUTES = [
     ("PUT", INV + "/counts/{x}/lines", w_count_lines, False),
     ("POST", INV + "/counts/{x}/post", w_count_post, False),
     ("POST", INV + "/adjust", w_adjust, False),
+    ("GET", FOOD + "/stores/{s}/policy", r_policy, False),
     ("POST", FOOD + "/business-days/{x}:open", w_open_day, True),
     ("POST", FOOD + "/closes:preview", w_close_preview, True),
     ("POST", FOOD + "/closes:sign", w_close_sign, True),
@@ -756,10 +762,12 @@ if __name__ == "__main__":
     ap.add_argument("--store", default="NS002")
     ap.add_argument("--tables", default="H01,H02,H03,H04,T01,T02")
     ap.add_argument("--service-bp", type=int, default=500, help="服务费万分比（应收 = 批次合计 × (1 + bp/10000)）")
+    ap.add_argument("--timezone", default="Asia/Shanghai", help="门店时区（营业策略）")
+    ap.add_argument("--cutover", type=int, default=240, help="切日分钟（营业日 = 本地时间 - 切日分钟）")
     ap.add_argument("--no-r4", action="store_true", help="关闭 R4：结账时直接放台（默认和真实后端一致：菜没上齐不放台）")
     ap.add_argument("--catalog", default=__file__.rsplit("/", 1)[0] + "/demo-catalog.json")
     a = ap.parse_args()
-    CFG.update(r4=not a.no_r4, service_bp=a.service_bp, token=a.token, store=a.store, tables=a.tables.split(","), catalog=json.load(open(a.catalog, encoding="utf-8")))
+    CFG.update(timezone=a.timezone, cutover=a.cutover, r4=not a.no_r4, service_bp=a.service_bp, token=a.token, store=a.store, tables=a.tables.split(","), catalog=json.load(open(a.catalog, encoding="utf-8")))
     DB.update(fresh())
     print(f"餐饮服务端模拟 http://0.0.0.0:{a.port}  门店 {a.store}  菜品 {len(CFG['catalog']['items'])}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", a.port), H).serve_forever()

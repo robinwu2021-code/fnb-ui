@@ -53,7 +53,12 @@ data class CloudState(
     val limit: CloudLimit = CloudLimit.None,
     val priceDiffs: List<CloudPriceDiff> = emptyList(),
     val closeReviews: List<CloudCloseReview> = emptyList(),
-)
+    /** 等服务端接口、留在本机的事件数（上一轮回放得出）：不算待上传 */
+    val backendWait: Int = 0,
+) {
+    /** 真正等着上传的事件数 */
+    val uploadable get() = (pending - backendWait).coerceAtLeast(0)
+}
 
 /**
  * 云端连通与同步循环（方案 §2–§6）：
@@ -124,7 +129,7 @@ class CloudMonitor(
             })
             cur.copy(health = h, tables = probe.getOrNull()?.tables ?: cur.tables, lastOnlineAt = if (probe.isSuccess) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
         }
-        if (s.value.health.online && s.value.pending > 0) runRound()
+        if (s.value.health.online && s.value.uploadable > 0) runRound()
     }
 
     /** 手动「立即同步」：不等防抖，直接探测并回放 */
@@ -202,6 +207,7 @@ class CloudMonitor(
             }
             val reached = r.stoppedBy?.kind != CloudErrorKind.Network
             cur.copy(health = h, lastRound = r, lastSyncAt = clock(), issues = refs.issues(), priceDiffs = diffsOf(cur.settings), closeReviews = reviewsOf(cur.settings),
+                backendWait = if (r.stoppedBy == null) r.backendWait else cur.backendWait,
                 lastOnlineAt = if (reached) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
         }
         if (r.uploaded + r.local > 0) runCatching { afterRound() }
@@ -209,15 +215,15 @@ class CloudMonitor(
     }
 
     private fun CloudState.withBadge(): CloudState {
-        val lim = CloudLimits.evaluate(settings.configured && uploader, health.online, pending, lastOnlineAt, clock())
+        val lim = CloudLimits.evaluate(settings.configured && uploader, health.online, uploadable, lastOnlineAt, clock())
         return copy(limit = lim, badge = when {
             !uploader -> CloudBadge.ViaHost
             !settings.configured -> CloudBadge.NotConfigured
             // 离线时限优先于需处理显示：它会挡日结
             lim is CloudLimit.Block -> CloudBadge.Offline(pending, health.lastError, lim)
             issues.isNotEmpty() -> CloudBadge.NeedsAction(issues.size)
-            health.online -> CloudBadge.Online(pending)
-            else -> CloudBadge.Offline(pending, health.lastError, lim)
+            health.online -> CloudBadge.Online(uploadable, backendWait)
+            else -> CloudBadge.Offline(uploadable, health.lastError, lim)
         })
     }
 

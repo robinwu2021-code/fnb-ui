@@ -161,7 +161,7 @@ fun SyncScreen(state: SyncUiState, onSync: () -> Unit, onConfirm: (String, Strin
                 Endpoint("本机命令", "${state.stats.committed} 已提交", if (state.stats.conflicts + state.stats.rejected > 0) "冲突 ${state.stats.conflicts} · 拒绝 ${state.stats.rejected}" else "最近 ${time(state.stats.lastAcceptedAt)}", ok = state.stats.conflicts + state.stats.rejected == 0, Modifier.weight(1f)) { tab = SyncTab.Commands }
                 Endpoint("主机回执", if (state.stats.singleDevice) "单机 · 本机即主机" else "—", "未决发送 ${state.stats.openCommands}", ok = state.stats.openCommands == 0, Modifier.weight(1f)) { tab = SyncTab.Commands }
                 Endpoint("厨房任务", if (state.kitchenAction > 0) "${state.kitchenAction} 张待处理" else "无异常", "等待送达 ${state.kitchenPending} 张 · 按档口出单方式判定", ok = state.kitchenAction == 0, Modifier.weight(1f)) { tab = SyncTab.Kitchen }
-                Endpoint("云事件", cloudTitle(state.cloud.badge), "待上传 ${state.stats.unackedEvents} 条", ok = state.cloud.badge is CloudBadge.Online || state.cloud.badge == CloudBadge.ViaHost, Modifier.weight(1f)) { tab = SyncTab.Cloud }
+                Endpoint("云事件", cloudTitle(state.cloud.badge), "待上传 ${state.cloud.uploadable} 条" + (if (state.cloud.backendWait > 0) " · 等服务端接口 ${state.cloud.backendWait} 条" else ""), ok = state.cloud.badge is CloudBadge.Online || state.cloud.badge == CloudBadge.ViaHost, Modifier.weight(1f)) { tab = SyncTab.Cloud }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SyncTab.entries.forEach { t -> PosButton(t.label, { tab = t }, size = BtnSize.Small, selected = tab == t) }
@@ -247,6 +247,12 @@ class CloudActions(
     val save: (CloudSettings) -> Unit = {}, val retry: (String) -> Unit = {}, val skip: (String) -> Unit = {},
 )
 
+/** 事件类型的中文名（需处理列表用） */
+private fun eventName(type: String) = when (type) {
+    "TableOpened" -> "开台"; "TableChanged" -> "换桌"; "KitchenSubmitted" -> "送厨"; "PaymentRecorded" -> "结账"; "DayClosed" -> "日结"
+    "RetailSaleCompleted" -> "零售销售"; "RetailReturned" -> "退货"; "StockDocPosted" -> "库存单过账"; "StockAdjusted" -> "库存调整"; else -> type
+}
+
 private fun cloudTitle(b: CloudBadge) = when (b) {
     CloudBadge.NotConfigured -> "未设置云端"
     CloudBadge.ViaHost -> "经主 POS 上传"
@@ -273,7 +279,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
         }
         KeyValue("云端服务", statusText, valueColor = when (cs.badge) { is CloudBadge.Online, CloudBadge.ViaHost -> c.ink; is CloudBadge.NeedsAction -> c.danger; else -> c.warning })
         if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (if (cs.tables > 0) " · 桌台 ${cs.tables} 张" else ""))
-        KeyValue("待上传事件", "${state.stats.unackedEvents} 条（其中旧版 ${state.stats.legacyUnacked} 条，旧版不上传）")
+        KeyValue("待上传事件", "${cs.uploadable} 条" + (if (cs.backendWait > 0) "；另有 ${cs.backendWait} 条等服务端接口，留在本机（含旧版 ${state.stats.legacyUnacked} 条）" else "；旧版 ${state.stats.legacyUnacked} 条不上传"))
         KeyValue("最早未上传", time(state.stats.oldestUnackedAt))
         if (cs.settings.configured && cs.uploader) KeyValue("最近连上云端", time(cs.lastOnlineAt))
         when (val lim = cs.limit) {
@@ -286,7 +292,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
         if (cs.priceDiffs.isNotEmpty()) KeyValue("价差", cs.priceDiffs.takeLast(3).joinToString("；") { d ->
             "${d.batchId.takeLast(8)} 服务端 ${ai.neargo.fnb.pos.core.model.yuan(d.remoteMinor)} / 本机 ${ai.neargo.fnb.pos.core.model.yuan(d.localMinor)}"
         } + (if (cs.priceDiffs.size > 3) " 等 ${cs.priceDiffs.size} 批" else "") + "（联网结账以服务端为准）", valueColor = c.warning)
-        cs.lastRound?.let { r ->  KeyValue("最近一次上传", "${time(cs.lastSyncAt)} · 上传 ${r.uploaded} 条 · 本机事件 ${r.local} 条 · 等服务端接口 ${r.waiting} 条" + (r.stoppedBy?.let { " · 中断：${it.message}" } ?: "")) }
+        cs.lastRound?.let { r ->  KeyValue("最近一次上传", "${time(cs.lastSyncAt)} · 上传 ${r.uploaded} 条 · 本机事件 ${r.local} 条 · 等服务端接口 ${r.backendWait} 条" + (r.stoppedBy?.let { " · 中断：${it.message}" } ?: "")) }
         if (cs.settings.configured && cs.uploader) KeyValue("门店推送", state.push.let { p ->
             (if (p.connected) "已连接" else "未连接" + (if (p.lastError.isNotBlank()) "（${p.lastError}）" else "")) +
                 (if (p.received > 0) " · 已收 ${p.received} 条 · 最近 ${p.lastTopic} ${time(p.lastAt)}" else "")
@@ -304,7 +310,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
                 items(cs.issues.size) { i ->
                     val it = cs.issues[i]
                     TableRow(listOf(
-                        { Cell(it.type) }, { Cell(it.aggregateId, sub = true) }, { Cell(if (it.code > 0) "${it.message}（${it.code}）" else it.message) },
+                        { Cell(eventName(it.type)) }, { Cell(it.label.ifBlank { it.aggregateId }, sub = it.label.isBlank()) }, { Cell(if (it.code > 0) "${it.message}（${it.code}）" else it.message) },
                         { Cell(time(it.at), sub = true) }, { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { PosButton("重试", { actions.retry(it.eventId) }, size = BtnSize.Small); PosButton("跳过", { actions.skip(it.eventId) }, size = BtnSize.Small) } },
                     ), cols)
                 }

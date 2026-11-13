@@ -28,14 +28,14 @@ internal class SqliteCloudRefs(private val database: () -> SQLiteDatabase, priva
     }
 
     override fun issues(): List<CloudIssue> =
-        db.rawQuery("SELECT event_id,type,aggregate_id,code,message,at FROM cloud_issues WHERE scope=? ORDER BY at", arrayOf(scope)).use {
-            buildList { while (it.moveToNext()) add(CloudIssue(it.getString(0), it.getString(1), it.getString(2), it.getInt(3), it.getString(4), it.getLong(5))) }
+        db.rawQuery("SELECT event_id,type,aggregate_id,code,message,at,label FROM cloud_issues WHERE scope=? ORDER BY at", arrayOf(scope)).use {
+            buildList { while (it.moveToNext()) add(CloudIssue(it.getString(0), it.getString(1), it.getString(2), it.getInt(3), it.getString(4), it.getLong(5), it.getString(6).orEmpty())) }
         }
 
     override fun addIssue(issue: CloudIssue) {
         db.insertWithOnConflict("cloud_issues", null, ContentValues().apply {
             put("scope", scope); put("event_id", issue.eventId); put("type", issue.type); put("aggregate_id", issue.aggregateId)
-            put("code", issue.code); put("message", issue.message); put("at", issue.at)
+            put("code", issue.code); put("message", issue.message); put("at", issue.at); put("label", issue.label)
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
@@ -46,7 +46,9 @@ internal class SqliteCloudRefs(private val database: () -> SQLiteDatabase, priva
         private fun ensure(db: SQLiteDatabase) {
             if (ready) return
             db.execSQL("CREATE TABLE IF NOT EXISTS cloud_refs (scope TEXT NOT NULL,kind TEXT NOT NULL,local_id TEXT NOT NULL,remote_no TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(scope,kind,local_id))")
-            db.execSQL("CREATE TABLE IF NOT EXISTS cloud_issues (scope TEXT NOT NULL,event_id TEXT NOT NULL,type TEXT NOT NULL,aggregate_id TEXT NOT NULL,code INTEGER NOT NULL,message TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(scope,event_id))")
+            db.execSQL("CREATE TABLE IF NOT EXISTS cloud_issues (scope TEXT NOT NULL,event_id TEXT NOT NULL,type TEXT NOT NULL,aggregate_id TEXT NOT NULL,code INTEGER NOT NULL,message TEXT NOT NULL,at INTEGER NOT NULL,label TEXT NOT NULL DEFAULT '',PRIMARY KEY(scope,event_id))")
+            // 旧表没有 label 列：补上（已有就忽略）
+            try { db.execSQL("ALTER TABLE cloud_issues ADD COLUMN label TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
             ready = true
         }
     }
