@@ -59,8 +59,13 @@ data class CloudProbe(val storeNo: String, val tables: Int)
     val goodsNo: String, val skuNo: String, val qty: Int, val seatNo: String? = null, val courseNo: String? = null)
 @Serializable data class CloudCart(val cartNo: String, val checkNo: String? = null, val status: String = "", val version: Long = 0)
 @Serializable data class CloudCartVersion(val cartNo: String, val version: Long)
-/** 平台 QuoteVO（PricingCheckoutPort）：字段未在本仓库核实，只取单号与确认摘要，其余忽略 */
-@Serializable data class CloudQuote(val quoteNo: String, val confirmationDigest: String = "")
+/**
+ * 平台 QuoteVO（PricingCheckoutPort.java:73-82，已由餐饮会话核实）：确认摘要为 64 位小写 hex；
+ * 金额在 totals 里，**没有 payableMinor**——应付取 receivableMinor，仍欠取 remainingDueMinor。
+ */
+@Serializable data class CloudQuote(val quoteNo: String, val confirmationDigest: String = "", val totals: CloudQuoteTotals? = null)
+@Serializable data class CloudQuoteTotals(val goodsMinor: Long = 0, val discountMinor: Long = 0, val netMinor: Long = 0, val taxMinor: Long = 0,
+    val receivableMinor: Long = 0, val remainingDueMinor: Long = 0, val feeMinor: Long? = null)
 @Serializable data class CloudBatch(val batchNo: String, val checkNo: String? = null, val status: String = "", val currency: String? = null,
     val amountMinor: Long? = null, val version: Long = 0)
 @Serializable data class CloudClose(val closeNo: String, val status: String = "", val snapshotHash: String = "", val version: Long = 0)

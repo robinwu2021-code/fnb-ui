@@ -215,8 +215,8 @@ def w_quote(store, q, b):
     if int(b["version"]) != c["version"]:
         raise Err(10409, "购物车版本已变化")
     total = sum(price_of(l) * l["qty"] for l in c["lines"])
-    qt = {"quoteNo": nid("QT"), "cartNo": c["cartNo"], "version": c["version"], "confirmationDigest": "dg" + uuid.uuid4().hex[:10],
-          "totals": {"currency": "CNY", "subtotalMinor": total, "feeMinor": 0, "payableMinor": total}}
+    qt = {"quoteNo": nid("QT"), "cartNo": c["cartNo"], "version": c["version"], "confirmationDigest": uuid.uuid4().hex + uuid.uuid4().hex,   # 64 位小写 hex
+          "totals": {"goodsMinor": total, "discountMinor": 0, "netMinor": total, "taxMinor": 0, "receivableMinor": total, "remainingDueMinor": total, "feeMinor": 0}}
     DB["quotes"][qt["quoteNo"]] = qt
     return qt
 
@@ -244,7 +244,7 @@ def w_batch(store, q, b):
     c["status"] = "CLOSED"
     bt = {"batchNo": nid("BT"), "storeNo": store, "checkNo": c["checkNo"], "cartNo": c["cartNo"], "cartVersion": c["version"], "quoteNo": qt["quoteNo"],
           "status": "ACCEPTED", "payMode": "POSTPAY", "businessDate": time.strftime("%Y-%m-%d"), "currency": "CNY",
-          "amountMinor": qt["totals"]["payableMinor"], "version": 1, "lines": c["lines"]}
+          "amountMinor": qt["totals"]["receivableMinor"], "version": 1, "lines": c["lines"]}
     DB["batches"][bt["batchNo"]] = bt
     emit("food.kitchen", "BATCH", bt["batchNo"], 1)
     return {k: v for k, v in bt.items() if k != "lines"}
