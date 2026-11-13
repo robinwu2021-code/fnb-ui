@@ -90,6 +90,8 @@ class CloudSync(
     private val currency: String = "CNY",
     /** 当前门店是零售（进销存单据上传）；餐饮门店的库存调整只在本机 */
     private val inventory: Boolean = false,
+    /** 员工下单的买家号（真实后端要求买家号或会话号之一；散客方案待后端定） */
+    private val buyerNo: String = "",
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private var catalog: CloudCatalog? = null
@@ -214,7 +216,7 @@ class CloudSync(
                 refs.put(check.copy(version = api.check(check.remoteNo).version))   // 转台返回操作单，不含账单版本
             }
             "KitchenSubmitted" -> submitBatch(p, storeNo, key)
-            "PaymentRecorded" -> settle(p, key, e.eventId)
+            "PaymentRecorded" -> settle(p, key, e.eventId, storeNo)
             "StockDocPosted" -> stockDoc(p, e.eventId)
             "StockAdjusted" -> stockAdjust(p)
             "DayClosed" -> {
@@ -240,6 +242,7 @@ class CloudSync(
         val batch = lines.filter { it.str("batchId") == batchId }
         if (batch.any { (it["mealSelections"] as? JsonArray)?.isNotEmpty() == true })
             throw CloudException(CloudErrorKind.Rejected, 10400, "套餐行暂不支持上传（服务端套餐选择待对接）")
+        if (buyerNo.isBlank()) throw CloudException(CloudErrorKind.Rejected, 10400, "服务端员工下单要买家号（散客下单待后端支持）：请在同步中心「云端设置」里填默认买家号后重试")
         val check = checkOf(order.str("orderId"))
         val inputs = batch.map { l -> lineInput(storeNo, l) }
 
@@ -255,7 +258,7 @@ class CloudSync(
         }
         val q = api.quote(storeNo, "$key:quote", cart.cartNo, version)
         val confirmed = api.confirmQuote(q.quoteNo, cart.cartNo, version, q.confirmationDigest)
-        val b = api.placeBatch(storeNo, "$key:batch", cart.cartNo, version, q.quoteNo, confirmed.confirmationDigest.ifBlank { q.confirmationDigest })
+        val b = api.placeBatch(storeNo, "$key:batch", cart.cartNo, version, q.quoteNo, confirmed.confirmationDigest.ifBlank { q.confirmationDigest }, buyerNo)
         refs.put(CloudRef("batch", batchId, b.batchNo, b.version))
         val localMinor = batch.sumOf { it.num("unit") * it.num("qty") }
         b.amountMinor?.takeIf { it != localMinor }?.let { refs.put(CloudRef("pricediff", batchId, "$localMinor/$it")) }
@@ -266,7 +269,7 @@ class CloudSync(
      * 建结算单（键 事件ID:settle，按事件记住结算单号，人工重试复用）→ 比对服务端应收 → 外部记账（键 事件ID:pay，bizNo = 结算单号，
      * 现金按实收面额记，找零由服务端算）→ finalize（按结算单号幂等）。服务端说账单已变（20027）时撤销结算单，重试会重建。
      */
-    private suspend fun settle(p: JsonObject, key: String, eventId: String) {
+    private suspend fun settle(p: JsonObject, key: String, eventId: String, storeNo: String) {
         val pay = p["payment"] as? JsonObject ?: throw CloudException(CloudErrorKind.Rejected, 10400, "结账事件缺少收款记录")
         val method = pay.str("method")
         val code = OFFLINE_METHOD[method] ?: throw WaitForBackend("$method 收款走平台通道，待对接")
@@ -275,9 +278,11 @@ class CloudSync(
         val currency = pay.str("currency").ifBlank { currency }
 
         // 人工重试复用同一张结算单，但要重读最新应收（后台可能已调整）；已取消则重建
+        // 已确认过：只差放台（上一轮放台失败后的重试）
+        if (refs.get("settled", eventId) != null) { ensureReleased(eventId, key, storeNo, check.remoteNo, refs.get("settled", eventId)!!.version == 1L); return }
         val known = refs.get("settlement", eventId)?.takeIf { it.remoteNo.isNotBlank() }?.let { api.counterSettlement(it.remoteNo) }?.takeIf { it.status != "CANCELLED" }
         val st = known ?: api.createCounterSettlement("$key:settle", check.remoteNo).also { refs.put(CloudRef("settlement", eventId, it.settlementNo, it.dueMinor)) }
-        if (st.status == "SETTLED") { refs.put(CloudRef("settled", eventId, st.receiptNo.orEmpty(), if (st.tableReleased) 1 else 0)); return }
+        if (st.status == "SETTLED") { refs.put(CloudRef("settled", eventId, st.receiptNo.orEmpty().ifBlank { "-" }, if (st.tableReleased) 1 else 0)); ensureReleased(eventId, key, storeNo, check.remoteNo, st.tableReleased); return }
         // 先比金额再记钱：记了账的钱只能用于一次实收，金额对不上时不该先记
         when {
             received < st.dueMinor -> throw CloudException(CloudErrorKind.Rejected, 20024,
@@ -289,7 +294,8 @@ class CloudSync(
         val record = api.recordOffline("$key:pay", CloudOfflineRecordBody(received, currency, code, st.settlementNo, "POS ${pay.str("tableId")}", at))
         try {
             val done = api.finalizeCounterSettlement(st.settlementNo, listOf(record.recordNo))
-            refs.put(CloudRef("settled", eventId, done.receiptNo.orEmpty(), if (done.tableReleased) 1 else 0))
+            refs.put(CloudRef("settled", eventId, done.receiptNo.orEmpty().ifBlank { "-" }, if (done.tableReleased) 1 else 0))
+            ensureReleased(eventId, key, storeNo, check.remoteNo, done.tableReleased)
         } catch (x: CloudException) {
             // 账单已变：撤销结算单（台账解冻），清掉记住的单号，人工重试时重建
             if (x.code == 20027) { runCatching { api.cancelCounterSettlement(st.settlementNo) }; refs.put(CloudRef("settlement", eventId, "", 0)) }
@@ -377,6 +383,24 @@ class CloudSync(
     /** 建单拿到服务端单号后立即记住；重试只过账，不重复建单 */
     private suspend fun remembered(local: String, create: suspend () -> String): String =
         refs.get("invdoc", local)?.remoteNo?.takeIf { it.isNotBlank() } ?: create().also { refs.put(CloudRef("invdoc", local, it)) }
+
+    /**
+     * 结账后放台：服务端规则 R4——账单的厨房任务没全部上菜 / 作废就不放台。POS 现场结账就代表这桌已吃完，
+     * 所以把本账单批次下未完成的任务依次推到已上菜（start → ready → serve，每步版本 +1），再放台。
+     * 没有这一步，结过账的桌在服务端会一直占用，下次开台被拒。每步键固定，失败重试只补没做完的步。
+     */
+    private suspend fun ensureReleased(eventId: String, key: String, storeNo: String, checkNo: String, alreadyReleased: Boolean) {
+        if (alreadyReleased || refs.get("released", eventId) != null) { refs.put(CloudRef("released", eventId, checkNo)); return }
+        val batchNos = api.checkBatchNos(storeNo, checkNo).toSet()
+        val tasks = api.stations(storeNo).filter { it.enabled }.flatMap { api.kitchenTasks(storeNo, it.configNo) }.filter { it.batchNo in batchNos }
+        for (t in tasks) {
+            var v = t.version
+            val steps = when (t.status) { "READY" -> listOf("serve"); "MAKING" -> listOf("ready", "serve"); else -> listOf("start", "ready", "serve") }
+            for (a in steps) { api.advanceTask("$key:task:${t.taskNo}:$a", t.taskNo, a, v, t.qty); v++ }
+        }
+        api.releaseService("$key:release", checkNo, api.check(checkNo).version, "结账完成放台")
+        refs.put(CloudRef("released", eventId, checkNo))
+    }
 
     private fun minor(v: Long) = "%d.%02d".format(v / 100, v % 100)
 

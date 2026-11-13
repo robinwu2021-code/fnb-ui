@@ -44,7 +44,7 @@ def fresh():
         "tables": {f"T{i + 1:03d}": {"tableNo": f"T{i + 1:03d}", "storeNo": CFG["store"], "areaNo": "A1", "code": n, "name": n, "capacity": 4,
                                     "sortNo": i, "status": "ACTIVE", "turnoverState": "IDLE", "version": 1}
                    for i, n in enumerate(CFG["tables"])},
-        "checks": {}, "carts": {}, "quotes": {}, "batches": {}, "closes": {}, "settlements": {}, "records": {}, "invdocs": {}, "onhand": {},
+        "checks": {}, "carts": {}, "quotes": {}, "batches": {}, "closes": {}, "settlements": {}, "records": {}, "tasks": {}, "invdocs": {}, "onhand": {},
         "idem": {}, "calls": [], "fail": {"times": 0, "code": 0, "http": 0},
         "terminals": {}, "events": [], "seq": 0,
     }
@@ -103,7 +103,9 @@ def r_tables(store, q, b):
 
 def w_open_check(store, q, b):
     strict(b, {"tableNos", "partySize", "payMode", "reservationNo", "tableVersions", "sharingMode", "seats", "serviceEmployeeNo"})
-    need(b, "tableNos", "partySize")
+    need(b, "tableNos", "partySize", "payMode", "sharingMode")
+    if b.get("seats") is None:
+        raise Err(10400, "seats 不能为null")           # 真实后端：seats 必须有（可为空数组）
     if b.get("serviceEmployeeNo"):
         raise Err(10403, "serviceEmployeeNo 暂不接收")
     check_versions(b.get("tableVersions"))
@@ -163,7 +165,7 @@ def w_create_cart(store, q, b):
     if c["status"] != "OPEN":
         raise Err(10400, "账单不是开台状态")
     cart = {"cartNo": nid("CT"), "storeNo": store, "checkNo": c["checkNo"], "status": "OPEN", "orderSource": b.get("orderSource", "POS"),
-            "fulfillment": b.get("fulfillment", "DINE_IN"), "version": 1, "lines": []}
+            "fulfillment": b.get("fulfillment", "DINE_IN"), "version": 0, "sessionNo": None, "buyerNo": None, "lines": []}
     DB["carts"][cart["cartNo"]] = cart
     return {"cart": cart}
 
@@ -187,6 +189,8 @@ def w_replace_line(store, no, ref, q, b):
     need(b, "line", "version")
     line = b["line"]
     strict(line, LINE_FIELDS)
+    if line.get("selections") is None or line.get("bundleChoices") is None:
+        raise Err(10400, "请求参数有误")                 # 真实后端：selections / bundleChoices 必须带（空数组即可）
     if not isinstance(line.get("qty"), (int, float)) or isinstance(line.get("qty"), bool):
         raise Err(10400, "qty 必须是数字")
     c = cart(no)
@@ -237,6 +241,8 @@ def w_batch(store, q, b):
     need(b, "cartNo", "version", "quoteNo", "confirmationDigest")
     if b.get("payMode", "POSTPAY") != "POSTPAY":
         raise Err(10400, "员工下单只支持 POSTPAY")
+    if bool(b.get("buyerNo")) == bool(b.get("partyNo")):
+        raise Err(10400, "请求参数有误")                 # 真实后端：必须且只能带 buyerNo 与 partyNo 之一
     c = cart(b["cartNo"])
     qt = DB["quotes"].get(b["quoteNo"])
     if not qt or not qt.get("confirmed") or qt["confirmationDigest"] != b["confirmationDigest"] or c["version"] != int(b["version"]):
@@ -246,6 +252,9 @@ def w_batch(store, q, b):
           "status": "ACCEPTED", "payMode": "POSTPAY", "businessDate": time.strftime("%Y-%m-%d"), "currency": "CNY",
           "amountMinor": qt["totals"]["receivableMinor"], "version": 1, "lines": c["lines"]}
     DB["batches"][bt["batchNo"]] = bt
+    for l in c["lines"]:
+        t = {"taskNo": nid("TK"), "batchNo": bt["batchNo"], "checkNo": c["checkNo"], "stationNo": "STA1", "status": "QUEUED", "version": 0, "qty": float(l["qty"])}
+        DB["tasks"][t["taskNo"]] = t
     emit("food.kitchen", "BATCH", bt["batchNo"], 1)
     return {k: v for k, v in bt.items() if k != "lines"}
 
@@ -309,9 +318,12 @@ def w_finalize(store, no, q, b):
         r["usedBy"] = no
     c = check(st["checkNo"])
     c["status"] = "CLOSED"; c["version"] += 1
-    for n in c["tableNos"]:
-        bump(DB["tables"][n], turnoverState="IDLE")
-    st.update(status="SETTLED", receivedMinor=total, changeMinor=total - st["dueMinor"], receiptNo=nid("RC"), checkStatus="CLOSED", tableReleased=True)
+    served = all(t["status"] in ("SERVED", "VOIDED") for t in DB["tasks"].values() if t["checkNo"] == c["checkNo"])
+    released = served or not CFG["r4"]
+    if released:
+        for n in c["tableNos"]:
+            bump(DB["tables"][n], turnoverState="IDLE")
+    st.update(status="SETTLED", receivedMinor=total, changeMinor=total - st["dueMinor"], receiptNo=nid("RC"), checkStatus="CLOSED", tableReleased=released)
     emit("food.table", "CHECK", c["checkNo"], c["version"])
     return st
 
@@ -340,6 +352,54 @@ def w_offline_record(store, q, b):
            "recordedBy": "terminal", "status": "VALID", "corrected": False, "version": 1, "history": []}
     DB["records"][rec["recordNo"]] = rec
     return {k: v for k, v in rec.items() if k != "usedBy"}
+
+
+# —— 厨房任务与放台（真实后端规则 R4：账单的任务没全部上菜 / 作废就不放台） ——
+def r_stations(store, q, b):
+    return {"records": [{"configNo": "STA1", "version": 1, "status": "PUBLISHED", "storeNo": store, "name": "热厨", "stationType": "HOT", "enabled": True}], "total": 1, "page": 1, "size": 20}
+
+
+def r_tasks(store, q, b):
+    if not q.get("stationNo"):
+        raise Err(10400, "stationNo 必填")
+    rows = [t for t in DB["tasks"].values() if t["stationNo"] == q["stationNo"] and t["status"] not in ("SERVED", "VOIDED")]
+    return {"records": rows, "total": len(rows), "page": 1, "size": 100}
+
+
+def r_batches(store, q, b):
+    rows = [{k: v for k, v in bt.items() if k != "lines"} for bt in DB["batches"].values() if not q.get("checkNo") or bt["checkNo"] == q["checkNo"]]
+    return {"records": rows, "total": len(rows), "page": 1, "size": 100}
+
+
+def w_task(action):
+    nxt = {"start": ("QUEUED", "MAKING"), "ready": ("MAKING", "READY"), "serve": ("READY", "SERVED")}[action]
+
+    def f(store, no, q, b):
+        strict(b, {"version", "qty", "reason"})
+        t = DB["tasks"].get(no)
+        if not t:
+            raise Err(10404, "任务不存在")
+        if int(b["version"]) != t["version"]:
+            raise Err(10409, "任务版本已变化")
+        if t["status"] != nxt[0]:
+            raise Err(10409, f"任务状态 {t['status']} 不能 {action}")
+        t.update(status=nxt[1], version=t["version"] + 1)
+        return {"eventNo": nid("EV"), "taskNo": no, "action": action.upper(), "qty": t["qty"], "reason": b.get("reason"), "inventoryDocNo": None}
+    return f
+
+
+def w_release(store, q, b):
+    strict(b, {"check", "version", "reason"})
+    c = check(b["check"])
+    if int(b["version"]) != c["version"]:
+        raise Err(10409, "账单版本已变化")
+    if any(t["status"] not in ("SERVED", "VOIDED") for t in DB["tasks"].values() if t["checkNo"] == c["checkNo"]):
+        raise Err(10409, "有菜没上齐")
+    for n in c["tableNos"]:
+        if DB["tables"][n]["turnoverState"] != "IDLE":
+            bump(DB["tables"][n], turnoverState="IDLE")
+    c["version"] += 1
+    return {"operationNo": nid("OP"), "status": "SUCCEEDED", "version": c["version"], "resultRef": c["checkNo"]}
 
 
 # —— 进销存（/biz/inventory，零售）：没有幂等键；单号字段 no；过账 / 作废按单号幂等；数量只收整数 ——
@@ -490,6 +550,13 @@ ROUTES = [
     ("POST", FOOD + "/counter-settlements/{x}:cancel", w_settle_cancel, False),
     ("GET", FOOD + "/counter-settlements/{x}", r_settlement, False),
     ("POST", "/biz/payment/offline-records", w_offline_record, True),
+    ("GET", FOOD + "/stores/{s}/stations", r_stations, False),
+    ("GET", FOOD + "/stores/{s}/kitchen/tasks", r_tasks, False),
+    ("GET", FOOD + "/stores/{s}/batches", r_batches, False),
+    ("POST", FOOD + "/tasks/{x}:start", w_task("start"), True),
+    ("POST", FOOD + "/tasks/{x}:ready", w_task("ready"), True),
+    ("POST", FOOD + "/tasks/{x}:serve", w_task("serve"), True),
+    ("POST", FOOD + "/business-operations/checkCollaboration/releaseService", w_release, True),
     ("GET", INV + "/items/by-barcode", r_item_by_barcode, False),
     ("POST", INV + "/inbounds", w_inbound, False),
     ("POST", INV + "/inbounds/{x}/post", w_doc_post, False),
@@ -681,9 +748,10 @@ if __name__ == "__main__":
     ap.add_argument("--store", default="NS002")
     ap.add_argument("--tables", default="H01,H02,H03,H04,T01,T02")
     ap.add_argument("--service-bp", type=int, default=500, help="服务费万分比（应收 = 批次合计 × (1 + bp/10000)）")
+    ap.add_argument("--no-r4", action="store_true", help="关闭 R4：结账时直接放台（默认和真实后端一致：菜没上齐不放台）")
     ap.add_argument("--catalog", default=__file__.rsplit("/", 1)[0] + "/demo-catalog.json")
     a = ap.parse_args()
-    CFG.update(service_bp=a.service_bp, token=a.token, store=a.store, tables=a.tables.split(","), catalog=json.load(open(a.catalog, encoding="utf-8")))
+    CFG.update(r4=not a.no_r4, service_bp=a.service_bp, token=a.token, store=a.store, tables=a.tables.split(","), catalog=json.load(open(a.catalog, encoding="utf-8")))
     DB.update(fresh())
     print(f"餐饮服务端模拟 http://0.0.0.0:{a.port}  门店 {a.store}  菜品 {len(CFG['catalog']['items'])}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", a.port), H).serve_forever()

@@ -35,7 +35,7 @@ interface CloudApi {
     /** 确认报价：服务端不收幂等键，靠 confirmationDigest 自然幂等 */
     suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String): CloudQuote
     /** 员工下单（员工批次只能 POSTPAY） */
-    suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String): CloudBatch
+    suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String? = null): CloudBatch
     suspend fun closePreview(key: String, businessDate: String, currency: String): CloudClose
     /** 柜台后付整桌结账：建结算单（无请求体，应收由服务端重读核心算出；同账台已有未结束的单 → 10409） */
     suspend fun createCounterSettlement(key: String, checkNo: String): CloudSettlement
@@ -44,6 +44,16 @@ interface CloudApi {
     suspend fun cancelCounterSettlement(settlementNo: String): CloudSettlement
     /** 读结算单（GET 时 received / change 恒为空，找零以 finalize 响应为准） */
     suspend fun counterSettlement(settlementNo: String): CloudSettlement
+    // —— 结账后放台（R4：菜没上齐不放台；POS 不上报上菜，结账时代表这桌已吃完，把该账单的厨房任务推到已上菜再放台） ——
+    suspend fun stations(storeNo: String): List<CloudStation>
+    /** 某工位未完成的厨房任务（HELD / QUEUED / MAKING / READY） */
+    suspend fun kitchenTasks(storeNo: String, stationNo: String): List<CloudTask>
+    /** 账单下的下单批次号 */
+    suspend fun checkBatchNos(storeNo: String, checkNo: String): List<String>
+    /** 推进任务：action = start / ready / serve；请求体的 version 是任务当前版本，每步 +1 */
+    suspend fun advanceTask(key: String, taskNo: String, action: String, version: Long, qty: Double)
+    /** 放台（checkCollaboration/releaseService）：要求账单所有任务已上菜或作废；CLOSED 的账单也能放；不接受 query 参数 */
+    suspend fun releaseService(key: String, checkNo: String, version: Long, reason: String)
     /** 外部记账（平台 /biz/payment/offline-records）：柜台结账 bizNo 必须等于结算单号；现金按实收面额记 */
     suspend fun recordOffline(key: String, body: CloudOfflineRecordBody): CloudOfflineRecord
 
@@ -81,7 +91,9 @@ data class CloudProbe(val storeNo: String, val tables: Int)
 
 /** OrderLineInput：数量是 JSON 数字；不传单位、不传价格（价格以服务端报价为准） */
 @Serializable data class CloudLineInput(val sourceLineRef: String, val menuNo: String, val menuItemNo: String, val menuRevisionNo: String,
-    val goodsNo: String, val skuNo: String, val qty: Int, val seatNo: String? = null, val courseNo: String? = null)
+    val goodsNo: String, val skuNo: String, val qty: Int, val seatNo: String? = null, val courseNo: String? = null,
+    /** 真实后端实测：必须带，空数组即可（缺则 10400「请求参数有误」） */
+    val selections: List<String> = emptyList(), val bundleChoices: List<String> = emptyList())
 @Serializable data class CloudCart(val cartNo: String, val checkNo: String? = null, val status: String = "", val version: Long = 0)
 @Serializable data class CloudCartVersion(val cartNo: String, val version: Long)
 /**
@@ -110,6 +122,8 @@ data class CloudProbe(val storeNo: String, val tables: Int)
 /** 出库：报损 purpose=SCRAP，reasonCode 取 CHECK / BROKEN / EXPIRED / GIFT / OTHER，不能带 targetNo */
 @Serializable data class CloudOutboundBody(val purpose: String, val reasonCode: String, val occurredAt: String, val remark: String, val lines: List<CloudInvLine>)
 @Serializable data class CloudCountLine(val itemId: String, val countedQty: Int, val reasonCode: String)
+@Serializable data class CloudStation(val configNo: String, val name: String = "", val enabled: Boolean = true)
+@Serializable data class CloudTask(val taskNo: String, val batchNo: String, val status: String = "", val version: Long = 0, val qty: Double = 0.0)
 @Serializable data class CloudClose(val closeNo: String, val status: String = "", val snapshotHash: String = "", val version: Long = 0)
 
 /** 服务端错误分类：决定同步怎么处理（重读、交人工、重试） */
@@ -137,7 +151,7 @@ class CloudException(val kind: CloudErrorKind, val code: Int, message: String) :
 }
 
 /** 连接参数：服务端根地址（如 https://api.example.com，不带 /biz）、门店号、终端令牌、当前员工 */
-data class CloudConfig(val baseUrl: String, val storeNo: String, val token: String, val staffNo: () -> String = { "" }) {
+data class CloudConfig(val baseUrl: String, val storeNo: String, val token: String, val staffNo: () -> String = { "" }, val buyerNo: String = "") {
     val enabled get() = baseUrl.isNotBlank() && storeNo.isNotBlank()
 }
 
@@ -199,8 +213,16 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
 
     override suspend fun probe(storeNo: String) =
         CloudProbe(storeNo, http.get("${s(storeNo)}/tables", mapOf("page" to "1", "size" to "1"), Page.serializer(CloudTable.serializer())).total)
-    override suspend fun tableList(storeNo: String) =
-        http.get("${s(storeNo)}/tables", mapOf("page" to "1", "size" to "500"), Page.serializer(CloudTable.serializer())).records
+    /** 真实后端分页上限 100（超过报「最大不能超过100」）：翻页取全 */
+    override suspend fun tableList(storeNo: String): List<CloudTable> {
+        val all = mutableListOf<CloudTable>(); var page = 1
+        while (true) {
+            val r = http.get("${s(storeNo)}/tables", mapOf("page" to page.toString(), "size" to "100"), Page.serializer(CloudTable.serializer()))
+            all += r.records
+            if (r.records.isEmpty() || all.size >= r.total) return all
+            page++
+        }
+    }
     override suspend fun openCheck(storeNo: String, key: String, tableNos: List<String>, partySize: Int, tableVersions: List<CloudTableVersion>) =
         http.send("POST", "${s(storeNo)}/checks", key, OpenCheckBody(tableNos, partySize, tableVersions), OpenCheckBody.serializer(), CheckEnvelope.serializer()).check
     override suspend fun check(checkNo: String) = http.get("$FOOD/checks/${enc(checkNo)}", emptyMap(), CheckEnvelope.serializer()).check
@@ -216,8 +238,8 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.send("POST", "${s(storeNo)}/quotes", key, QuoteBody(cartNo, version), QuoteBody.serializer(), CloudQuote.serializer())
     override suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String) =
         http.send("POST", "$FOOD/quotes/${enc(quoteNo)}:confirm", null, ConfirmBody(cartNo, version, confirmationDigest), ConfirmBody.serializer(), CloudQuote.serializer())
-    override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String) =
-        http.send("POST", "${s(storeNo)}/batches", key, BatchBody(cartNo, version, quoteNo, confirmationDigest), BatchBody.serializer(), CloudBatch.serializer())
+    override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) =
+        http.send("POST", "${s(storeNo)}/batches", key, BatchBody(cartNo, version, quoteNo, confirmationDigest, buyerNo = buyerNo), BatchBody.serializer(), CloudBatch.serializer())
     override suspend fun closePreview(key: String, businessDate: String, currency: String) =
         http.send("POST", "$FOOD/closes:preview", key, PreviewBody(businessDate, currency), PreviewBody.serializer(), CloudClose.serializer())
     override suspend fun createCounterSettlement(key: String, checkNo: String) =
@@ -230,6 +252,18 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.get("$FOOD/counter-settlements/${enc(settlementNo)}", emptyMap(), CloudSettlement.serializer())
     override suspend fun recordOffline(key: String, body: CloudOfflineRecordBody) =
         http.send("POST", "/biz/payment/offline-records", key, body, CloudOfflineRecordBody.serializer(), CloudOfflineRecord.serializer())
+    override suspend fun stations(storeNo: String) =
+        http.get("${s(storeNo)}/stations", mapOf("page" to "1", "size" to "50"), Page.serializer(CloudStation.serializer())).records
+    override suspend fun kitchenTasks(storeNo: String, stationNo: String) =
+        http.get("${s(storeNo)}/kitchen/tasks", mapOf("stationNo" to stationNo, "page" to "1", "size" to "100"), Page.serializer(CloudTask.serializer())).records
+    override suspend fun checkBatchNos(storeNo: String, checkNo: String) =
+        http.get("${s(storeNo)}/batches", mapOf("checkNo" to checkNo, "page" to "1", "size" to "100"), Page.serializer(CloudBatch.serializer())).records.map { it.batchNo }
+    override suspend fun advanceTask(key: String, taskNo: String, action: String, version: Long, qty: Double) {
+        http.send("POST", "$FOOD/tasks/${enc(taskNo)}:$action", key, TaskBody(version, qty, "POS 结账"), TaskBody.serializer(), kotlinx.serialization.json.JsonElement.serializer().nullable)
+    }
+    override suspend fun releaseService(key: String, checkNo: String, version: Long, reason: String) {
+        http.send("POST", "$FOOD/business-operations/checkCollaboration/releaseService", key, ReleaseBody(checkNo, version, reason), ReleaseBody.serializer(), kotlinx.serialization.json.JsonElement.serializer().nullable)
+    }
     override suspend fun inventoryItemByBarcode(code: String) =
         http.get("$INV/items/by-barcode", mapOf("code" to code), CloudInvItem.serializer().nullable)
     override suspend fun createInbound(body: CloudInboundBody) = http.send("POST", "$INV/inbounds", null, body, CloudInboundBody.serializer(), DocNo.serializer()).no
@@ -256,15 +290,20 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
 
 // —— 请求体（只含服务端 DTO 里有的字段）与响应包装 ——
 @Serializable internal data class Page<T>(val records: List<T> = emptyList(), val total: Int = 0, val page: Int = 1, val size: Int = 0)
-@Serializable internal data class OpenCheckBody(val tableNos: List<String>, val partySize: Int, val tableVersions: List<CloudTableVersion>)
+/** 真实后端实测：payMode、sharingMode、seats（可空数组但必须有）都不能缺，缺则 10400「不能为空」 */
+@Serializable internal data class OpenCheckBody(val tableNos: List<String>, val partySize: Int, val tableVersions: List<CloudTableVersion>,
+    val sharingMode: String = "EXCLUSIVE", val seats: List<String> = emptyList(), val payMode: String = "POSTPAY")
 @Serializable internal data class TransferBody(val version: Long, val targetTableNos: List<String>, val tableVersions: List<CloudTableVersion>)
 @Serializable internal data class CreateCartBody(val checkNo: String, val orderSource: String = "POS", val fulfillment: String = "DINE_IN")
 @Serializable internal data class ReplaceLineBody(val line: CloudLineInput, val version: Long)
 @Serializable internal data class QuoteBody(val cartNo: String, val version: Long)
 @Serializable internal data class ConfirmBody(val cartNo: String, val version: Long, val confirmationDigest: String)
-@Serializable internal data class BatchBody(val cartNo: String, val version: Long, val quoteNo: String, val confirmationDigest: String, val payMode: String = "POSTPAY")
+/** 真实后端实测：必须且只能带 buyerNo 与 partyNo 之一（partyNo 要等于购物车 sessionNo；POS 建的购物车 sessionNo 为空，所以用 buyerNo） */
+@Serializable internal data class BatchBody(val cartNo: String, val version: Long, val quoteNo: String, val confirmationDigest: String, val payMode: String = "POSTPAY", val buyerNo: String? = null)
 @Serializable internal data class PreviewBody(val businessDate: String, val currency: String)
 @Serializable internal data class SignBody(val closeNo: String, val snapshotHash: String)
+@Serializable internal data class TaskBody(val version: Long, val qty: Double, val reason: String)
+@Serializable internal data class ReleaseBody(val check: String, val version: Long, val reason: String)
 @Serializable internal data class DocNo(val no: String)
 @Serializable internal data class CountOpen(val itemIds: List<String>)
 @Serializable internal data class AdjustBody(val itemId: String, val countedQty: Int, val reasonCode: String)

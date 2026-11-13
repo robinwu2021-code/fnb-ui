@@ -332,8 +332,9 @@ private fun CloudSettingsDialog(current: CloudSettings, actions: CloudActions, o
     var url by remember { mutableStateOf(current.baseUrl) }
     var store by remember { mutableStateOf(current.storeNo) }
     var token by remember { mutableStateOf(current.token) }
+    var buyer by remember { mutableStateOf(current.buyerNo) }
     var result by remember { mutableStateOf<String?>(null) }
-    val draft = CloudSettings(url, store, token)
+    val draft = CloudSettings(url, store, token, buyer)
     PosDialog("云端设置", onDismiss = onClose, subtitle = "只有主 POS / 单机连云端；副 POS 经主 POS 上传", footer = {
         PosButton("测试连接", { result = "连接中…"; actions.test(draft) { result = it } }, size = BtnSize.Large, enabled = draft.configured)
         PosButton("取消", onClose, size = BtnSize.Large)
@@ -343,6 +344,7 @@ private fun CloudSettingsDialog(current: CloudSettings, actions: CloudActions, o
             PosTextField(url, { url = it; result = null }, "服务端地址", hint = "服务端根地址，例如 https://api.example.com（不带 /biz）", autoFocus = true)
             PosTextField(store, { store = it; result = null }, "服务端门店号", hint = "后台门店的 storeNo")
             PosTextField(token, { token = it; result = null }, "终端令牌", password = true, hint = "后台签发给本机的令牌，可留空（内网测试）")
+            PosTextField(buyer, { buyer = it; result = null }, "默认买家号", hint = "员工下单要买家号（散客方案待后端定），联调先填一个")
             result?.let { Text(it, style = Pos.type.body, color = if (it.startsWith("连接成功")) Pos.colors.primary else Pos.colors.warning) }
         }
     }

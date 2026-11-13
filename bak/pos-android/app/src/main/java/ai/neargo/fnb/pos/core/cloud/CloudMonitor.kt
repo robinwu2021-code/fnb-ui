@@ -17,7 +17,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 
 /** 本机保存的云端连接设置（每台设备一份；门店号 = 服务端 storeNo） */
-@Serializable data class CloudSettings(val baseUrl: String = "", val storeNo: String = "", val token: String = "") {
+@Serializable data class CloudSettings(val baseUrl: String = "", val storeNo: String = "", val token: String = "",
+    /** 员工下单要买家号（散客方案待后端定）：联调先用一个默认买家号 */
+    val buyerNo: String = "") {
     val configured get() = baseUrl.isNotBlank() && storeNo.isNotBlank()
 }
 
@@ -135,7 +137,7 @@ class CloudMonitor(
         runCatching { probe(settings) }.onFailure { if (it is CancellationException) throw it }
 
     fun configure(settings: CloudSettings) {
-        val clean = settings.copy(baseUrl = settings.baseUrl.trim().trimEnd('/'), storeNo = settings.storeNo.trim(), token = settings.token.trim())
+        val clean = settings.copy(baseUrl = settings.baseUrl.trim().trimEnd('/'), storeNo = settings.storeNo.trim(), token = settings.token.trim(), buyerNo = settings.buyerNo.trim())
         settingsStore.save(clean)
         // 新设置从现在起算离线时长（不把设置前的时间算进去）
         val at = clock().also(settingsStore::saveLastOnlineAt)
@@ -184,7 +186,7 @@ class CloudMonitor(
         val st = s.value.settings
         val id = storeId() ?: throw IllegalStateException("未进入门店")
         val refs = refsFor("$id@${st.storeNo}")
-        val r = CloudSync(api, refs, events, clock, inventory = retailStore()).run(id, st.storeNo) { done, total ->
+        val r = CloudSync(api, refs, events, clock, inventory = retailStore(), buyerNo = s.value.settings.buyerNo).run(id, st.storeNo) { done, total ->
             if (total > 0) s.update { it.copy(badge = CloudBadge.Syncing(done, total)) }
         }
         s.update { cur ->

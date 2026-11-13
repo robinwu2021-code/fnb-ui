@@ -102,7 +102,7 @@ class AppContainer(context: Context) {
     /** 云端（服务端 POS 合同）：只有主 POS / 单机上传；地址与门店号在同步中心设置 */
     private val cloudSettings = ai.neargo.fnb.pos.core.cloud.PrefsCloudSettings(context.applicationContext)
     private val cloudHttp = ai.neargo.fnb.pos.core.cloud.CloudHttp({
-        val st = cloudSettings.load(); ai.neargo.fnb.pos.core.cloud.CloudConfig(st.baseUrl, st.storeNo, st.token, workspace::staffIdOnDuty)
+        val st = cloudSettings.load(); ai.neargo.fnb.pos.core.cloud.CloudConfig(st.baseUrl, st.storeNo, st.token, workspace::staffIdOnDuty, st.buyerNo)
     })
     val cloudApi = ai.neargo.fnb.pos.core.cloud.HttpCloudApi(cloudHttp)
     val cloud = ai.neargo.fnb.pos.core.cloud.CloudMonitor(

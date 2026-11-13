@@ -82,7 +82,9 @@ class CloudSyncTest {
         } }
         override suspend fun quote(storeNo: String, key: String, cartNo: String, version: Long) = run { net(); once(key) { CloudQuote("Q$cartNo", "D$version") } }
         override suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String) = run { net(); CloudQuote(quoteNo, confirmationDigest) }
-        override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String) = run { net(); once(key) {
+        var buyers = mutableListOf<String?>()
+        override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) = run { net(); once(key) {
+            buyers += buyerNo
             val lines = carts.getValue(cartNo).second.values.toList(); batches += cartNo to lines; calls += "batch:${lines.size}"
             CloudBatch("B${++seq}", status = "ACCEPTED", amountMinor = 1, version = 1)
         } }
@@ -107,7 +109,7 @@ class CloudSyncTest {
             val st = settlements.getValue(settlementNo); val total = offlineRecordNos.sumOf { records.getValue(it).amountMinor }
             if (total < st.dueMinor) throw CloudException.of(20024, "收款还差")
             calls += "finalize:$settlementNo"
-            return st.copy(status = "SETTLED", receivedMinor = total, changeMinor = total - st.dueMinor, receiptNo = "RC1", checkStatus = "CLOSED", tableReleased = true).also { settlements[settlementNo] = it }
+            return st.copy(status = "SETTLED", receivedMinor = total, changeMinor = total - st.dueMinor, receiptNo = "RC1", checkStatus = "CLOSED", tableReleased = !holdTable).also { settlements[settlementNo] = it }
         }
         override suspend fun counterSettlement(settlementNo: String) = run { net(); settlements.getValue(settlementNo).let { if (it.status == "FROZEN") it.copy(dueMinor = due) else it } }
         // —— 进销存 ——
@@ -124,6 +126,26 @@ class CloudSyncTest {
         override suspend fun fillCount(no: String, lines: List<CloudCountLine>) { net(); lines.forEach { counts.getValue(no)[it.itemId] = it.countedQty } }
         override suspend fun postCount(no: String) { net(); if (no !in posted) posted += no }
         override suspend fun adjustInventory(itemId: String, countedQty: Int, reasonCode: String) { net(); adjusts += itemId to countedQty }
+        // —— 结账后放台（R4） ——
+        var holdTable = false                      // finalize 返回 tableReleased=false
+        var releaseFailOnce = false
+        val taskSteps = mutableListOf<String>(); val released = mutableListOf<String>()
+        val taskState = mutableMapOf<String, Pair<String, Long>>()    // taskNo → 状态、版本
+        override suspend fun stations(storeNo: String) = run { net(); listOf(CloudStation("ST1", "热厨")) }
+        override suspend fun checkBatchNos(storeNo: String, checkNo: String) = run { net(); batches.map { it.first }.map { "B$it" } }
+        override suspend fun kitchenTasks(storeNo: String, stationNo: String) = run { net(); batches.indices.map { i ->
+            val no = "TK$i"; val (st, v) = taskState.getOrPut(no) { "QUEUED" to 0L }; CloudTask(no, "B${batches[i].first}", st, v, 1.0) }.filter { taskState.getValue(it.taskNo).first != "SERVED" } }
+        override suspend fun advanceTask(key: String, taskNo: String, action: String, version: Long, qty: Double) { net()
+            val (st, v) = taskState.getValue(taskNo)
+            if (v != version) throw CloudException.of(10409, "任务版本已变化")
+            val next = mapOf("start" to ("QUEUED" to "MAKING"), "ready" to ("MAKING" to "READY"), "serve" to ("READY" to "SERVED")).getValue(action)
+            if (st != next.first) throw CloudException.of(10409, "状态不对"); taskState[taskNo] = next.second to v + 1; taskSteps += "$taskNo:$action"
+        }
+        override suspend fun releaseService(key: String, checkNo: String, version: Long, reason: String) { net()
+            if (releaseFailOnce) { releaseFailOnce = false; throw CloudException.of(10409, "有菜没上齐") }
+            if (taskState.values.any { it.first != "SERVED" }) throw CloudException.of(10409, "有菜没上齐")
+            released += checkNo
+        }
         override suspend fun cancelCounterSettlement(settlementNo: String) = run { net(); calls += "cancel:$settlementNo"; settlements.getValue(settlementNo).copy(status = "CANCELLED").also { settlements[settlementNo] = it } }
     }
 
@@ -146,7 +168,7 @@ class CloudSyncTest {
         w.openTable("H01", 2).getOrThrow()
         w.changeTable("H01", "H02").getOrThrow()
         val server = FakeServer(); val refs = MemoryCloudRefs(); val src = Source(disk)
-        val sync = CloudSync(server, refs, src)
+        val sync = CloudSync(server, refs, src, buyerNo = "U1")
         val r = sync.run("s-coast", "NS002")
         assertEquals(2, r.uploaded); assertNull(r.stoppedBy)
         assertEquals(listOf("tables", "open:t-1", "transfer:C1->t-2"), server.calls)
@@ -168,7 +190,7 @@ class CloudSyncTest {
         w.changeQty("H01", w.current.value!!.orders.getValue("H01").lines.first().uid, 1)   // 草稿改数量：只在本机
         w.sendToKitchen("H01", true)
         val server = FakeServer(catalogItems = catalogOf(products)); val refs = MemoryCloudRefs(); val src = Source(disk)
-        val r = CloudSync(server, refs, src).run("s-coast", "NS002")
+        val r = CloudSync(server, refs, src, buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(2, r.uploaded)                     // 开台 + 送厨
         assertEquals(3, r.local)                        // 两次加菜 + 改数量
         assertEquals(0, r.waiting); assertEquals(0, r.issues)
@@ -196,9 +218,9 @@ class CloudSyncTest {
             }
         }
         val refs = MemoryCloudRefs(); val src = Source(disk)
-        val r1 = CloudSync(server, refs, src).run("s-coast", "NS002")
+        val r1 = CloudSync(server, refs, src, buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(CloudErrorKind.Network, r1.stoppedBy?.kind); assertEquals(1, r1.uploaded)   // 开台已传，送厨停在报价
-        val r2 = CloudSync(server, refs, src).run("s-coast", "NS002")
+        val r2 = CloudSync(server, refs, src, buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(1, r2.uploaded); assertNull(r2.stoppedBy)
         assertEquals(1, fake.carts.size); assertEquals(1, fake.batches.size)   // 购物车、批次都只建一次
     }
@@ -212,7 +234,7 @@ class CloudSyncTest {
         w.changeTable("H01", "H03").getOrThrow()
         w.openTable("T01", 4).getOrThrow()
         val server = FakeServer(catalogItems = emptyList()); val refs = MemoryCloudRefs()
-        val r = CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        val r = CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(2, r.uploaded)                     // H01 开台、T01 开台
         assertEquals("KitchenSubmitted", refs.issues().single().type)
         assertTrue(refs.issues().single().message.contains("服务端菜单里没有"))
@@ -223,10 +245,10 @@ class CloudSyncTest {
         val (w, disk) = shop(backgroundScope)
         w.openTable("H01", 2).getOrThrow()
         val server = FakeServer().apply { down = true }; val refs = MemoryCloudRefs(); val src = Source(disk)
-        val r1 = CloudSync(server, refs, src).run("s-coast", "NS002")
+        val r1 = CloudSync(server, refs, src, buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(CloudErrorKind.Network, r1.stoppedBy?.kind); assertTrue(src.acked.isEmpty())
         server.down = false
-        assertEquals(1, CloudSync(server, refs, src).run("s-coast", "NS002").uploaded)
+        assertEquals(1, CloudSync(server, refs, src, buyerNo = "U1").run("s-coast", "NS002").uploaded)
         assertEquals(1, server.checks.size)
     }
 
@@ -234,7 +256,7 @@ class CloudSyncTest {
         val (w, disk) = shop(backgroundScope)
         w.openTable("H01", 2).getOrThrow(); w.changeTable("H01", "H02").getOrThrow()
         val server = FakeServer().apply { conflictOnce = true }
-        val r = CloudSync(server, MemoryCloudRefs(), Source(disk)).run("s-coast", "NS002")
+        val r = CloudSync(server, MemoryCloudRefs(), Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(2, r.uploaded); assertEquals(0, r.issues)
         assertEquals(listOf("t-2"), server.checks.getValue("C1").tableNos)
     }
@@ -246,7 +268,7 @@ class CloudSyncTest {
         w.changeTable("H01", "H02").getOrThrow()
         val server = FakeServer().apply { tables["t-1"] = tables.getValue("t-1").copy(turnoverState = "IN_USE") }
         val refs = MemoryCloudRefs()
-        val r = CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        val r = CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(1, r.uploaded); assertEquals(1, r.issues)
         assertTrue(server.calls.none { it.startsWith("transfer") })
         assertEquals("TableOpened", refs.issues().single().type)
@@ -258,7 +280,7 @@ class CloudSyncTest {
         w.setOrderNote("H01", "靠窗")                    // 只在本机：不挡后面的换桌
         w.changeTable("H01", "H02").getOrThrow()
         w.finishCleaning("H01").getOrThrow()               // 换桌后原桌已是待清台；清台完成：只在本机
-        val r = CloudSync(FakeServer(), MemoryCloudRefs(), Source(disk)).run("s-coast", "NS002")
+        val r = CloudSync(FakeServer(), MemoryCloudRefs(), Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(2, r.uploaded); assertEquals(2, r.local); assertEquals(0, r.waiting)
     }
 
@@ -266,7 +288,7 @@ class CloudSyncTest {
         val (w, disk) = shop(backgroundScope)
         w.closeDay("店长").getOrThrow()
         val server = FakeServer()
-        CloudSync(server, MemoryCloudRefs(), Source(disk), currency = "CNY").run("s-coast", "NS002")
+        CloudSync(server, MemoryCloudRefs(), Source(disk), currency = "CNY", buyerNo = "U1").run("s-coast", "NS002")
         assertTrue(server.calls.any { it.startsWith("closePreview:") && it.endsWith(":CNY") }); assertTrue(server.calls.contains("closeSign:D1@h1"))
     }
 
@@ -279,7 +301,7 @@ class CloudSyncTest {
         w.setRetailPrice("cola", 380).getOrThrow()                                  // 改价：配置类
         w.holdCart(listOf(ai.neargo.fnb.pos.core.model.CartLine(1, "cola", 1)), null, "稍后").getOrThrow()   // 挂单：只在本机
         val src = Source(disk)
-        val r = CloudSync(FakeServer(), MemoryCloudRefs(), src).run("s", "NS")
+        val r = CloudSync(FakeServer(), MemoryCloudRefs(), src, buyerNo = "U1").run("s", "NS")
         assertEquals(0, r.uploaded); assertEquals(2, r.waiting)                  // 两张销售单各自等后端接口
         assertTrue(r.local >= 2)                                                  // 改价（及其价签）+ 挂单直接处理
         assertEquals(disk.commands.count { it.type == "RetailSaleCompleted" }, disk.commands.size - src.acked.size)
@@ -301,7 +323,7 @@ class CloudSyncTest {
         val due = paidTable(w, "现金", 100_00)
         val server = FakeServer(catalogItems = catalogOf(products)).apply { this.due = due }
         val refs = MemoryCloudRefs()
-        val r = CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        val r = CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(0, r.issues); assertNull(r.stoppedBy)
         assertTrue(server.calls.contains("record:CASH:10000:CS4") || server.calls.any { it.startsWith("record:CASH:10000:CS") })   // 现金按实收面额记
         assertTrue(server.calls.any { it.startsWith("finalize:") })
@@ -316,14 +338,14 @@ class CloudSyncTest {
         val due = paidTable(w, "银行卡")
         val server = FakeServer(catalogItems = catalogOf(products)).apply { this.due = due - 300 }   // 服务端少 3 元（服务费没绑）
         val refs = MemoryCloudRefs()
-        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals("PaymentRecorded", refs.issues().single().type)
         assertTrue(refs.issues().single().message.contains("刷卡多收"))
         assertTrue(server.calls.none { it.startsWith("record:") })                     // 先比金额，不先记钱
         // 后台核对后重试：复用同一张结算单，不重建
         server.due = due
         refs.put(CloudRef("attempt", refs.issues().single().eventId, "1")); refs.resolve(refs.issues().single().eventId)
-        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(1, server.settlements.size); assertTrue(server.calls.any { it.startsWith("finalize:") })
     }
 
@@ -331,7 +353,7 @@ class CloudSyncTest {
         val (w, disk) = shop(backgroundScope)
         paidTable(w, "扫码")
         val refs = MemoryCloudRefs()
-        val r = CloudSync(FakeServer(catalogItems = catalogOf(w.current.value!!.products)), refs, Source(disk)).run("s-coast", "NS002")
+        val r = CloudSync(FakeServer(catalogItems = catalogOf(w.current.value!!.products)), refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(0, r.issues); assertTrue(r.waiting >= 1)
     }
 
@@ -340,12 +362,12 @@ class CloudSyncTest {
         val due = paidTable(w, "现金")
         val server = FakeServer(catalogItems = catalogOf(w.current.value!!.products)).apply { this.due = due; changedOnce = true }
         val refs = MemoryCloudRefs()
-        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(20027, refs.issues().single().code)
         assertTrue(server.calls.any { it.startsWith("cancel:") })
         val ev = refs.issues().single().eventId
         refs.put(CloudRef("attempt", ev, "1")); refs.resolve(ev)
-        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(2, server.settlements.size)                                       // 撤销后重建了新结算单
         assertTrue(server.calls.any { it.startsWith("finalize:") })
     }
@@ -368,9 +390,9 @@ class CloudSyncTest {
         w.advanceStockDoc(no).getOrThrow()
         val server = FakeServer().apply { invItems = itemsOf(w); failPostOnce = true }
         val refs = MemoryCloudRefs(); val src = Source(disk)
-        val r1 = CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        val r1 = CloudSync(server, refs, src, inventory = true, buyerNo = "U1").run("s", "NS")
         assertEquals(CloudErrorKind.Network, r1.stoppedBy?.kind); assertEquals(2, r1.local)      // 建单、改单只在本机
-        CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        CloudSync(server, refs, src, inventory = true, buyerNo = "U1").run("s", "NS")
         assertEquals(1, server.inbounds.size)                                                     // 过账失败重试：不重复建单
         val body = server.inbounds.values.single()
         assertEquals("POS $no", body.remark); assertEquals("供应商A", body.supplierName)
@@ -385,7 +407,7 @@ class CloudSyncTest {
         w.setStockDocLines(no, listOf(line("milk", 1, ai.neargo.fnb.pos.core.model.LossReason.Expired), line("chips", 2, ai.neargo.fnb.pos.core.model.LossReason.Damaged))).getOrThrow()
         w.advanceStockDoc(no).getOrThrow()
         val server = FakeServer().apply { invItems = itemsOf(w) }
-        CloudSync(server, MemoryCloudRefs(), Source(disk), inventory = true).run("s", "NS")
+        CloudSync(server, MemoryCloudRefs(), Source(disk), inventory = true, buyerNo = "U1").run("s", "NS")
         assertEquals(setOf("SCRAP/EXPIRED/ITM-milk", "SCRAP/BROKEN/ITM-chips"), server.outbounds.values.map { "${it.purpose}/${it.reasonCode}/${it.lines.single().itemId}" }.toSet())
         assertEquals(2, server.posted.size)
     }
@@ -397,10 +419,10 @@ class CloudSyncTest {
         w.advanceStockDoc(no).getOrThrow()                        // 提交待审批：只在本机
         val server = FakeServer().apply { invItems = itemsOf(w) }
         val refs = MemoryCloudRefs(); val src = Source(disk)
-        CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        CloudSync(server, refs, src, inventory = true, buyerNo = "U1").run("s", "NS")
         assertTrue(server.counts.isEmpty())
         w.advanceStockDoc(no).getOrThrow()                        // 审批过账
-        CloudSync(server, refs, src, inventory = true).run("s", "NS")
+        CloudSync(server, refs, src, inventory = true, buyerNo = "U1").run("s", "NS")
         assertEquals(mapOf("ITM-cola" to 7), server.counts.values.single()); assertEquals(1, server.posted.size)
     }
 
@@ -410,7 +432,7 @@ class CloudSyncTest {
         val b = w.newStockDoc(ai.neargo.fnb.pos.core.model.StockDocKind.Receive).getOrThrow(); w.setStockDocLines(b, listOf(line("cola", 6))).getOrThrow(); w.advanceStockDoc(b).getOrThrow()
         val server = FakeServer().apply { invItems = itemsOf(w) - "6954767423579" }   // 可乐在服务端没建账
         val refs = MemoryCloudRefs()
-        val r = CloudSync(server, refs, Source(disk), inventory = true).run("s", "NS")
+        val r = CloudSync(server, refs, Source(disk), inventory = true, buyerNo = "U1").run("s", "NS")
         assertTrue(r.waiting >= 1)                                                     // 称重：等后端支持小数
         assertTrue(refs.issues().single().message.contains("6954767423579"))           // 条码对不上：需处理
         assertTrue(server.inbounds.isEmpty())
@@ -420,12 +442,58 @@ class CloudSyncTest {
         val (w, disk) = retailShop(backgroundScope)
         w.adjustStock("cola", null, 30, "盘点").getOrThrow()
         val server = FakeServer().apply { invItems = itemsOf(w) }
-        CloudSync(server, MemoryCloudRefs(), Source(disk), inventory = true).run("s", "NS")
+        CloudSync(server, MemoryCloudRefs(), Source(disk), inventory = true, buyerNo = "U1").run("s", "NS")
         assertEquals(listOf("ITM-cola" to 30), server.adjusts)
         val (d, disk2) = shop(backgroundScope)                                       // 餐饮门店：只在本机
         d.adjustStock(d.current.value!!.products.first().id, null, 9, "沽清").getOrThrow()
-        val r = CloudSync(FakeServer(), MemoryCloudRefs(), Source(disk2)).run("s-coast", "NS002")
+        val r = CloudSync(FakeServer(), MemoryCloudRefs(), Source(disk2), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(1, r.local); assertEquals(0, r.uploaded)
+    }
+
+    @Test fun missingBuyerNoIsNeedsActionWithClearMessageAndNoCart() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val products = w.current.value!!.products
+        w.openTable("H01", 2).getOrThrow()
+        w.addDish("H01", products.first { it.skus.isEmpty() && (it.stock ?: 1) > 0 }, null, 1)
+        w.sendToKitchen("H01", true)
+        val server = FakeServer(catalogItems = catalogOf(products)); val refs = MemoryCloudRefs()
+        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")                   // 没填买家号
+        assertTrue(refs.issues().single().message.contains("买家号")); assertTrue(server.carts.isEmpty())   // 还没建购物车就拦下
+        assertEquals(listOf("U1"), run { CloudSync(server, refs, Source(disk), buyerNo = "U1").also { refs.resolve(refs.issues().single().eventId) }.run("s-coast", "NS002"); server.buyers })
+    }
+
+    @Test fun heldTableIsReleasedByServingTasksThenReleaseService() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val due = paidTable(w, "现金")
+        val server = FakeServer(catalogItems = catalogOf(w.current.value!!.products)).apply { this.due = due; holdTable = true }
+        val refs = MemoryCloudRefs()
+        val r = CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
+        assertEquals(0, r.issues)
+        assertEquals(listOf("TK0:start", "TK0:ready", "TK0:serve"), server.taskSteps)            // 先把任务推到已上菜
+        assertEquals(1, server.released.size)                                                       // 再放台
+        val ev = disk.commands.single { it.type == "PaymentRecorded" }.commandId
+        assertNotNull(refs.get("released", ev))
+    }
+
+    @Test fun releaseFailureRetriesOnlyTheReleaseNotTheMoney() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val due = paidTable(w, "现金")
+        val server = FakeServer(catalogItems = catalogOf(w.current.value!!.products)).apply { this.due = due; holdTable = true; releaseFailOnce = true }
+        val refs = MemoryCloudRefs()
+        CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
+        val issue = refs.issues().single(); assertEquals("PaymentRecorded", issue.type)
+        refs.put(CloudRef("attempt", issue.eventId, "1")); refs.resolve(issue.eventId)
+        CloudSync(server, refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
+        assertEquals(1, server.records.size); assertEquals(1, server.settlements.size)              // 钱只记一次、结算单只建一张
+        assertEquals(1, server.released.size); assertEquals(0, refs.issues().size)
+    }
+
+    @Test fun releasedAtFinalizeSkipsTaskSteps() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val due = paidTable(w, "银行卡")
+        val server = FakeServer(catalogItems = catalogOf(w.current.value!!.products)).apply { this.due = due }   // 服务端直接放台
+        CloudSync(server, MemoryCloudRefs(), Source(disk), buyerNo = "U1").run("s-coast", "NS002")
+        assertTrue(server.taskSteps.isEmpty() && server.released.isEmpty())
     }
 
     @Test fun healthDebounce() {
