@@ -46,6 +46,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -258,7 +261,8 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
     val c = Pos.colors
     val cs = state.cloud
     var editing by remember { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 内容比屏幕高时（设置、连通、价差、需处理都显示）整页滚动；表格给固定上限高度，不被上面的行挤没
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val statusText = when (val b = cs.badge) {
             CloudBadge.NotConfigured -> "未设置（事件仅保存在本机，不会被标为已同步）"
             CloudBadge.ViaHost -> "副 POS 不直连云端，由主 POS 统一上传"
@@ -277,6 +281,8 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
             is ai.neargo.fnb.pos.core.cloud.CloudLimit.Warn -> KeyValue("离线时限", lim.message, valueColor = c.warning)
             else -> {}
         }
+        if (cs.closeReviews.isNotEmpty()) KeyValue("日结待复核", cs.closeReviews.takeLast(3).joinToString("；") { "${it.businessDate} · ${it.closeNo}" } +
+            "（已在云端预览，请店长用另一个账号在后台签核；签核要等营业日结束，预览后又有交易需重新预览）", valueColor = c.warning)
         if (cs.priceDiffs.isNotEmpty()) KeyValue("价差", cs.priceDiffs.takeLast(3).joinToString("；") { d ->
             "${d.batchId.takeLast(8)} 服务端 ${ai.neargo.fnb.pos.core.model.yuan(d.remoteMinor)} / 本机 ${ai.neargo.fnb.pos.core.model.yuan(d.localMinor)}"
         } + (if (cs.priceDiffs.size > 3) " 等 ${cs.priceDiffs.size} 批" else "") + "（联网结账以服务端为准）", valueColor = c.warning)
@@ -294,7 +300,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
         if (cs.issues.isNotEmpty()) {
             Text("需处理（服务端拒绝）：排除原因后点「重试」；已在后台处理则点「跳过」。处理前该订单后续事件暂停上传", style = Pos.type.strong, color = c.danger, modifier = Modifier.padding(top = 6.dp))
             val cols = listOf(Col("事件", 0.9f), Col("对象", 1.2f), Col("原因", 2.6f), Col("时间", 1f), Col("", 1.4f, end = true))
-            DataTable(cols, Modifier.weight(1f), empty = "") {
+            DataTable(cols, Modifier.heightIn(max = 320.dp), empty = "") {
                 items(cs.issues.size) { i ->
                     val it = cs.issues[i]
                     TableRow(listOf(
@@ -311,7 +317,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
                 PosButton("模拟补发", onSync, variant = BtnVariant.Primary, size = BtnSize.Small, enabled = state.pending > 0)
             }
             val cols = listOf(Col("类型", 0.7f), Col("内容", 2.4f), Col("产生时间", 1.2f), Col("状态", 1.1f), Col("完成时间", 1.2f, end = true))
-            DataTable(cols, Modifier.weight(1f), empty = "暂无离线操作") {
+            DataTable(cols, Modifier.heightIn(max = 240.dp), empty = "暂无离线操作") {
                 items(state.items.size) { i ->
                     val it = state.items[i]
                     TableRow(listOf(
@@ -332,8 +338,9 @@ private fun CloudSettingsDialog(current: CloudSettings, actions: CloudActions, o
     var url by remember { mutableStateOf(current.baseUrl) }
     var store by remember { mutableStateOf(current.storeNo) }
     var token by remember { mutableStateOf(current.token) }
+    var buyer by remember { mutableStateOf(current.buyerNo) }
     var result by remember { mutableStateOf<String?>(null) }
-    val draft = CloudSettings(url, store, token)
+    val draft = CloudSettings(url, store, token, buyer)
     PosDialog("云端设置", onDismiss = onClose, subtitle = "只有主 POS / 单机连云端；副 POS 经主 POS 上传", footer = {
         PosButton("测试连接", { result = "连接中…"; actions.test(draft) { result = it } }, size = BtnSize.Large, enabled = draft.configured)
         PosButton("取消", onClose, size = BtnSize.Large)
@@ -343,6 +350,7 @@ private fun CloudSettingsDialog(current: CloudSettings, actions: CloudActions, o
             PosTextField(url, { url = it; result = null }, "服务端地址", hint = "服务端根地址，例如 https://api.example.com（不带 /biz）", autoFocus = true)
             PosTextField(store, { store = it; result = null }, "服务端门店号", hint = "后台门店的 storeNo")
             PosTextField(token, { token = it; result = null }, "终端令牌", password = true, hint = "后台签发给本机的令牌，可留空（内网测试）")
+            PosTextField(buyer, { buyer = it; result = null }, "默认买家号", hint = "员工下单要买家号（散客方案待后端定），联调先填一个")
             result?.let { Text(it, style = Pos.type.body, color = if (it.startsWith("连接成功")) Pos.colors.primary else Pos.colors.warning) }
         }
     }

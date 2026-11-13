@@ -55,9 +55,9 @@ internal class SqliteCloudRefs(private val database: () -> SQLiteDatabase, priva
 /** 云端连接设置：每台设备一份（SharedPreferences） */
 internal class PrefsCloudSettings(context: Context) : CloudSettingsStore {
     private val sp = context.applicationContext.getSharedPreferences("cloud", Context.MODE_PRIVATE)
-    override fun load() = CloudSettings(sp.getString("baseUrl", "").orEmpty(), sp.getString("storeNo", "").orEmpty(), sp.getString("token", "").orEmpty())
+    override fun load() = CloudSettings(sp.getString("baseUrl", "").orEmpty(), sp.getString("storeNo", "").orEmpty(), sp.getString("token", "").orEmpty(), sp.getString("buyerNo", "").orEmpty())
     override fun save(settings: CloudSettings) {
-        sp.edit().putString("baseUrl", settings.baseUrl).putString("storeNo", settings.storeNo).putString("token", settings.token).apply()
+        sp.edit().putString("baseUrl", settings.baseUrl).putString("storeNo", settings.storeNo).putString("token", settings.token).putString("buyerNo", settings.buyerNo).apply()
     }
     override fun lastOnlineAt() = sp.getLong("lastOnlineAt", 0)
     override fun saveLastOnlineAt(at: Long) { sp.edit().putLong("lastOnlineAt", at).apply() }

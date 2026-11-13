@@ -102,7 +102,7 @@ class AppContainer(context: Context) {
     /** 云端（服务端 POS 合同）：只有主 POS / 单机上传；地址与门店号在同步中心设置 */
     private val cloudSettings = ai.neargo.fnb.pos.core.cloud.PrefsCloudSettings(context.applicationContext)
     private val cloudHttp = ai.neargo.fnb.pos.core.cloud.CloudHttp({
-        val st = cloudSettings.load(); ai.neargo.fnb.pos.core.cloud.CloudConfig(st.baseUrl, st.storeNo, st.token, workspace::staffIdOnDuty)
+        val st = cloudSettings.load(); ai.neargo.fnb.pos.core.cloud.CloudConfig(st.baseUrl, st.storeNo, st.token, workspace::staffIdOnDuty, st.buyerNo)
     })
     val cloudApi = ai.neargo.fnb.pos.core.cloud.HttpCloudApi(cloudHttp)
     val cloud = ai.neargo.fnb.pos.core.cloud.CloudMonitor(
@@ -117,6 +117,7 @@ class AppContainer(context: Context) {
         uploader = workspace.lanState.map { it.role != LanRole.Secondary },
         pending = syncStatus.stats.map { it.unackedEvents },
         afterRound = { syncStatus.refresh() },
+        retailStore = { workspace.current.value?.let { ai.neargo.fnb.pos.core.model.BizProfile.of(it.biz).retail } == true },
     )
     /** 门店推送：收到通知只当「该去拉了」，叫醒同步循环（第一批没有需要拉取的对象，后续批次接订单 / 支付 / 菜单） */
     val cloudPush = ai.neargo.fnb.pos.core.cloud.CloudPush(cloudHttp, ai.neargo.fnb.pos.core.cloud.PrefsPushStore(context.applicationContext),

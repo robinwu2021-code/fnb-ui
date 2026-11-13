@@ -37,7 +37,7 @@ class HttpCloudApiTest {
         val (req, h, body) = seen.single()
         assertEquals("POST /biz/x/food/stores/NS002/checks", req)
         assertEquals("Bearer tok", h["authorization"]); assertEquals("NS002", h["x-store-no"]); assertEquals("S001", h["x-operator"]); assertEquals("ev-1", h["idempotency-key"])
-        assertEquals("""{"tableNos":["t-1"],"partySize":2,"tableVersions":[{"tableNo":"t-1","version":3}]}""", body)   // 不带 storeNo、不带幂等键
+        assertEquals("""{"tableNos":["t-1"],"partySize":2,"tableVersions":[{"tableNo":"t-1","version":3}],"sharingMode":"EXCLUSIVE","seats":[],"payMode":"POSTPAY"}""", body)   // 不带 storeNo、不带幂等键；payMode / sharingMode / seats 是真实后端必填
     }
 
     @Test fun cartLineSendsNumberQtyWithoutNulls() = runBlocking {
@@ -46,22 +46,42 @@ class HttpCloudApiTest {
         assertEquals(5L, v.version)
         val (req, h, body) = seen.single()
         assertEquals("PUT /biz/x/food/carts/CT1/lines/L7", req); assertEquals("ev-2:line:7", h["idempotency-key"])
-        assertEquals("""{"line":{"sourceLineRef":"L7","menuNo":"M1","menuItemNo":"MI1","menuRevisionNo":"R1","goodsNo":"G1","skuNo":"S1","qty":2},"version":4}""", body)
+        assertEquals("""{"line":{"sourceLineRef":"L7","menuNo":"M1","menuItemNo":"MI1","menuRevisionNo":"R1","goodsNo":"G1","skuNo":"S1","qty":2,"selections":[],"bundleChoices":[]},"version":4}""", body)   // selections / bundleChoices 空数组是真实后端必填
     }
 
     @Test fun confirmQuoteHasNoIdempotencyKeyAndBatchIsPostpay() = runBlocking {
         reply = { p -> 200 to if (p.endsWith(":confirm")) """{"code":0,"data":{"quoteNo":"Q1","confirmationDigest":"d2","totals":{}}}""" else """{"code":0,"data":{"batchNo":"B1","status":"ACCEPTED","amountMinor":3800,"version":1}}""" }
         assertEquals("d2", api().confirmQuote("Q1", "CT1", 5, "d1").confirmationDigest)
-        assertEquals(3800L, api().placeBatch("NS002", "ev-2:batch", "CT1", 5, "Q1", "d2").amountMinor)
+        assertEquals(3800L, api().placeBatch("NS002", "ev-2:batch", "CT1", 5, "Q1", "d2", "U1").amountMinor)
         assertNull(seen[0].second["idempotency-key"]); assertEquals("POST /biz/x/food/quotes/Q1:confirm", seen[0].first)
-        assertTrue(seen[1].third.contains("\"payMode\":\"POSTPAY\""))
+        assertTrue(seen[1].third.contains("\"payMode\":\"POSTPAY\"") && seen[1].third.contains("\"buyerNo\":\"U1\""))
+    }
+
+    @Test fun counterSettlementEmptyBodyAndOfflineRecordStrictBody() = runBlocking {
+        reply = { p -> 200 to when {
+            p.endsWith("/counter-settlements") -> """{"code":0,"data":{"settlementNo":"CS1","checkNo":"C1","status":"FROZEN","currency":"CNY","dueMinor":8700,"receivedMinor":null,"items":[],"checkStatus":"OPEN","tableReleased":false}}"""
+            p.endsWith(":finalize") -> """{"code":0,"data":{"settlementNo":"CS1","status":"SETTLED","dueMinor":8700,"receivedMinor":10000,"changeMinor":1300,"receiptNo":"RC1","checkStatus":"CLOSED","tableReleased":true}}"""
+            else -> """{"code":0,"data":{"recordNo":"OR1","amountMinor":10000,"currency":"CNY","method":"CASH","bizNo":"CS1","status":"VALID","history":[]}}"""
+        } }
+        val st = api().createCounterSettlement("ev-9:settle", "C1")
+        assertEquals(8700L, st.dueMinor); assertNull(st.receivedMinor)
+        assertEquals("POST /biz/x/food/checks/C1/counter-settlements", seen[0].first); assertEquals("", seen[0].third); assertEquals("ev-9:settle", seen[0].second["idempotency-key"])
+        val rec = api().recordOffline("ev-9:pay", CloudOfflineRecordBody(10000, "CNY", "CASH", "CS1", "POS H01", "2026-11-13T12:30:00+08:00"))
+        assertEquals("OR1", rec.recordNo)
+        assertEquals("POST /biz/payment/offline-records", seen[1].first)
+        assertEquals("""{"amountMinor":10000,"currency":"CNY","method":"CASH","bizNo":"CS1","note":"POS H01","receivedAt":"2026-11-13T12:30:00+08:00"}""", seen[1].third)
+        val done = api().finalizeCounterSettlement("CS1", listOf("OR1"))
+        assertEquals(1300L, done.changeMinor); assertTrue(done.tableReleased)
+        assertNull(seen[2].second["idempotency-key"]); assertEquals("""{"offlineRecordNos":["OR1"]}""", seen[2].third)
+        val nulls = CloudOfflineRecordBody(500, "CNY", "EXTERNAL_POS")
+        api().recordOffline("k", nulls); assertEquals("""{"amountMinor":500,"currency":"CNY","method":"EXTERNAL_POS"}""", seen[3].third)   // 空字段不发
     }
 
     @Test fun tableListReadsPagedRecordsAndProbe() = runBlocking {
-        reply = { 200 to """{"code":0,"data":{"records":[{"tableNo":"t-1","storeNo":"NS002","name":"H01","capacity":2,"status":"ACTIVE","turnoverState":"IDLE","version":1}],"total":6}}""" }
+        reply = { 200 to """{"code":0,"data":{"records":[{"tableNo":"t-1","storeNo":"NS002","name":"H01","capacity":2,"status":"ACTIVE","turnoverState":"IDLE","version":1}],"total":1}}""" }
         assertEquals("H01", api().tableList("NS002").single().name)
-        assertEquals(6, api().probe("NS002").tables)
-        assertEquals("GET /biz/x/food/stores/NS002/tables?page=1&size=500", seen[0].first)
+        assertEquals(1, api().probe("NS002").tables)
+        assertEquals("GET /biz/x/food/stores/NS002/tables?page=1&size=100", seen[0].first)   // 真实后端分页上限 100
         assertNull(seen[0].second["idempotency-key"])
     }
 
