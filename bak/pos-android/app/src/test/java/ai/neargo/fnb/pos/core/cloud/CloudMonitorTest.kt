@@ -35,6 +35,7 @@ class CloudMonitorTest {
         override suspend fun quote(storeNo: String, key: String, cartNo: String, version: Long) = error("unused")
         override suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String) = error("unused")
         override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) = error("unused")
+        override suspend fun storePolicy(storeNo: String) = error("unused")
         override suspend fun openBusinessDay(key: String, businessDate: String) = error("unused")
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = error("unused")
         override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = error("unused")
@@ -173,5 +174,30 @@ class CloudMonitorTest {
         refs.put(CloudRef("pricediff", "K-1", "16200/17010"))
         val m = monitor(); m.observe(backgroundScope); m.refreshLocal()
         assertEquals(listOf(CloudPriceDiff("K-1", 16200, 17010)), m.state.value.priceDiffs)
+    }
+
+    @Test fun eventsWaitingForBackendAreNotPending() = runTest(UnconfinedTestDispatcher()) {
+        // 预订事件服务端还没接口：留在本机，页头仍是「已全部上传」，另注明等接口的条数
+        events.list.clear()
+        events.list += JournalEvent(1, "ev-r", "reservation:r1", 1, "ReservationCreated", "{}", envelope = "{}")
+        events.list += JournalEvent(2, "ev-r2", "reservation:r1", 2, "ReservationCancelled", "{}", envelope = "{}")
+        pending.value = 2
+        val m = monitor(); m.observe(backgroundScope)
+        m.tick(); m.tick()                                       // 探测上线后回放一轮
+        assertEquals(2, m.state.value.backendWait); assertEquals(0, m.state.value.uploadable)
+        assertEquals(CloudBadge.Online(0, 2), m.state.value.badge)
+        assertEquals(2, events.list.size)                       // 没有被 ack，留在本机
+    }
+
+    @Test fun backendWaitDoesNotTriggerOfflineLimit() = runTest(UnconfinedTestDispatcher()) {
+        val h = 3_600_000L; var now = 1_000 * h
+        val store = Settings(CloudSettings("http://x", "NS002"))
+        events.list.clear(); events.list += JournalEvent(1, "ev-r", "reservation:r1", 1, "ReservationCreated", "{}", envelope = "{}")
+        pending.value = 1
+        val m = CloudMonitor(store, api, { "s-coast" }, { refs }, events, net, up, pending, { now })
+        m.observe(backgroundScope); m.tick(); m.tick()
+        api.fail = CloudException(CloudErrorKind.Network, 0, "断网"); net.value = false
+        now += 100 * h; m.tick()
+        assertEquals(CloudLimit.None, m.state.value.limit); assertNull(m.dayCloseBlock())   // 只有等接口的事件：断网再久也不挡日结
     }
 }

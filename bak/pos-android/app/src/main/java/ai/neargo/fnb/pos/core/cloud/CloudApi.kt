@@ -36,6 +36,8 @@ interface CloudApi {
     suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String): CloudQuote
     /** 员工下单（员工批次只能 POSTPAY） */
     suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String? = null): CloudBatch
+    /** 门店营业策略：时区与切日分钟（营业日 = 本地时间减去切日分钟后的日期）；没有权限或没配策略时返回错误，调用方回退设备时区 */
+    suspend fun storePolicy(storeNo: String): CloudPolicy
     /** 开营业日（幂等：当天已开过就原样返回）；日结预览前固定先开，没开过 preview 返回 10404 */
     suspend fun openBusinessDay(key: String, businessDate: String)
     suspend fun closePreview(key: String, businessDate: String, currency: String): CloudClose
@@ -126,6 +128,7 @@ data class CloudProbe(val storeNo: String, val tables: Int)
 @Serializable data class CloudCountLine(val itemId: String, val countedQty: Int, val reasonCode: String)
 @Serializable data class CloudStation(val configNo: String, val name: String = "", val enabled: Boolean = true)
 @Serializable data class CloudTask(val taskNo: String, val batchNo: String, val status: String = "", val version: Long = 0, val qty: Double = 0.0)
+@Serializable data class CloudPolicy(val timezone: String = "", val cutoverMinute: Int = 0)
 @Serializable data class CloudClose(val closeNo: String, val status: String = "", val snapshotHash: String = "", val version: Long = 0)
 
 /** 服务端错误分类：决定同步怎么处理（重读、交人工、重试） */
@@ -242,6 +245,8 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.send("POST", "$FOOD/quotes/${enc(quoteNo)}:confirm", null, ConfirmBody(cartNo, version, confirmationDigest), ConfirmBody.serializer(), CloudQuote.serializer())
     override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) =
         http.send("POST", "${s(storeNo)}/batches", key, BatchBody(cartNo, version, quoteNo, confirmationDigest, buyerNo = buyerNo), BatchBody.serializer(), CloudBatch.serializer())
+    override suspend fun storePolicy(storeNo: String) =
+        http.get("${s(storeNo)}/policy", mapOf("at" to java.time.Instant.now().toString()), CloudPolicy.serializer())
     override suspend fun openBusinessDay(key: String, businessDate: String) {
         http.send("POST", "$FOOD/business-days/${enc(businessDate)}:open", key, EmptyBody(), EmptyBody.serializer(), kotlinx.serialization.json.JsonElement.serializer().nullable)
     }

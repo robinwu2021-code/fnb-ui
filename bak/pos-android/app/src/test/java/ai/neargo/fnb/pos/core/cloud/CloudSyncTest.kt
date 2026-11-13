@@ -88,6 +88,8 @@ class CloudSyncTest {
             val lines = carts.getValue(cartNo).second.values.toList(); batches += cartNo to lines; calls += "batch:${lines.size}"
             CloudBatch("B${++seq}", status = "ACCEPTED", amountMinor = 1, version = 1)
         } }
+        var policy: CloudPolicy? = null
+        override suspend fun storePolicy(storeNo: String): CloudPolicy { net(); return policy ?: throw CloudException.of(10404, "未配置营业策略") }
         override suspend fun openBusinessDay(key: String, businessDate: String) { net(); calls += "openDay:$businessDate" }
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = run { net(); calls += "closePreview:$businessDate:$currency"
             CloudClose("D1", "REVIEW", snapshotHash = "h1", version = 3) }
@@ -273,6 +275,7 @@ class CloudSyncTest {
         assertEquals(1, r.uploaded); assertEquals(1, r.issues)
         assertTrue(server.calls.none { it.startsWith("transfer") })
         assertEquals("TableOpened", refs.issues().single().type)
+        assertEquals("桌 H01", refs.issues().single().label)                     // 需处理里显示桌号，不是内部键
     }
 
     @Test fun localOnlyEventsDoNotBlockTheirOrder() = runTest(UnconfinedTestDispatcher()) {
@@ -361,6 +364,7 @@ class CloudSyncTest {
         val refs = MemoryCloudRefs()
         val r = CloudSync(FakeServer(catalogItems = catalogOf(w.current.value!!.products)), refs, Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertEquals(0, r.issues); assertTrue(r.waiting >= 1)
+        assertEquals(r.waiting, r.backendWait)                    // 扫码收款等服务端接口：计入「等后端」，不算待上传
     }
 
     @Test fun checkChangedCancelsSettlementSoRetryRebuilds() = runTest(UnconfinedTestDispatcher()) {
@@ -500,6 +504,22 @@ class CloudSyncTest {
         val server = FakeServer(catalogItems = catalogOf(w.current.value!!.products)).apply { this.due = due }   // 服务端直接放台
         CloudSync(server, MemoryCloudRefs(), Source(disk), buyerNo = "U1").run("s-coast", "NS002")
         assertTrue(server.taskSteps.isEmpty() && server.released.isEmpty())
+    }
+
+    @Test fun businessDateFollowsStorePolicyNotDeviceZone() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        w.closeDay("店长").getOrThrow()                  // 时钟固定 2027-01-15T08:00Z
+        val server = FakeServer().apply { policy = CloudPolicy("Asia/Shanghai", 1200) }   // 门店 16:00，切日点 20:00 → 属于前一天
+        CloudSync(server, MemoryCloudRefs(), Source(disk), zone = java.time.ZoneId.of("UTC"), buyerNo = "U1").run("s-coast", "NS002")
+        assertTrue(server.calls.contains("openDay:2027-01-14")); assertTrue(server.calls.any { it.startsWith("closePreview:2027-01-14") })
+    }
+
+    @Test fun businessDateFallsBackToDeviceZoneWithoutPolicy() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        w.closeDay("店长").getOrThrow()
+        val server = FakeServer()                          // 读不到策略
+        val r = CloudSync(server, MemoryCloudRefs(), Source(disk), zone = java.time.ZoneId.of("UTC"), buyerNo = "U1").run("s-coast", "NS002")
+        assertEquals(1, r.uploaded); assertTrue(server.calls.contains("openDay:2027-01-15"))
     }
 
     @Test fun healthDebounce() {
