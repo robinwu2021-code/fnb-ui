@@ -77,12 +77,26 @@ class HttpCloudApiTest {
         api().recordOffline("k", nulls); assertEquals("""{"amountMinor":500,"currency":"CNY","method":"EXTERNAL_POS"}""", seen[3].third)   // 空字段不发
     }
 
-    @Test fun tableListReadsPagedRecordsAndProbe() = runBlocking {
+    @Test fun tableListReadsPagedRecords() = runBlocking {
         reply = { 200 to """{"code":0,"data":{"records":[{"tableNo":"t-1","storeNo":"NS002","name":"H01","capacity":2,"status":"ACTIVE","turnoverState":"IDLE","version":1}],"total":1}}""" }
         assertEquals("H01", api().tableList("NS002").single().name)
-        assertEquals(1, api().probe("NS002").tables)
         assertEquals("GET /biz/x/food/stores/NS002/tables?page=1&size=100", seen[0].first)   // 真实后端分页上限 100
         assertNull(seen[0].second["idempotency-key"])
+    }
+
+    @Test fun storeProfileIsTheProbeAndParsesAnyFractionDigits() = runBlocking {
+        reply = { 200 to """{"code":0,"data":{"storeNo":"ST-M0001","storeName":"海岸店","entityNo":"M0001","status":"ACTIVE","market":"CN","currency":"CNY","currencyScale":2,"timezone":"Asia/Shanghai","cutoverMinute":240,"payPolicy":"POSTPAY","businessDate":"2026-11-13","businessDayStartsAt":"2026-11-12T20:00:00Z","businessDayEndsAt":"2026-11-13T20:00:00Z","serverTime":"2026-11-13T14:37:35.930027Z"}}""" }
+        val p = api().probe("ST-M0001")
+        assertEquals("GET /biz/x/food/stores/ST-M0001/profile", seen[0].first)
+        assertEquals("海岸店", p.storeName); assertEquals("CNY", p.profile.currency); assertEquals(240, p.profile.cutoverMinute)
+        val at = java.time.Instant.parse("2026-11-13T14:37:35.930027Z").toEpochMilli()
+        assertEquals(5_000L, p.profile.clockSkewMs(at - 5_000))
+        assertEquals(1L, CloudProfile(serverTime = "2026-11-13T14:37:35.001Z").clockSkewMs(java.time.Instant.parse("2026-11-13T14:37:35Z").toEpochMilli()))   // 毫秒位
+        assertNull(CloudProfile(serverTime = "").clockSkewMs(0))
+        // 主体没配市场：币种为 null，其余照常
+        reply = { 200 to """{"code":0,"data":{"storeNo":"S","storeName":"n","market":null,"currency":null,"currencyScale":null,"timezone":"Asia/Shanghai","cutoverMinute":0}}""" }
+        assertNull(api().storeProfile("S").currency)
+        assertEquals(CloudPolicy("Asia/Shanghai", 0), api().storePolicy("S"))
     }
 
     @Test fun businessCodesAreClassified() = runBlocking {

@@ -20,8 +20,13 @@ import java.net.URLEncoder
  * 请求字段严格按服务端 DTO（服务端拒收未知字段）；响应忽略未知字段。
  */
 interface CloudApi {
-    /** 连通探测：取 1 张桌台（Biz 没有单独的门店信息接口） */
-    suspend fun probe(storeNo: String): CloudProbe
+    /**
+     * 门店基本信息（币种、时区、切日、营业日、服务端时间）。只需 biz:order:view，无请求体；
+     * 同时是连通探测（门店号 / 令牌不对会报错）。主体没配市场时 market / currency / currencyScale 为 null。
+     */
+    suspend fun storeProfile(storeNo: String): CloudProfile
+    /** 连通探测：就是读门店基本信息 */
+    suspend fun probe(storeNo: String): CloudProbe = CloudProbe(storeNo, storeProfile(storeNo))
     suspend fun tableList(storeNo: String): List<CloudTable>
     suspend fun openCheck(storeNo: String, key: String, tableNos: List<String>, partySize: Int, tableVersions: List<CloudTableVersion>): CloudCheck
     suspend fun check(checkNo: String): CloudCheck
@@ -37,7 +42,7 @@ interface CloudApi {
     /** 员工下单（员工批次只能 POSTPAY） */
     suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String? = null): CloudBatch
     /** 门店营业策略：时区与切日分钟（营业日 = 本地时间减去切日分钟后的日期）；没有权限或没配策略时返回错误，调用方回退设备时区 */
-    suspend fun storePolicy(storeNo: String): CloudPolicy
+    suspend fun storePolicy(storeNo: String): CloudPolicy = storeProfile(storeNo).let { CloudPolicy(it.timezone, it.cutoverMinute) }
     /** 开营业日（幂等：当天已开过就原样返回）；日结预览前固定先开，没开过 preview 返回 10404 */
     suspend fun openBusinessDay(key: String, businessDate: String)
     suspend fun closePreview(key: String, businessDate: String, currency: String): CloudClose
@@ -78,7 +83,9 @@ interface CloudApi {
     suspend fun closeSign(key: String, closeNo: String, snapshotHash: String): CloudClose
 }
 
-data class CloudProbe(val storeNo: String, val tables: Int)
+data class CloudProbe(val storeNo: String, val profile: CloudProfile) {
+    val storeName get() = profile.storeName
+}
 
 /** TableVO：`status` 是启停（ACTIVE/DISABLED），`turnoverState` 才是空闲 / 用餐中 */
 @Serializable data class CloudTable(val tableNo: String, val name: String, val code: String = "", val areaNo: String = "", val status: String = "ACTIVE",
@@ -128,6 +135,15 @@ data class CloudProbe(val storeNo: String, val tables: Int)
 @Serializable data class CloudCountLine(val itemId: String, val countedQty: Int, val reasonCode: String)
 @Serializable data class CloudStation(val configNo: String, val name: String = "", val enabled: Boolean = true)
 @Serializable data class CloudTask(val taskNo: String, val batchNo: String, val status: String = "", val version: Long = 0, val qty: Double = 0.0)
+/** 门店基本信息。时间约定：Instant 带 Z（小数位 0–9 位不固定，用标准 ISO 解析），businessDate 是门店时区的日历日 */
+@Serializable data class CloudProfile(
+    val storeNo: String = "", val storeName: String = "", val status: String = "", val market: String? = null,
+    val currency: String? = null, val currencyScale: Int? = null, val timezone: String = "", val cutoverMinute: Int = 0,
+    val payPolicy: String = "", val businessDate: String = "", val serverTime: String = "",
+) {
+    /** 服务端时间 − 本机时间（毫秒）；解析不了返回 null */
+    fun clockSkewMs(localNow: Long): Long? = runCatching { java.time.Instant.parse(serverTime).toEpochMilli() - localNow }.getOrNull()
+}
 @Serializable data class CloudPolicy(val timezone: String = "", val cutoverMinute: Int = 0)
 @Serializable data class CloudClose(val closeNo: String, val status: String = "", val snapshotHash: String = "", val version: Long = 0)
 
@@ -216,8 +232,7 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
 
     private fun s(storeNo: String) = "$FOOD/stores/${enc(storeNo)}"
 
-    override suspend fun probe(storeNo: String) =
-        CloudProbe(storeNo, http.get("${s(storeNo)}/tables", mapOf("page" to "1", "size" to "1"), Page.serializer(CloudTable.serializer())).total)
+    override suspend fun storeProfile(storeNo: String) = http.get("${s(storeNo)}/profile", emptyMap(), CloudProfile.serializer())
     /** 真实后端分页上限 100（超过报「最大不能超过100」）：翻页取全 */
     override suspend fun tableList(storeNo: String): List<CloudTable> {
         val all = mutableListOf<CloudTable>(); var page = 1
@@ -245,8 +260,6 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.send("POST", "$FOOD/quotes/${enc(quoteNo)}:confirm", null, ConfirmBody(cartNo, version, confirmationDigest), ConfirmBody.serializer(), CloudQuote.serializer())
     override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) =
         http.send("POST", "${s(storeNo)}/batches", key, BatchBody(cartNo, version, quoteNo, confirmationDigest, buyerNo = buyerNo), BatchBody.serializer(), CloudBatch.serializer())
-    override suspend fun storePolicy(storeNo: String) =
-        http.get("${s(storeNo)}/policy", mapOf("at" to java.time.Instant.now().toString()), CloudPolicy.serializer())
     override suspend fun openBusinessDay(key: String, businessDate: String) {
         http.send("POST", "$FOOD/business-days/${enc(businessDate)}:open", key, EmptyBody(), EmptyBody.serializer(), kotlinx.serialization.json.JsonElement.serializer().nullable)
     }

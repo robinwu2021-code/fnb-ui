@@ -500,6 +500,14 @@ def r_policy(store, q, b):
     return {"policyNo": "POL1", "timezone": CFG["timezone"], "cutoverMinute": CFG["cutover"], "payPolicy": "POSTPAY", "capabilities": [], "version": 1}
 
 
+def r_profile(store, q, b):
+    import datetime as _d
+    tz = CFG["timezone"]
+    return {"storeNo": store, "storeName": CFG.get("store_name", "模拟门店"), "entityNo": "M0001", "status": "ACTIVE", "market": "CN", "currency": "CNY",
+            "currencyScale": 2, "timezone": tz, "cutoverMinute": CFG["cutover"], "payPolicy": "POSTPAY",
+            "businessDate": _d.date.today().isoformat(), "serverTime": _d.datetime.now(_d.timezone.utc).isoformat().replace("+00:00", "Z")}
+
+
 # —— 日结 ——
 def w_open_day(store, no, q, b):
     d = DB.setdefault("days", {})
@@ -579,6 +587,7 @@ ROUTES = [
     ("POST", INV + "/counts/{x}/post", w_count_post, False),
     ("POST", INV + "/adjust", w_adjust, False),
     ("GET", FOOD + "/stores/{s}/policy", r_policy, False),
+    ("GET", FOOD + "/stores/{s}/profile", r_profile, False),
     ("POST", FOOD + "/business-days/{x}:open", w_open_day, True),
     ("POST", FOOD + "/closes:preview", w_close_preview, True),
     ("POST", FOOD + "/closes:sign", w_close_sign, True),

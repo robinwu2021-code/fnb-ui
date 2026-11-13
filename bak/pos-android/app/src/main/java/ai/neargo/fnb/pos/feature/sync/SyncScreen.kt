@@ -117,7 +117,7 @@ class SyncViewModel(
         }.onFailure { messages.post(it.message ?: "同步失败") }
     }
     fun cloudTest(st: CloudSettings, done: (String) -> Unit) = viewModelScope.launch {
-        probe(st).onSuccess { done("连接成功：门店 ${it.storeNo}，服务端桌台 ${it.tables} 张") }.onFailure { done("连接失败：${it.message}") }
+        probe(st).onSuccess { done("连接成功：门店 ${it.storeNo}，${it.storeName}") }.onFailure { done("连接失败：${it.message}") }
     }
     fun cloudSave(st: CloudSettings) { cloud?.configure(st); messages.post(if (st.baseUrl.isBlank()) "已关闭云端上传" else "已保存云端设置") }
     fun cloudRetry(eventId: String) { cloud?.retry(eventId); messages.post("已重新排队上传") }
@@ -278,7 +278,8 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
             is CloudBadge.NeedsAction -> "在线，${b.count} 条上传被服务端拒绝，需处理后该订单才继续上传"
         }
         KeyValue("云端服务", statusText, valueColor = when (cs.badge) { is CloudBadge.Online, CloudBadge.ViaHost -> c.ink; is CloudBadge.NeedsAction -> c.danger; else -> c.warning })
-        if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (if (cs.tables > 0) " · 桌台 ${cs.tables} 张" else ""))
+        if (cs.settings.configured) KeyValue("服务端门店", cs.settings.storeNo + (cs.profile?.storeName?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""))
+        cs.clockSkewMs?.takeIf { kotlin.math.abs(it) > 60_000 }?.let { KeyValue("本机时钟", "与服务端相差 ${it / 1000} 秒，请校准设备时间", valueColor = c.warning) }
         KeyValue("待上传事件", "${cs.uploadable} 条" + (if (cs.backendWait > 0) "；另有 ${cs.backendWait} 条等服务端接口，留在本机（含旧版 ${state.stats.legacyUnacked} 条）" else "；旧版 ${state.stats.legacyUnacked} 条不上传"))
         KeyValue("最早未上传", time(state.stats.oldestUnackedAt))
         if (cs.settings.configured && cs.uploader) KeyValue("最近连上云端", time(cs.lastOnlineAt))

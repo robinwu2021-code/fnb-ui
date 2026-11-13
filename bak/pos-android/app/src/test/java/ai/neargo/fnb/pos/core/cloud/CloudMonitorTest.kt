@@ -20,7 +20,7 @@ class CloudMonitorTest {
         var openFail: CloudException? = null
         val opened = mutableListOf<String>()
         private fun f() { fail?.let { throw it } }
-        override suspend fun probe(storeNo: String) = run { f(); CloudProbe(storeNo, 6) }
+        override suspend fun storeProfile(storeNo: String) = run { f(); CloudProfile(storeNo, "海岸店", currency = "CNY", timezone = "Asia/Shanghai", serverTime = "2026-11-13T14:37:35.930027Z") }
         override suspend fun tableList(storeNo: String) = run { f(); listOf(CloudTable("t-1", "H01", version = 1)) }
         override suspend fun openCheck(storeNo: String, key: String, tableNos: List<String>, partySize: Int, tableVersions: List<CloudTableVersion>): CloudCheck {
             f(); openFail?.let { throw it }; opened += key
@@ -35,7 +35,6 @@ class CloudMonitorTest {
         override suspend fun quote(storeNo: String, key: String, cartNo: String, version: Long) = error("unused")
         override suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String) = error("unused")
         override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) = error("unused")
-        override suspend fun storePolicy(storeNo: String) = error("unused")
         override suspend fun openBusinessDay(key: String, businessDate: String) = error("unused")
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = error("unused")
         override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = error("unused")
@@ -87,7 +86,7 @@ class CloudMonitorTest {
         assertTrue(events.list.isEmpty())
         pending.value = 0; m.tick()
         assertEquals(CloudBadge.Online(0), m.state.value.badge)
-        assertEquals(6, m.state.value.tables)
+        assertEquals("海岸店", m.state.value.profile?.storeName)
     }
 
     @Test fun networkLossAndUnauthorized() = runTest(UnconfinedTestDispatcher()) {

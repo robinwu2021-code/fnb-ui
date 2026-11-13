@@ -51,7 +51,7 @@ class CloudSyncTest {
         @Suppress("UNCHECKED_CAST") private fun <T> once(key: String, f: () -> T): T { keys += key; return byKey.getOrPut(key) { f() as Any } as T }
         private fun tv(v: List<CloudTableVersion>) = v.forEach { if (tables.getValue(it.tableNo).version != it.version) throw CloudException.of(10409, "桌台版本已变化") }
 
-        override suspend fun probe(storeNo: String) = run { net(); CloudProbe(storeNo, tables.size) }
+        override suspend fun storeProfile(storeNo: String) = run { net(); CloudProfile(storeNo, "海岸店", currency = "CNY", timezone = policy?.timezone.orEmpty(), cutoverMinute = policy?.cutoverMinute ?: 0) }
         override suspend fun tableList(storeNo: String) = run { net(); calls += "tables"; tables.values.toList() }
         override suspend fun openCheck(storeNo: String, key: String, tableNos: List<String>, partySize: Int, tableVersions: List<CloudTableVersion>) = run { net(); once(key) {
             tv(tableVersions); val no = tableNos.single(); calls += "open:$no"
@@ -89,7 +89,6 @@ class CloudSyncTest {
             CloudBatch("B${++seq}", status = "ACCEPTED", amountMinor = 1, version = 1)
         } }
         var policy: CloudPolicy? = null
-        override suspend fun storePolicy(storeNo: String): CloudPolicy { net(); return policy ?: throw CloudException.of(10404, "未配置营业策略") }
         override suspend fun openBusinessDay(key: String, businessDate: String) { net(); calls += "openDay:$businessDate" }
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = run { net(); calls += "closePreview:$businessDate:$currency"
             CloudClose("D1", "REVIEW", snapshotHash = "h1", version = 3) }
