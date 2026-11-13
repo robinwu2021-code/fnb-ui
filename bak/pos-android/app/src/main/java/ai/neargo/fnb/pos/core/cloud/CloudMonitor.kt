@@ -47,8 +47,10 @@ data class CloudState(
     val issues: List<CloudIssue> = emptyList(),
     val lastRound: SyncRound? = null,
     val lastSyncAt: Long = 0,
-    /** 服务端门店桌台数（探测时带回，用于确认门店号填对了） */
-    val tables: Int = 0,
+    /** 服务端门店基本信息（探测时带回：门店名用于确认门店号填对了；币种、时钟偏差） */
+    val profile: CloudProfile? = null,
+    /** 服务端时间 − 本机时间（毫秒）；未知为 null */
+    val clockSkewMs: Long? = null,
     val lastOnlineAt: Long = 0,
     val limit: CloudLimit = CloudLimit.None,
     val priceDiffs: List<CloudPriceDiff> = emptyList(),
@@ -64,7 +66,7 @@ data class CloudState(
  * 云端连通与同步循环（方案 §2–§6）：
  * - 只有主 POS / 单机连云（`uploader`）；副 POS 显示「经主 POS」。
  * - 系统无网络或强制离线：立即离线，不探测。
- * - 有网：按 [CloudHealth.nextProbeMs] 探测（取 1 张桌台）；判为在线且有待上传时回放一轮。
+ * - 有网：按 [CloudHealth.nextProbeMs] 探测（读门店基本信息）；判为在线且有待上传时回放一轮。
  * - 网络恢复、新事件、手动「立即同步」会提前唤醒。
  */
 class CloudMonitor(
@@ -83,6 +85,8 @@ class CloudMonitor(
     private val afterRound: suspend () -> Unit = {},
     /** 当前门店是零售（上传进销存单据） */
     private val retailStore: () -> Boolean = { false },
+    /** 本机门店币种：服务端主体没配市场（profile 里币种为空）时按它处理 */
+    private val localCurrency: () -> String = { "CNY" },
 ) {
     private val s = MutableStateFlow(CloudState(settings = settingsStore.load(), lastOnlineAt = settingsStore.lastOnlineAt()))
     val state: StateFlow<CloudState> = s.asStateFlow()
@@ -127,7 +131,8 @@ class CloudMonitor(
                 // 门店号或令牌错误：属于配置问题，直接判离线并显示原因
                 if (e is CloudException && e.kind != CloudErrorKind.Network) cur.health.forceOffline(e.message.orEmpty()) else cur.health.failure(e.message ?: "连接失败")
             })
-            cur.copy(health = h, tables = probe.getOrNull()?.tables ?: cur.tables, lastOnlineAt = if (probe.isSuccess) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
+            val profile = probe.getOrNull()?.profile
+            cur.copy(health = h, profile = profile ?: cur.profile, clockSkewMs = profile?.clockSkewMs(clock()) ?: cur.clockSkewMs, lastOnlineAt = if (probe.isSuccess) markOnline(cur.lastOnlineAt) else cur.lastOnlineAt).withBadge()
         }
         if (s.value.health.online && s.value.uploadable > 0) runRound()
     }
@@ -196,7 +201,7 @@ class CloudMonitor(
         val st = s.value.settings
         val id = storeId() ?: throw IllegalStateException("未进入门店")
         val refs = refsFor("$id@${st.storeNo}")
-        val r = CloudSync(api, refs, events, clock, inventory = retailStore(), buyerNo = s.value.settings.buyerNo).run(id, st.storeNo) { done, total ->
+        val r = CloudSync(api, refs, events, clock, currency = s.value.profile?.currency?.takeIf { it.isNotBlank() } ?: localCurrency(), inventory = retailStore(), buyerNo = s.value.settings.buyerNo).run(id, st.storeNo) { done, total ->
             if (total > 0) s.update { it.copy(badge = CloudBadge.Syncing(done, total)) }
         }
         s.update { cur ->

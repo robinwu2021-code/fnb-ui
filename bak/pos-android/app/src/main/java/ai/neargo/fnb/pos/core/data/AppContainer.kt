@@ -118,6 +118,7 @@ class AppContainer(context: Context) {
         pending = syncStatus.stats.map { it.unackedEvents },
         afterRound = { syncStatus.refresh() },
         retailStore = { workspace.current.value?.let { ai.neargo.fnb.pos.core.model.BizProfile.of(it.biz).retail } == true },
+        localCurrency = { workspace.current.value?.settings?.currency ?: ai.neargo.fnb.pos.core.model.Money.CURRENCY },
     )
     /** 门店推送：收到通知只当「该去拉了」，叫醒同步循环（第一批没有需要拉取的对象，后续批次接订单 / 支付 / 菜单） */
     val cloudPush = ai.neargo.fnb.pos.core.cloud.CloudPush(cloudHttp, ai.neargo.fnb.pos.core.cloud.PrefsPushStore(context.applicationContext),
