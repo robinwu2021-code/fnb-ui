@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.retail
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.app.appContainer
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
@@ -127,7 +128,7 @@ private fun CustomerSync(state: RetailPosUiState) {
                 stage.value.takeIf { it is ai.neargo.fnb.pos.core.model.CustomerStage.Paid } ?: ai.neargo.fnb.pos.core.model.CustomerStage.Browse
             else -> ai.neargo.fnb.pos.core.model.CustomerStage.Retail(ai.neargo.fnb.pos.core.model.CustomerDisplayRules.retailCart(
                 state.products, cart.lines, cart.member, cart.last, state.credit?.amount ?: 0,
-                method = cart.method.takeIf { cart.mode == PosMode.Pay }, received = CashRules.amount(cart.cash).takeIf { cart.method == "现金" && cart.mode == PosMode.Pay },
+                method = cart.method.takeIf { cart.mode == PosMode.Pay }, received = CashRules.amount(cart.cash).takeIf { cart.method == PayMethods.CASH && cart.mode == PosMode.Pay },
                 promotions = state.promotions, extras = state.extras,
             ))
         }
@@ -289,8 +290,8 @@ private fun CartPanel(state: RetailPosUiState, onAction: (RetailPosAction) -> Un
                         variant = BtnVariant.Primary, size = BtnSize.Large, loading = cart.processing)
                 } else {
                     if (!empty) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if ("现金" in state.payMethods) PosButton("现金刚好 ${yuan(state.payDue)}", { onAction(RetailPosAction.QuickCash) }, Modifier.weight(1f), size = BtnSize.Small, loading = cart.processing)
-                        if ("扫码" in state.payMethods) PosButton("扫码收款", { onAction(RetailPosAction.GoPay("扫码")) }, Modifier.weight(1f), size = BtnSize.Small, enabled = state.online)
+                        if (PayMethods.CASH in state.payMethods) PosButton("现金刚好 ${yuan(state.payDue)}", { onAction(RetailPosAction.QuickCash) }, Modifier.weight(1f), size = BtnSize.Small, loading = cart.processing)
+                        if (PayMethods.QR in state.payMethods) PosButton("扫码收款", { onAction(RetailPosAction.GoPay(PayMethods.QR)) }, Modifier.weight(1f), size = BtnSize.Small, enabled = state.online)
                     }
                     PosButton(if (empty) "收款" else "${if (state.credit != null) "补收" else "收款"} ${yuan(state.payDue)}", { onAction(RetailPosAction.GoPay(null)) }, Modifier.fillMaxWidth(), variant = BtnVariant.Primary, size = BtnSize.Large, enabled = !empty)
                 }
@@ -487,28 +488,28 @@ private fun PayPane(state: RetailPosUiState, onAction: (RetailPosAction) -> Unit
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         state.payMethods.forEach { m ->
                             PosButton(m, { onAction(RetailPosAction.SelectMethod(m)) }, Modifier.weight(1f), size = BtnSize.Large, selected = cart.method == m,
-                                enabled = !(m == "扫码" && !state.online))
+                                enabled = !(m == PayMethods.QR && !state.online))
                         }
                     }
                     Text(when {
                         !state.online -> "离线：扫码不可用；现金、银行卡、储值本机记账，联网后同步"
-                        "储值卡" in state.payMethods -> if (cart.member) "${state.memberRec?.name ?: "会员"}储值余额 ${yuan(state.wallet)}" else "储值卡需先识别会员"
+                        PayMethods.STORED in state.payMethods -> if (cart.member) "${state.memberRec?.name ?: "会员"}储值余额 ${yuan(state.wallet)}" else "储值卡需先识别会员"
                         else -> "本机记账；扫码为演示渠道"
                     }, style = t.label, color = if (state.online) c.sub else c.warning, modifier = Modifier.padding(top = 6.dp))
                 }
                 when (cart.method) {
                     null -> EmptyState("选择收款方式；顾客出示付款码时直接扫，自动切到扫码收款")
-                    "现金" -> Section("现金收款") {
+                    PayMethods.CASH -> Section("现金收款") {
                         CashPad(cart.cash, due, { onAction(RetailPosAction.CashInput(it)) }, enabled = !cart.processing)
                     }
-                    "扫码" -> WaitBlock("请顾客出示付款码", "用扫码枪扫顾客的付款码，或让顾客扫收款码；演示环境点「确认已收款」")
-                    "银行卡" -> WaitBlock("请在刷卡机上刷卡 ${yuan(due)}", "刷卡机打出签购单后点「确认已收款」")
+                    PayMethods.QR -> WaitBlock("请顾客出示付款码", "用扫码枪扫顾客的付款码，或让顾客扫收款码；演示环境点「确认已收款」")
+                    PayMethods.CARD -> WaitBlock("请在刷卡机上刷卡 ${yuan(due)}", "刷卡机打出签购单后点「确认已收款」")
                     else -> WaitBlock("会员储值扣款 ${yuan(due)}", "扣款后余额 ${yuan(maxOf(0, state.wallet - due))}")
                 }
             }
             Row(Modifier.fillMaxWidth().background(c.control).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PosButton("返回加购", { onAction(RetailPosAction.BackToScan) }, Modifier.weight(0.6f), variant = BtnVariant.Text, size = BtnSize.Large)
-                PosButton(state.block ?: if (cart.method == "现金") "确认收款 ${yuan(due)}" else "确认已收款 ${yuan(due)}", { onAction(RetailPosAction.Confirm) }, Modifier.weight(1.4f),
+                PosButton(state.block ?: if (cart.method == PayMethods.CASH) "确认收款 ${yuan(due)}" else "确认已收款 ${yuan(due)}", { onAction(RetailPosAction.Confirm) }, Modifier.weight(1.4f),
                     variant = BtnVariant.Primary, size = BtnSize.Large, enabled = state.block == null && !cart.processing, loading = cart.processing)
             }
         }
@@ -659,13 +660,13 @@ private fun DoneDialog(state: RetailPosUiState, d: RetailOverlay.Done, onAction:
         PosButton("下一位", { onAction(RetailPosAction.Next) }, variant = BtnVariant.Primary, size = BtnSize.Large)
     }) {
         Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            val cashPay = d.sale.pays.any { it.method == "现金" }
+            val cashPay = d.sale.pays.any { it.method == PayMethods.CASH }
             Text(when { d.refund > 0 -> "已退差价（${d.credit!!.method}）"; cashPay -> "找零"; else -> "已收" }, style = t.label, color = c.sub)
             Text(yuan(when { d.refund > 0 -> d.refund; cashPay -> d.change; else -> d.received }), style = t.hero.copy(fontSize = 44.sp).num(), color = c.ink)
         }
         KeyValue(if (d.credit != null) "新商品" else "应收", yuan(d.sale.paid))
         d.credit?.let { KeyValue("换货抵扣 ${it.no}", "−${yuan(it.amount)}", valueColor = c.primary) }
-        if (d.sale.pays.any { it.method == "现金" }) KeyValue("实收", yuan(d.received))
+        if (d.sale.pays.any { it.method == PayMethods.CASH }) KeyValue("实收", yuan(d.received))
         d.sale.pays.filter { it.method != ai.neargo.fnb.pos.core.model.EXCHANGE }.forEach { KeyValue("收款 · ${it.method}", yuan(it.amount)) }
         if (d.save > 0) KeyValue("本单优惠", "−${yuan(d.save)}", valueColor = c.primary)
         Text(if (state.online) "小票已加入打印队列，库存已扣减" else "离线：已本机记账并进入同步队列；小票已加入打印队列", style = t.label, color = c.sub, modifier = Modifier.padding(vertical = 8.dp))

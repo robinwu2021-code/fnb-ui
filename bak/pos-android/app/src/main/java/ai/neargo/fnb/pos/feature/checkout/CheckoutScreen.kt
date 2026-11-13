@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.feature.checkout
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.app.posViewModel
 import ai.neargo.fnb.pos.core.designsystem.component.BtnSize
 import ai.neargo.fnb.pos.core.designsystem.component.BtnVariant
@@ -145,7 +146,7 @@ fun CheckoutScreen(state: CheckoutUiState, onAction: (CheckoutAction) -> Unit, o
                                 BenefitCard("会员", if (state.order.memberName.isNotBlank()) "${state.order.memberName} · $rate 折" else if (state.order.member) "演示会员 · $rate 折" else "绑定享 $rate 折", state.order.member, cm) { opsDialog = "member" }
                                 BenefitCard("优惠活动", state.order.promotions.joinToString("、") { it.name }.ifBlank { if (state.order.coupon || state.order.activity) "旧版优惠" else "选择活动" },
                                     state.order.promotions.isNotEmpty() || state.order.coupon || state.order.activity, cm) { opsDialog = "promo" }
-                                BenefitCard("储值卡", if (state.order.memberId.isNotBlank()) "余额 ${yuan(state.wallet)}" else "需先绑定会员", state.method == PayMethod.Stored, cm) { onAction(CheckoutAction.SelectMethod(PayMethod.Stored)) }
+                                BenefitCard(PayMethods.STORED, if (state.order.memberId.isNotBlank()) "余额 ${yuan(state.wallet)}" else "需先绑定会员", state.method == PayMethod.Stored, cm) { onAction(CheckoutAction.SelectMethod(PayMethod.Stored)) }
                             }
                         }
                         Section("金额明细") {

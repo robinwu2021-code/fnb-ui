@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.model
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -93,7 +94,7 @@ object Receipts {
         add(row("应收", yuan(t.due)))
         if (payment != null) {
             add(row("实收（${payment.method}）", yuan(payment.received)))
-            if (payment.method == "现金") add(row("找零", yuan(payment.change)))
+            if (payment.method == PayMethods.CASH) add(row("找零", yuan(payment.change)))
         }
         if (order.note.isNotBlank()) add("备注：${order.note}")
         add(rule()); add(s.settings.receiptFooter); add("${s.code} · ${s.address}")
@@ -118,7 +119,7 @@ object ShiftRules {
         val ps = payments.filter { it.at >= shift.start }
         val refunds = ps.filter { it.amount < 0 }
         val by = ps.groupBy { it.method }.mapValues { (_, v) -> Money.sum(v.map { it.amount }) }
-        val cash = by["现金"] ?: 0L
+        val cash = by[PayMethods.CASH] ?: 0L
         val voids = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Void }
         val gifts = adjustments.filter { it.at >= shift.start && it.kind == AdjustmentKind.Gift }
         return Summary(ps.size - refunds.size, Money.sum(ps.map { it.amount }), by, cash, Math.addExact(shift.float, cash), ps.filter { it.amount >= 0 }.map { it.tableId }.distinct().size,

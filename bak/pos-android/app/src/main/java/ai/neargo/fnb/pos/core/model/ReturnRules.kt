@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.model
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 import java.math.MathContext
@@ -62,6 +63,6 @@ object ReturnRules {
     fun channelBlocked(channel: String) = channel == "platform"
 
     /** 无单退货：需主管授权，只能退现金或储值 */
-    val NO_RECEIPT_METHODS = listOf("现金", "储值卡")
+    val NO_RECEIPT_METHODS = listOf(PayMethods.CASH, PayMethods.STORED)
     fun pickedPieces(lines: List<SoldLine>, pick: Map<String, Int>) = lines.sumOf { minOf(pick[it.key] ?: 0, refundable(it)) }
 }

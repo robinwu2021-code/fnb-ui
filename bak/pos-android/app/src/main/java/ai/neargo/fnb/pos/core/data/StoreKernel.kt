@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.data
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.model.MemberTxn
 import ai.neargo.fnb.pos.core.model.MemberTxnKind
 import ai.neargo.fnb.pos.core.model.OutboxItem
@@ -56,7 +57,26 @@ internal class Settlement(private val k: StoreKernel) {
     fun openDrawer(s: StoreData, why: String): StoreData =
         s.copy(printJobs = s.printJobs + PrintJob(k.newId("D"), PrintKind.Drawer, "开钱箱 · $why", emptyList(), k.clock()))
 
-    companion object { const val CASH = "现金" }
+    /**
+     * 收一笔款并处理会员（餐饮结账、零售收银共用的入账入口）：记收款（退款为负数）；
+     * 储值卡退款退回 [refundMemberId]（换货原单会员）的余额，没有会员的储值卡收退款走旧版演示余额；
+     * 本单会员 [saleMemberId] 按实付给积分、储值卡付款扣余额。[pay] 为 null（换货抵扣刚好抵平）时只处理会员。
+     */
+    fun collect(s: StoreData, pay: PaymentRecord?, online: Boolean, scope: String, summary: String, saleMemberId: String?, refundMemberId: String?, ref: String, actor: String): StoreData {
+        var next = s
+        if (pay != null) {
+            next = record(next, pay, online, scope, summary)
+            val refundTo = refundMemberId?.takeIf { pay.amount < 0 && pay.method == PayMethods.STORED }
+            when {
+                refundTo != null -> next = memberRefund(next, refundTo, -pay.amount, true, ref, actor)
+                pay.method == PayMethods.STORED && saleMemberId == null -> next = next.copy(walletBalance = next.walletBalance - pay.amount)   // 旧版演示余额
+            }
+        }
+        saleMemberId?.let { id -> next = memberSpend(next, id, maxOf(0L, pay?.amount ?: 0L), pay != null && pay.method == PayMethods.STORED && pay.amount > 0, ref, actor, PayMethods.STORED) }
+        return next
+    }
+
+    companion object { const val CASH = PayMethods.CASH }
 
     /** 会员消费：累计消费、来店次数、按实付给积分；储值支付扣会员余额并记流水 */
     fun memberSpend(s: StoreData, memberId: String, paid: Long, stored: Boolean, ref: String, actor: String, method: String): StoreData {
@@ -76,7 +96,7 @@ internal class Settlement(private val k: StoreKernel) {
         val pts = minOf(m.points, (amount / 100) * s.settings.pointsPerYuan)
         val m2 = m.copy(balance = m.balance + back, points = m.points - pts, totalSpent = maxOf(0, m.totalSpent - amount))
         var txns = s.memberTxns
-        if (back > 0) txns = txns + MemberTxn(k.newId("MT"), m.id, MemberTxnKind.Consume, back, m2.balance, k.clock(), ref, actor, "储值卡")
+        if (back > 0) txns = txns + MemberTxn(k.newId("MT"), m.id, MemberTxnKind.Consume, back, m2.balance, k.clock(), ref, actor, PayMethods.STORED)
         if (pts > 0) txns = txns + MemberTxn(k.newId("MT"), m.id, MemberTxnKind.Points, 0, m2.balance, k.clock(), ref, actor, points = -pts)
         return s.copy(members = s.members.map { if (it.id == m.id) m2 else it }, memberTxns = txns)
     }

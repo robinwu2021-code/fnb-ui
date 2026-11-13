@@ -1,5 +1,6 @@
 package ai.neargo.fnb.pos.core.cloud
 
+import ai.neargo.fnb.pos.core.common.PayMethods
 import ai.neargo.fnb.pos.core.data.JournalEvent
 import ai.neargo.fnb.pos.core.model.DayClose
 import kotlinx.coroutines.CancellationException
@@ -109,7 +110,7 @@ class CloudSync(
         /** 库存单的草稿、修改、提交待审批、作废：只在本机，过账时一次上传 */
         val STOCK_DRAFT = setOf("StockDocCreated", "StockDocUpdated", "StockDocSubmitted", "StockDocVoided")
         /** 本机收款方式 → 外部记账方式码；扫码、储值走平台通道（未对接） */
-        val OFFLINE_METHOD = mapOf("现金" to "CASH", "银行卡" to "EXTERNAL_POS")
+        val OFFLINE_METHOD = mapOf(PayMethods.CASH to "CASH", PayMethods.CARD to "EXTERNAL_POS")
         /**
          * 只在本机：点菜草稿在送厨时一次带上；备注、挂单是本机操作；待清台服务端没有（评审 #26）；
          * 厨房屏店内由主 POS 仲裁；催菜 / 上菜需服务端厨房任务号，暂无「按批次查任务」接口，先不上报。
