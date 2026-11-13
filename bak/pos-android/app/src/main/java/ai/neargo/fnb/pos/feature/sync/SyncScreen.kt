@@ -46,6 +46,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -258,7 +261,8 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
     val c = Pos.colors
     val cs = state.cloud
     var editing by remember { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 内容比屏幕高时（设置、连通、价差、需处理都显示）整页滚动；表格给固定上限高度，不被上面的行挤没
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val statusText = when (val b = cs.badge) {
             CloudBadge.NotConfigured -> "未设置（事件仅保存在本机，不会被标为已同步）"
             CloudBadge.ViaHost -> "副 POS 不直连云端，由主 POS 统一上传"
@@ -294,7 +298,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
         if (cs.issues.isNotEmpty()) {
             Text("需处理（服务端拒绝）：排除原因后点「重试」；已在后台处理则点「跳过」。处理前该订单后续事件暂停上传", style = Pos.type.strong, color = c.danger, modifier = Modifier.padding(top = 6.dp))
             val cols = listOf(Col("事件", 0.9f), Col("对象", 1.2f), Col("原因", 2.6f), Col("时间", 1f), Col("", 1.4f, end = true))
-            DataTable(cols, Modifier.weight(1f), empty = "") {
+            DataTable(cols, Modifier.heightIn(max = 320.dp), empty = "") {
                 items(cs.issues.size) { i ->
                     val it = cs.issues[i]
                     TableRow(listOf(
@@ -311,7 +315,7 @@ private fun CloudTab(state: SyncUiState, onSync: () -> Unit, actions: CloudActio
                 PosButton("模拟补发", onSync, variant = BtnVariant.Primary, size = BtnSize.Small, enabled = state.pending > 0)
             }
             val cols = listOf(Col("类型", 0.7f), Col("内容", 2.4f), Col("产生时间", 1.2f), Col("状态", 1.1f), Col("完成时间", 1.2f, end = true))
-            DataTable(cols, Modifier.weight(1f), empty = "暂无离线操作") {
+            DataTable(cols, Modifier.heightIn(max = 240.dp), empty = "暂无离线操作") {
                 items(state.items.size) { i ->
                     val it = state.items[i]
                     TableRow(listOf(

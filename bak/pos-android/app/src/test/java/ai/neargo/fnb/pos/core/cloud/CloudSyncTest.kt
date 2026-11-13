@@ -88,6 +88,7 @@ class CloudSyncTest {
             val lines = carts.getValue(cartNo).second.values.toList(); batches += cartNo to lines; calls += "batch:${lines.size}"
             CloudBatch("B${++seq}", status = "ACCEPTED", amountMinor = 1, version = 1)
         } }
+        override suspend fun openBusinessDay(key: String, businessDate: String) { net(); calls += "openDay:$businessDate" }
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = run { net(); calls += "closePreview:$businessDate:$currency"
             CloudClose("D1", "REVIEW", snapshotHash = "h1", version = 3) }
         override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = run { net(); once(key) { calls += "closeSign:$closeNo@$snapshotHash"; CloudClose(closeNo, "SIGNED") } }
@@ -290,6 +291,8 @@ class CloudSyncTest {
         val server = FakeServer()
         CloudSync(server, MemoryCloudRefs(), Source(disk), currency = "CNY", buyerNo = "U1").run("s-coast", "NS002")
         assertTrue(server.calls.any { it.startsWith("closePreview:") && it.endsWith(":CNY") }); assertTrue(server.calls.contains("closeSign:D1@h1"))
+        val order = server.calls.filter { it.startsWith("openDay:") || it.startsWith("closePreview:") || it.startsWith("closeSign:") }.map { it.substringBefore(':') }
+        assertEquals(listOf("openDay", "closePreview", "closeSign"), order)      // 先开营业日，再预览，再签核
     }
 
     @Test fun retailBlocksPerSaleAndConfigIsLocal() = runTest(UnconfinedTestDispatcher()) {

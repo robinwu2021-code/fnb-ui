@@ -222,6 +222,7 @@ class CloudSync(
             "DayClosed" -> {
                 val d = json.decodeFromJsonElement(DayClose.serializer(), p)
                 val date = Instant.ofEpochMilli(d.end).atZone(zone).toLocalDate().toString()
+                api.openBusinessDay("$key:open", date)   // 幂等；没开过营业日 preview 会返回 10404
                 val preview = api.closePreview("$key:preview", date, currency)
                 if (preview.snapshotHash.isBlank()) throw CloudException(CloudErrorKind.Rejected, 10400, "日结预览未生成快照（状态 ${preview.status}），请到后台查看日结异常项")
                 api.closeSign("$key:sign", preview.closeNo, preview.snapshotHash)

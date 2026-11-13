@@ -36,6 +36,8 @@ interface CloudApi {
     suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String): CloudQuote
     /** 员工下单（员工批次只能 POSTPAY） */
     suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String? = null): CloudBatch
+    /** 开营业日（幂等：当天已开过就原样返回）；日结预览前固定先开，没开过 preview 返回 10404 */
+    suspend fun openBusinessDay(key: String, businessDate: String)
     suspend fun closePreview(key: String, businessDate: String, currency: String): CloudClose
     /** 柜台后付整桌结账：建结算单（无请求体，应收由服务端重读核心算出；同账台已有未结束的单 → 10409） */
     suspend fun createCounterSettlement(key: String, checkNo: String): CloudSettlement
@@ -240,6 +242,9 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.send("POST", "$FOOD/quotes/${enc(quoteNo)}:confirm", null, ConfirmBody(cartNo, version, confirmationDigest), ConfirmBody.serializer(), CloudQuote.serializer())
     override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) =
         http.send("POST", "${s(storeNo)}/batches", key, BatchBody(cartNo, version, quoteNo, confirmationDigest, buyerNo = buyerNo), BatchBody.serializer(), CloudBatch.serializer())
+    override suspend fun openBusinessDay(key: String, businessDate: String) {
+        http.send("POST", "$FOOD/business-days/${enc(businessDate)}:open", key, EmptyBody(), EmptyBody.serializer(), kotlinx.serialization.json.JsonElement.serializer().nullable)
+    }
     override suspend fun closePreview(key: String, businessDate: String, currency: String) =
         http.send("POST", "$FOOD/closes:preview", key, PreviewBody(businessDate, currency), PreviewBody.serializer(), CloudClose.serializer())
     override suspend fun createCounterSettlement(key: String, checkNo: String) =
@@ -302,6 +307,7 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
 @Serializable internal data class BatchBody(val cartNo: String, val version: Long, val quoteNo: String, val confirmationDigest: String, val payMode: String = "POSTPAY", val buyerNo: String? = null)
 @Serializable internal data class PreviewBody(val businessDate: String, val currency: String)
 @Serializable internal data class SignBody(val closeNo: String, val snapshotHash: String)
+@Serializable internal class EmptyBody
 @Serializable internal data class TaskBody(val version: Long, val qty: Double, val reason: String)
 @Serializable internal data class ReleaseBody(val check: String, val version: Long, val reason: String)
 @Serializable internal data class DocNo(val no: String)

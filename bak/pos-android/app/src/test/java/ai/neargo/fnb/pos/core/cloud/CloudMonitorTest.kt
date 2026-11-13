@@ -35,6 +35,7 @@ class CloudMonitorTest {
         override suspend fun quote(storeNo: String, key: String, cartNo: String, version: Long) = error("unused")
         override suspend fun confirmQuote(quoteNo: String, cartNo: String, version: Long, confirmationDigest: String) = error("unused")
         override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String, buyerNo: String?) = error("unused")
+        override suspend fun openBusinessDay(key: String, businessDate: String) = error("unused")
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = error("unused")
         override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = error("unused")
         override suspend fun createCounterSettlement(key: String, checkNo: String) = error("unused")

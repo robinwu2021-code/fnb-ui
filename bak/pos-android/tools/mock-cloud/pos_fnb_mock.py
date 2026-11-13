@@ -496,9 +496,16 @@ def w_adjust(store, q, b):
 
 
 # —— 日结 ——
+def w_open_day(store, no, q, b):
+    d = DB.setdefault("days", {})
+    return d.setdefault(no, {"dayNo": nid("DAY"), "businessDate": no, "status": "OPEN", "version": 0})   # 幂等：已开过原样返回
+
+
 def w_close_preview(store, q, b):
     strict(b, {"businessDate", "currency"})
     need(b, "businessDate", "currency")
+    if b["businessDate"] not in DB.get("days", {}):
+        raise Err(10404, "营业日未开")                  # 真实后端：没开过营业日 preview 返回 10404
     no = "CL" + b["businessDate"].replace("-", "")
     return DB["closes"].setdefault(no, {"closeNo": no, "dayNo": "D" + b["businessDate"], "currency": b["currency"], "revision": 1, "status": "REVIEW",
                                          "snapshotHash": "sh" + uuid.uuid4().hex[:12], "version": 1})
@@ -566,6 +573,7 @@ ROUTES = [
     ("PUT", INV + "/counts/{x}/lines", w_count_lines, False),
     ("POST", INV + "/counts/{x}/post", w_count_post, False),
     ("POST", INV + "/adjust", w_adjust, False),
+    ("POST", FOOD + "/business-days/{x}:open", w_open_day, True),
     ("POST", FOOD + "/closes:preview", w_close_preview, True),
     ("POST", FOOD + "/closes:sign", w_close_sign, True),
     ("POST", "/biz/push/terminals", w_terminal, False),
