@@ -37,6 +37,11 @@ class CloudMonitorTest {
         override suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String) = error("unused")
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = error("unused")
         override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = error("unused")
+        override suspend fun createCounterSettlement(key: String, checkNo: String) = error("unused")
+        override suspend fun finalizeCounterSettlement(settlementNo: String, offlineRecordNos: List<String>) = error("unused")
+        override suspend fun cancelCounterSettlement(settlementNo: String) = error("unused")
+        override suspend fun counterSettlement(settlementNo: String) = error("unused")
+        override suspend fun recordOffline(key: String, body: CloudOfflineRecordBody) = error("unused")
     }
     private class Events : EventSource {
         val list = mutableListOf(JournalEvent(1, "ev-1", "order-1", 1, "TableOpened",

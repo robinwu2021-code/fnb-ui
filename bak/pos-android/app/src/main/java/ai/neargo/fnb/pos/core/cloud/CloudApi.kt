@@ -36,6 +36,15 @@ interface CloudApi {
     /** 员工下单（员工批次只能 POSTPAY） */
     suspend fun placeBatch(storeNo: String, key: String, cartNo: String, version: Long, quoteNo: String, confirmationDigest: String): CloudBatch
     suspend fun closePreview(key: String, businessDate: String, currency: String): CloudClose
+    /** 柜台后付整桌结账：建结算单（无请求体，应收由服务端重读核心算出；同账台已有未结束的单 → 10409） */
+    suspend fun createCounterSettlement(key: String, checkNo: String): CloudSettlement
+    /** 收齐确认：按结算单号幂等、可安全重试；整桌 PAID、关单、能放台就放台 */
+    suspend fun finalizeCounterSettlement(settlementNo: String, offlineRecordNos: List<String>): CloudSettlement
+    suspend fun cancelCounterSettlement(settlementNo: String): CloudSettlement
+    /** 读结算单（GET 时 received / change 恒为空，找零以 finalize 响应为准） */
+    suspend fun counterSettlement(settlementNo: String): CloudSettlement
+    /** 外部记账（平台 /biz/payment/offline-records）：柜台结账 bizNo 必须等于结算单号；现金按实收面额记 */
+    suspend fun recordOffline(key: String, body: CloudOfflineRecordBody): CloudOfflineRecord
     suspend fun closeSign(key: String, closeNo: String, snapshotHash: String): CloudClose
 }
 
@@ -68,6 +77,14 @@ data class CloudProbe(val storeNo: String, val tables: Int)
     val receivableMinor: Long = 0, val remainingDueMinor: Long = 0, val feeMinor: Long? = null)
 @Serializable data class CloudBatch(val batchNo: String, val checkNo: String? = null, val status: String = "", val currency: String? = null,
     val amountMinor: Long? = null, val version: Long = 0)
+/** CounterSettlementVO：应收 dueMinor；status FROZEN / COLLECTING / SETTLED / CANCELLED；received / change / receiptNo 只在 finalize 响应里有 */
+@Serializable data class CloudSettlement(val settlementNo: String, val checkNo: String = "", val status: String = "", val currency: String = "",
+    val dueMinor: Long = 0, val receivedMinor: Long? = null, val changeMinor: Long? = null, val receiptNo: String? = null,
+    val checkStatus: String = "", val tableReleased: Boolean = false)
+/** RecordBody：未知字段 10400；amountMinor 只收整数；method 柜台结账只用 CASH / EXTERNAL_POS；receivedAt 为带偏移的 ISO-8601（截到秒，31 天内） */
+@Serializable data class CloudOfflineRecordBody(val amountMinor: Long, val currency: String, val method: String, val bizNo: String? = null,
+    val note: String? = null, val receivedAt: String? = null)
+@Serializable data class CloudOfflineRecord(val recordNo: String, val amountMinor: Long = 0, val method: String = "", val bizNo: String? = null, val status: String = "")
 @Serializable data class CloudClose(val closeNo: String, val status: String = "", val snapshotHash: String = "", val version: Long = 0)
 
 /** 服务端错误分类：决定同步怎么处理（重读、交人工、重试） */
@@ -108,6 +125,8 @@ class CloudHttp(private val cfg: () -> CloudConfig, private val connectTimeoutMs
         (if (query.isEmpty()) "" else "?" + query.entries.joinToString("&") { (k, v) -> "$k=${URLEncoder.encode(v, "UTF-8")}" })
 
     suspend fun <T> get(path: String, query: Map<String, String>, ser: KSerializer<T>): T = call("GET", url(path, query), null, null, ser)
+    /** 无请求体的 POST（建结算单、取消） */
+    suspend fun <T> postEmpty(path: String, key: String?, ser: KSerializer<T>): T = call("POST", url(path), key, "", ser)
     suspend fun <B, T> send(method: String, path: String, key: String?, body: B, bodySer: KSerializer<B>, ser: KSerializer<T>): T =
         call(method, url(path), key, json.encodeToString(bodySer, body), ser)
 
@@ -128,7 +147,8 @@ class CloudHttp(private val cfg: () -> CloudConfig, private val connectTimeoutMs
         val conn = open(url, method, key)
         try {
             if (body != null) {
-                conn.doOutput = true; conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.doOutput = true
+                if (body.isNotEmpty()) conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             }
             val status = conn.responseCode
@@ -175,6 +195,16 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
         http.send("POST", "${s(storeNo)}/batches", key, BatchBody(cartNo, version, quoteNo, confirmationDigest), BatchBody.serializer(), CloudBatch.serializer())
     override suspend fun closePreview(key: String, businessDate: String, currency: String) =
         http.send("POST", "$FOOD/closes:preview", key, PreviewBody(businessDate, currency), PreviewBody.serializer(), CloudClose.serializer())
+    override suspend fun createCounterSettlement(key: String, checkNo: String) =
+        http.postEmpty("$FOOD/checks/${enc(checkNo)}/counter-settlements", key, CloudSettlement.serializer())
+    override suspend fun finalizeCounterSettlement(settlementNo: String, offlineRecordNos: List<String>) =
+        http.send("POST", "$FOOD/counter-settlements/${enc(settlementNo)}:finalize", null, FinalizeBody(offlineRecordNos), FinalizeBody.serializer(), CloudSettlement.serializer())
+    override suspend fun cancelCounterSettlement(settlementNo: String) =
+        http.postEmpty("$FOOD/counter-settlements/${enc(settlementNo)}:cancel", null, CloudSettlement.serializer())
+    override suspend fun counterSettlement(settlementNo: String) =
+        http.get("$FOOD/counter-settlements/${enc(settlementNo)}", emptyMap(), CloudSettlement.serializer())
+    override suspend fun recordOffline(key: String, body: CloudOfflineRecordBody) =
+        http.send("POST", "/biz/payment/offline-records", key, body, CloudOfflineRecordBody.serializer(), CloudOfflineRecord.serializer())
     override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) =
         http.send("POST", "$FOOD/closes:sign", key, SignBody(closeNo, snapshotHash), SignBody.serializer(), CloudClose.serializer())
 
@@ -195,6 +225,7 @@ class HttpCloudApi(private val http: CloudHttp) : CloudApi {
 @Serializable internal data class BatchBody(val cartNo: String, val version: Long, val quoteNo: String, val confirmationDigest: String, val payMode: String = "POSTPAY")
 @Serializable internal data class PreviewBody(val businessDate: String, val currency: String)
 @Serializable internal data class SignBody(val closeNo: String, val snapshotHash: String)
+@Serializable internal data class FinalizeBody(val offlineRecordNos: List<String>)
 @Serializable internal data class CheckEnvelope(val check: CloudCheck)
 @Serializable internal data class OperationEnvelope(val operation: CloudOperation)
 @Serializable internal data class CartEnvelope(val cart: CloudCart)

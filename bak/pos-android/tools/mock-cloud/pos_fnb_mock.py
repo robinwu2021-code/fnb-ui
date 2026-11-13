@@ -44,7 +44,7 @@ def fresh():
         "tables": {f"T{i + 1:03d}": {"tableNo": f"T{i + 1:03d}", "storeNo": CFG["store"], "areaNo": "A1", "code": n, "name": n, "capacity": 4,
                                     "sortNo": i, "status": "ACTIVE", "turnoverState": "IDLE", "version": 1}
                    for i, n in enumerate(CFG["tables"])},
-        "checks": {}, "carts": {}, "quotes": {}, "batches": {}, "closes": {},
+        "checks": {}, "carts": {}, "quotes": {}, "batches": {}, "closes": {}, "settlements": {}, "records": {},
         "idem": {}, "calls": [], "fail": {"times": 0, "code": 0, "http": 0},
         "terminals": {}, "events": [], "seq": 0,
     }
@@ -250,6 +250,98 @@ def w_batch(store, q, b):
     return {k: v for k, v in bt.items() if k != "lines"}
 
 
+# —— 柜台后付整桌结账 + 外部记账 ——
+class Biz(Err):
+    pass
+
+
+def check_due(check_no):
+    """服务端应收：本账单各下单批次金额合计，加服务费（--service-bp，默认 500 = 5%，与演示门店一致）"""
+    goods = sum(b["amountMinor"] for b in DB["batches"].values() if b["checkNo"] == check_no)
+    return int(round(goods * (10000 + CFG["service_bp"]) / 10000))
+
+
+def w_counter_settle(store, no, q, b):
+    if b:
+        raise Err(10400, "结算单不收请求体")
+    c = check(no)
+    if c["status"] != "OPEN":
+        raise Err(10400, "账单不是开台状态")
+    if any(st["checkNo"] == no and st["status"] in ("FROZEN", "COLLECTING") for st in DB["settlements"].values()):
+        raise Err(10409, "该台账已有未结束的结算单")
+    st = {"settlementNo": nid("CS"), "checkNo": no, "status": "FROZEN", "currency": "CNY", "dueMinor": check_due(no),
+          "receivedMinor": None, "changeMinor": None, "receiptNo": None, "items": [], "checkStatus": "OPEN", "tableReleased": False}
+    DB["settlements"][st["settlementNo"]] = st
+    return st
+
+
+def settlement(no):
+    st = DB["settlements"].get(no)
+    if not st:
+        raise Err(10404, "结算单不存在")
+    return st
+
+
+def w_finalize(store, no, q, b):
+    strict(b, {"offlineRecordNos"})
+    nos = b.get("offlineRecordNos") or []
+    if not 1 <= len(nos) <= 20:
+        raise Err(10400, "offlineRecordNos 1–20 个")
+    st = settlement(no)
+    if st["status"] == "SETTLED":
+        return st                                   # 按结算单号幂等
+    if st["status"] == "CANCELLED":
+        raise Err(10400, "结算单已取消")
+    recs = []
+    for r in nos:
+        rec = DB["records"].get(r)
+        if not rec or rec["bizNo"] != no or rec["currency"] != st["currency"] or rec.get("usedBy") not in (None, no):
+            raise Err(20026, "记账号无效")
+        recs.append(rec)
+    total = sum(r["amountMinor"] for r in recs)
+    cash = sum(r["amountMinor"] for r in recs if r["method"] == "CASH")
+    if total < st["dueMinor"]:
+        d = st["dueMinor"] - total
+        raise Err(20024, f"收款还差 {d // 100}.{d % 100:02d} CNY，收齐后再确认")
+    if total - st["dueMinor"] > cash:
+        raise Err(20025, "多收超过现金合计")
+    for r in recs:
+        r["usedBy"] = no
+    c = check(st["checkNo"])
+    c["status"] = "CLOSED"; c["version"] += 1
+    for n in c["tableNos"]:
+        bump(DB["tables"][n], turnoverState="IDLE")
+    st.update(status="SETTLED", receivedMinor=total, changeMinor=total - st["dueMinor"], receiptNo=nid("RC"), checkStatus="CLOSED", tableReleased=True)
+    emit("food.table", "CHECK", c["checkNo"], c["version"])
+    return st
+
+
+def w_settle_cancel(store, no, q, b):
+    st = settlement(no)
+    if st["status"] == "SETTLED":
+        raise Err(20030, "已确认不能取消")
+    st["status"] = "CANCELLED"
+    return st
+
+
+def r_settlement(store, no, q, b):
+    return dict(settlement(no), receivedMinor=None, changeMinor=None)
+
+
+def w_offline_record(store, q, b):
+    strict(b, {"amountMinor", "currency", "method", "orderNo", "bizNo", "note", "receivedAt"})
+    need(b, "amountMinor", "currency", "method")
+    if not isinstance(b["amountMinor"], int) or isinstance(b["amountMinor"], bool) or b["amountMinor"] <= 0:
+        raise Err(10400, "amountMinor 必须是正整数")
+    if b["method"] not in ("CASH", "BANK_TRANSFER", "EXTERNAL_POS", "OTHER"):
+        raise Err(10400, "method 不合法")
+    rec = {"recordNo": nid("OR"), "amountMinor": b["amountMinor"], "currency": b["currency"], "method": b["method"], "orderNo": b.get("orderNo"),
+           "bizNo": b.get("bizNo"), "note": b.get("note"), "receivedAt": b.get("receivedAt") or time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+           "recordedBy": "terminal", "status": "VALID", "corrected": False, "version": 1, "history": []}
+    DB["records"][rec["recordNo"]] = rec
+    return {k: v for k, v in rec.items() if k != "usedBy"}
+
+
 # —— 日结 ——
 def w_close_preview(store, q, b):
     strict(b, {"businessDate", "currency"})
@@ -300,6 +392,11 @@ ROUTES = [
     ("POST", FOOD + "/stores/{s}/quotes", w_quote, True),
     ("POST", FOOD + "/quotes/{x}:confirm", w_confirm, False),
     ("POST", FOOD + "/stores/{s}/batches", w_batch, True),
+    ("POST", FOOD + "/checks/{x}/counter-settlements", w_counter_settle, True),
+    ("POST", FOOD + "/counter-settlements/{x}:finalize", w_finalize, False),
+    ("POST", FOOD + "/counter-settlements/{x}:cancel", w_settle_cancel, False),
+    ("GET", FOOD + "/counter-settlements/{x}", r_settlement, False),
+    ("POST", "/biz/payment/offline-records", w_offline_record, True),
     ("POST", FOOD + "/closes:preview", w_close_preview, True),
     ("POST", FOOD + "/closes:sign", w_close_sign, True),
     ("POST", "/biz/push/terminals", w_terminal, False),
@@ -481,9 +578,10 @@ if __name__ == "__main__":
     ap.add_argument("--token", default="")
     ap.add_argument("--store", default="NS002")
     ap.add_argument("--tables", default="H01,H02,H03,H04,T01,T02")
+    ap.add_argument("--service-bp", type=int, default=500, help="服务费万分比（应收 = 批次合计 × (1 + bp/10000)）")
     ap.add_argument("--catalog", default=__file__.rsplit("/", 1)[0] + "/demo-catalog.json")
     a = ap.parse_args()
-    CFG.update(token=a.token, store=a.store, tables=a.tables.split(","), catalog=json.load(open(a.catalog, encoding="utf-8")))
+    CFG.update(service_bp=a.service_bp, token=a.token, store=a.store, tables=a.tables.split(","), catalog=json.load(open(a.catalog, encoding="utf-8")))
     DB.update(fresh())
     print(f"餐饮服务端模拟 http://0.0.0.0:{a.port}  门店 {a.store}  菜品 {len(CFG['catalog']['items'])}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", a.port), H).serve_forever()

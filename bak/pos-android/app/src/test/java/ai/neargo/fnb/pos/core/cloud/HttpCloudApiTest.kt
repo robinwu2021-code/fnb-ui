@@ -57,6 +57,26 @@ class HttpCloudApiTest {
         assertTrue(seen[1].third.contains("\"payMode\":\"POSTPAY\""))
     }
 
+    @Test fun counterSettlementEmptyBodyAndOfflineRecordStrictBody() = runBlocking {
+        reply = { p -> 200 to when {
+            p.endsWith("/counter-settlements") -> """{"code":0,"data":{"settlementNo":"CS1","checkNo":"C1","status":"FROZEN","currency":"CNY","dueMinor":8700,"receivedMinor":null,"items":[],"checkStatus":"OPEN","tableReleased":false}}"""
+            p.endsWith(":finalize") -> """{"code":0,"data":{"settlementNo":"CS1","status":"SETTLED","dueMinor":8700,"receivedMinor":10000,"changeMinor":1300,"receiptNo":"RC1","checkStatus":"CLOSED","tableReleased":true}}"""
+            else -> """{"code":0,"data":{"recordNo":"OR1","amountMinor":10000,"currency":"CNY","method":"CASH","bizNo":"CS1","status":"VALID","history":[]}}"""
+        } }
+        val st = api().createCounterSettlement("ev-9:settle", "C1")
+        assertEquals(8700L, st.dueMinor); assertNull(st.receivedMinor)
+        assertEquals("POST /biz/x/food/checks/C1/counter-settlements", seen[0].first); assertEquals("", seen[0].third); assertEquals("ev-9:settle", seen[0].second["idempotency-key"])
+        val rec = api().recordOffline("ev-9:pay", CloudOfflineRecordBody(10000, "CNY", "CASH", "CS1", "POS H01", "2026-11-13T12:30:00+08:00"))
+        assertEquals("OR1", rec.recordNo)
+        assertEquals("POST /biz/payment/offline-records", seen[1].first)
+        assertEquals("""{"amountMinor":10000,"currency":"CNY","method":"CASH","bizNo":"CS1","note":"POS H01","receivedAt":"2026-11-13T12:30:00+08:00"}""", seen[1].third)
+        val done = api().finalizeCounterSettlement("CS1", listOf("OR1"))
+        assertEquals(1300L, done.changeMinor); assertTrue(done.tableReleased)
+        assertNull(seen[2].second["idempotency-key"]); assertEquals("""{"offlineRecordNos":["OR1"]}""", seen[2].third)
+        val nulls = CloudOfflineRecordBody(500, "CNY", "EXTERNAL_POS")
+        api().recordOffline("k", nulls); assertEquals("""{"amountMinor":500,"currency":"CNY","method":"EXTERNAL_POS"}""", seen[3].third)   // 空字段不发
+    }
+
     @Test fun tableListReadsPagedRecordsAndProbe() = runBlocking {
         reply = { 200 to """{"code":0,"data":{"records":[{"tableNo":"t-1","storeNo":"NS002","name":"H01","capacity":2,"status":"ACTIVE","turnoverState":"IDLE","version":1}],"total":6}}""" }
         assertEquals("H01", api().tableList("NS002").single().name)

@@ -89,6 +89,28 @@ class CloudSyncTest {
         override suspend fun closePreview(key: String, businessDate: String, currency: String) = run { net(); calls += "closePreview:$businessDate:$currency"
             CloudClose("D1", "REVIEW", snapshotHash = "h1", version = 3) }
         override suspend fun closeSign(key: String, closeNo: String, snapshotHash: String) = run { net(); once(key) { calls += "closeSign:$closeNo@$snapshotHash"; CloudClose(closeNo, "SIGNED") } }
+
+        /** 结算单应收：默认等于测试设定值 */
+        var due: Long = 0
+        var changedOnce = false
+        val settlements = mutableMapOf<String, CloudSettlement>()
+        val records = mutableMapOf<String, CloudOfflineRecordBody>()
+        override suspend fun createCounterSettlement(key: String, checkNo: String) = run { net(); once(key) {
+            if (settlements.values.any { it.checkNo == checkNo && it.status == "FROZEN" }) throw CloudException.of(10409, "已有未结束的结算单")
+            calls += "settle:$checkNo"; CloudSettlement("CS${++seq}", checkNo, "FROZEN", "CNY", due).also { settlements[it.settlementNo] = it }
+        } }
+        override suspend fun recordOffline(key: String, body: CloudOfflineRecordBody) = run { net(); once(key) {
+            calls += "record:${body.method}:${body.amountMinor}:${body.bizNo}"; val no = "OR${++seq}"; records[no] = body; CloudOfflineRecord(no, body.amountMinor, body.method, body.bizNo)
+        } }
+        override suspend fun finalizeCounterSettlement(settlementNo: String, offlineRecordNos: List<String>): CloudSettlement { net()
+            if (changedOnce) { changedOnce = false; throw CloudException.of(20027, "账单已变") }
+            val st = settlements.getValue(settlementNo); val total = offlineRecordNos.sumOf { records.getValue(it).amountMinor }
+            if (total < st.dueMinor) throw CloudException.of(20024, "收款还差")
+            calls += "finalize:$settlementNo"
+            return st.copy(status = "SETTLED", receivedMinor = total, changeMinor = total - st.dueMinor, receiptNo = "RC1", checkStatus = "CLOSED", tableReleased = true).also { settlements[settlementNo] = it }
+        }
+        override suspend fun counterSettlement(settlementNo: String) = run { net(); settlements.getValue(settlementNo).let { if (it.status == "FROZEN") it.copy(dueMinor = due) else it } }
+        override suspend fun cancelCounterSettlement(settlementNo: String) = run { net(); calls += "cancel:$settlementNo"; settlements.getValue(settlementNo).copy(status = "CANCELLED").also { settlements[settlementNo] = it } }
     }
 
     private suspend fun shop(scope: kotlinx.coroutines.CoroutineScope): Pair<LocalWorkspace, Disk> {
@@ -247,6 +269,71 @@ class CloudSyncTest {
         assertEquals(0, r.uploaded); assertEquals(2, r.waiting)                  // 两张销售单各自等后端接口
         assertTrue(r.local >= 2)                                                  // 改价（及其价签）+ 挂单直接处理
         assertEquals(disk.commands.count { it.type == "RetailSaleCompleted" }, disk.commands.size - src.acked.size)
+    }
+
+    /** 开台、点一道菜、送厨后结账；返回本机应收 */
+    private suspend fun paidTable(w: LocalWorkspace, method: String, received: Long? = null): Long {
+        w.openTable("H01", 2).getOrThrow()
+        w.addDish("H01", w.current.value!!.products.first { it.skus.isEmpty() && (it.stock ?: 1) > 0 }, null, 1)
+        w.sendToKitchen("H01", true)
+        val due = ai.neargo.fnb.pos.core.model.OrderRules.totals(w.current.value!!.orders.getValue("H01")).due
+        w.settle("H01", due, method, true, received ?: due).getOrThrow()
+        return due
+    }
+
+    @Test fun cashCheckoutCreatesSettlementRecordsFaceAmountAndFinalizes() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val products = w.current.value!!.products
+        val due = paidTable(w, "现金", 100_00)
+        val server = FakeServer(catalogItems = catalogOf(products)).apply { this.due = due }
+        val refs = MemoryCloudRefs()
+        val r = CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        assertEquals(0, r.issues); assertNull(r.stoppedBy)
+        assertTrue(server.calls.contains("record:CASH:10000:CS4") || server.calls.any { it.startsWith("record:CASH:10000:CS") })   // 现金按实收面额记
+        assertTrue(server.calls.any { it.startsWith("finalize:") })
+        val ev = disk.commands.single { it.type == "PaymentRecorded" }.commandId
+        assertTrue(server.keys.containsAll(listOf("$ev:settle", "$ev:pay")))
+        assertEquals("RC1", refs.get("settled", ev)!!.remoteNo)
+    }
+
+    @Test fun cardAmountMismatchGoesToNeedsActionWithoutRecordingMoney() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val products = w.current.value!!.products
+        val due = paidTable(w, "银行卡")
+        val server = FakeServer(catalogItems = catalogOf(products)).apply { this.due = due - 300 }   // 服务端少 3 元（服务费没绑）
+        val refs = MemoryCloudRefs()
+        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        assertEquals("PaymentRecorded", refs.issues().single().type)
+        assertTrue(refs.issues().single().message.contains("刷卡多收"))
+        assertTrue(server.calls.none { it.startsWith("record:") })                     // 先比金额，不先记钱
+        // 后台核对后重试：复用同一张结算单，不重建
+        server.due = due
+        refs.put(CloudRef("attempt", refs.issues().single().eventId, "1")); refs.resolve(refs.issues().single().eventId)
+        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        assertEquals(1, server.settlements.size); assertTrue(server.calls.any { it.startsWith("finalize:") })
+    }
+
+    @Test fun qrPaymentWaitsWithoutNeedsAction() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        paidTable(w, "扫码")
+        val refs = MemoryCloudRefs()
+        val r = CloudSync(FakeServer(catalogItems = catalogOf(w.current.value!!.products)), refs, Source(disk)).run("s-coast", "NS002")
+        assertEquals(0, r.issues); assertTrue(r.waiting >= 1)
+    }
+
+    @Test fun checkChangedCancelsSettlementSoRetryRebuilds() = runTest(UnconfinedTestDispatcher()) {
+        val (w, disk) = shop(backgroundScope)
+        val due = paidTable(w, "现金")
+        val server = FakeServer(catalogItems = catalogOf(w.current.value!!.products)).apply { this.due = due; changedOnce = true }
+        val refs = MemoryCloudRefs()
+        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        assertEquals(20027, refs.issues().single().code)
+        assertTrue(server.calls.any { it.startsWith("cancel:") })
+        val ev = refs.issues().single().eventId
+        refs.put(CloudRef("attempt", ev, "1")); refs.resolve(ev)
+        CloudSync(server, refs, Source(disk)).run("s-coast", "NS002")
+        assertEquals(2, server.settlements.size)                                       // 撤销后重建了新结算单
+        assertTrue(server.calls.any { it.startsWith("finalize:") })
     }
 
     @Test fun healthDebounce() {
