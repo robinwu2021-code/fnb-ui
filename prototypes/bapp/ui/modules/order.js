@@ -83,9 +83,16 @@ OVL['share'] = function (t) {
     '<div class="sh-cells"><div class="sh-cell"><span class="k">现有一组</span><span class="v">' + S.table + '-1 · 4 人</span></div><div class="sh-cell"><span class="k">新一组人数</span>' + stepper(S.shareN, 'sn:-', 'sn:+') + '</div><div class="sh-cell"><span class="k">新组单号</span><span class="v">' + S.table + '-2 · #1034</span></div></div>' +
     '<div class="acts">' + btn('取消', 'sh-btn--muted', 'ov:none') + btn('确认拼桌', '', 'shareok') + '</div></div></div>';
 };
+/* 调价：三种方式——改单价（直接给新单价）· 打折（几折）· 减免（每份减多少）；低于 8 折或每份减超过 ¥20 需主管授权 */
+function rpPrice(rl) {
+  var m = S.rpMode || 'price', v = S.rpVal;
+  if (v == null) return rl.p;
+  return m === 'disc' ? Math.round(rl.p * v * 10) / 100 : m === 'off' ? Math.max(0, rl.p - v) : v;
+}
+function rpNeedsAuth(rl) { var np = rpPrice(rl); return np < rl.p * 0.8 - 1e-9 || rl.p - np > 20; }
 OVL['reprice'] = function (t) {
     var rl = LINES[S.rpLine] || LINES[0], np = rpPrice(rl), need = rpNeedsAuth(rl);
-    var vals = { price: [rl.p - 2, rl.p - 5, rl.p - 10].filter(function (v) { return v > 0; }), disc: [9.5, 9, 8.5, 8, 7], off: [2, 5, 10, 20, 30] }[S.rpMode];
+    var vals = { price: [rl.p - 2, rl.p - 5, rl.p - 10].filter(function (v) { return v > 0; }), disc: [9.5, 9, 8.5, 8, 7], off: [2, 5, 10, 20, 30] }[S.rpMode || 'price'];
     return '<div class="sh-mask" data-act="ov:none"><div class="sh-dialog wide" data-stop="1"><span class="h">调价</span>' +
       '<span class="sh-gt"><span>选择菜品</span></span><div class="row">' + LINES.map(function (l, i) { return l.st === 'void' ? '' : '<span class="sh-option' + (S.rpLine === i ? ' is-on' : '') + '" data-act="rpl:' + i + '">' + l.n + '<small>' + money(l.p) + ' × ' + l.q + '</small></span>'; }).join('') + '</div>' +
       '<div class="row row--between"><span class="sh-seg">' + [['price', '改单价'], ['disc', '打折'], ['off', '减免']].map(function (m) { return '<span class="' + (S.rpMode === m[0] ? 'is-on' : '') + '" data-act="rpm:' + m[0] + '">' + m[1] + '</span>'; }).join('') + '</span>' +
@@ -140,7 +147,7 @@ ACT['lact'] = function (v, k) {
     S.lact = S.lact === +v ? -1 : +v; return;
 };
 ACT['rpline'] = function (v, k) {
-    S.rpLine = +v; S.rpWhy = ''; S.ov = 'reprice'; S.lact = -1; return;
+    S.rpLine = +v; S.rpWhy = ''; S.rpMode = S.rpMode || 'price'; S.rpVal = null; S.ov = 'reprice'; S.lact = -1; return;
 };
 ACT['rpl'] = function (v, k) {
     S.rpLine = +v; return;

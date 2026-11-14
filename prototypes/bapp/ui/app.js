@@ -62,7 +62,24 @@ function render() {
   var nav = dev.querySelector('.ui-nav'), cur = nav && nav.querySelector('.is-on');
   if (cur && (cur.offsetTop < nav.scrollTop || cur.offsetTop + cur.offsetHeight > nav.scrollTop + nav.clientHeight)) nav.scrollTop = cur.offsetTop - nav.clientHeight / 3;
   try { var o = {}; STYLE.forEach(function (k) { o[k] = S[k]; }); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {}
+  focusable(dev);
 }
+/* 键盘：原型里可点的元素多是 span，这里统一补 tabindex（禁用的除外），回车 / 空格当点击；重渲染后把焦点放回同一个元素。焦点环在 pos-colors.css（--c-focus）。 */
+function focusKey(el) { return el.dataset.act ? 'a:' + el.dataset.act : el.dataset.k ? 'k:' + el.dataset.k + ':' + el.dataset.v : el.dataset.scan ? 's:' + el.dataset.scan : ''; }
+function focusable(root) {
+  Array.prototype.forEach.call(root.querySelectorAll('[data-act],[data-k],[data-scan],[role="button"]'), function (el) {
+    if (el.tabIndex >= 0 && el.hasAttribute('tabindex')) return;
+    if (el.getAttribute('aria-disabled') === 'true' || el.classList.contains('is-off') || el.classList.contains('cap')) { el.removeAttribute('tabindex'); return; }
+    el.setAttribute('tabindex', '0');
+  });
+  if (focusWant) { var k = focusWant; focusWant = ''; var back = Array.prototype.filter.call(root.querySelectorAll('[tabindex="0"]'), function (el) { return focusKey(el) === k; })[0]; if (back) back.focus({ preventScroll: true }); }
+}
+var focusWant = '';
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  var el = e.target.closest('[tabindex="0"]'); if (!el || !dev.contains(el) && !document.getElementById('sw').contains(el)) return;
+  e.preventDefault(); focusWant = focusKey(el); el.click();
+});
 function toast(msg) { S.toast = msg; clearTimeout(toastTimer); toastTimer = setTimeout(function () { S.toast = ''; render(); }, 2600); }
 function fit() { var s = Math.min(1, stage.clientWidth / 1280); dev.style.transform = 'scale(' + s + ')'; stage.style.height = (800 * s + 20) + 'px'; }
 

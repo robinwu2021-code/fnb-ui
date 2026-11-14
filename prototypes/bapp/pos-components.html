@@ -10,7 +10,7 @@
 <header class="top">
   <div class="eyebrow">全线点餐 POS · UI 组件方案 · 2026-10-24 · v20</div>
   <h1>全线点餐 POS · UI 组件方案</h1>
-  <p class="sub">按《布局与组件清单》整理的现行组件，规则见《设计规范（布局 · 形状 · 色系）》。颜色取自 pos-colors.css，默认「黑白灰」色系：结构和常态用灰阶，颜色只给待处理（琥珀）和异常（红）。屏内无描边、无阴影，用色块分层；墨只给正文和主按钮，选中和已点都是 gray-200 块 + 墨字；一屏一个实心主按钮。组件按收银平板 1:1 尺寸画；默认「紧凑 · 标准形状（框架 14 · 按钮 8）· Inter + 思源黑体」。</p>
+  <p class="sub">按《布局与组件清单》整理的现行组件，规则见《设计规范（布局 · 形状 · 色系）》。颜色取自 pos-colors.css，默认「黑白灰」色系：结构和常态用灰阶，颜色只给待处理（琥珀）和异常（红）。屏内无描边、无阴影，用色块分层；墨只给正文和主按钮；当前项 gray-200 块 + 墨字加粗，已点的菜 gray-100 + 墨色角标；一屏一个实心主按钮。组件按收银平板 1:1 尺寸画；默认「紧凑 · 标准形状（框架 14 · 按钮 8）· Inter + 思源黑体」。</p>
   <div class="pd-switch">
     <div class="row"><span>皮肤</span><button data-k="skin" data-v="brand"><i style="background:#E1251B"></i>虹选红</button><button data-k="skin" data-v="mono"><i style="background:#18181B"></i>墨黑</button><button data-k="skin" data-v="blue"><i style="background:#2C69FF"></i>经典蓝</button><button data-k="skin" data-v="fresh"><i style="background:#00B578"></i>微信绿</button><button data-k="skin" data-v="teal"><i style="background:#008484"></i>青碧</button><button data-k="skin" data-v="amber"><i style="background:#A46911"></i>琥珀</button><button data-k="skin" data-v="violet"><i style="background:#7A4CE0"></i>紫</button></div>
     <div class="row"><span>字体</span><button data-k="font" data-v="inter">Inter<small>默认</small></button><button data-k="font" data-v="roboto">Roboto</button><button data-k="font" data-v="noto">Noto Sans</button><button data-k="font" data-v="manrope">Manrope</button><button data-k="font" data-v="plex">IBM Plex Sans</button><small style="color:var(--muted)">中文统一思源黑体 Noto Sans SC，全部来自 Google Fonts</small></div>
@@ -29,7 +29,7 @@
     <tr><th>令牌</th><th>墨黑 · 黑白灰</th><th>用途</th></tr>
     <tr><td>sh-bg / sh-card</td><td>gray-50 / 白</td><td>画布 / 面板、卡片、弹层</td></tr>
     <tr><td>sh-wash / sh-wash-strong</td><td>gray-50 / gray-100</td><td>未选卡片、清单、输入框 / 列表当前行、悬停</td></tr>
-    <tr><td>sh-pick</td><td>gray-200</td><td>已点的菜（和选中同一档，加墨色份数角标）</td></tr>
+    <tr><td>sh-pick</td><td>gray-100</td><td>已点的菜（比未点深一档 + 墨色份数角标；gray-200 只给当前项）</td></tr>
     <tr><td>sh-sel-bg / sh-sel-fg</td><td>gray-200 / gray-900</td><td>选中：导航、页签、分段、筛选、选项、支付方式、当前桌、选中的卡（不用墨底，墨只给正文和主按钮）</td></tr>
     <tr><td>sh-ink / sh-sub / sh-disabled</td><td>gray-900 / gray-600 / gray-400</td><td>正文与金额 / 次要文字 / 占位与禁用</td></tr>
     <tr><td>sh-primary · -tint · -text · on-primary</td><td>随皮肤（墨黑 = 墨）</td><td>实心主按钮、份数角标、soft 按钮</td></tr>
@@ -179,6 +179,9 @@
       <figcaption class="cap"><b>DiningResourceRail <code>dn-rail</code></b>竖排，宽三档 104 / 128 / 160（由模块声明）；分类名第二行写另一种语言；项高跟随控件高（44 / 48）；当前项 gray-200 块 + 墨字加粗；已点分类用小圆点，桌区和状态用计数；分组小标题 <code>.cap</code>，组间留 10 空、不画线。</figcaption></figure>
     <figure><div class="pc"><div class="dn-rail dn-rail--h"><span class="is-on">热销<i></i></span><span>招牌</span><span>凉菜<i></i></span><span>热菜</span><span>主食</span><span>汤羹</span></div></div>
       <figcaption class="cap"><b>DiningResourceRail · 横排 <code>dn-rail--h</code></b>导航区放在上方（L2、L3）或窄屏时用：项改为小号控件高，横向滚动。</figcaption></figure>
+    <figure class="w2"><div class="pc"><div class="sh-card"><ol class="dn-steps"><li class="is-done"><i><i data-lucide="check"></i></i><span>账单</span></li><li class="is-cur"><i>2</i><span>收款方式</span></li><li><i>3</i><span>收款</span></li><li><i>4</i><span>完成</span></li></ol><div class="dn-paysum"><div class="due"><span>待收</span><b>¥236.00</b></div><div><span>应付</span><b>¥236.00</b></div><div><span>已收</span><b>¥0.00</b></div></div></div></div>
+      <figcaption class="cap"><b>Steps <code>dn-steps</code> · PaySummary <code>dn-paysum</code></b>结账右栏顶部的步骤条：① 账单（左栏）→ ② 收款方式 → ③ 收款 → ④ 完成。当前步由状态推出（没选方式 = ②，选了 = ③，收齐 = ④）；已过的步打勾、次要字，当前步 gray-200 块 + 墨字加粗，未到的步次要字。下面只放三个数：待收（32 号，收齐后变成功绿）、应付、已收——应收和优惠在左栏账单里已经逐行可见，不重复。</figcaption>
+      <p class="why">收款方式默认不选，右栏空状态写「选一种收款方式」，这样 ② 才是一步；否则默认现金，收银员看不出自己在哪一步。</p></figure>
     <figure><div class="pc"><div class="row"><span class="sh-seg"><span class="is-on">有图</span><span>无图</span></span><span class="sh-seg"><span class="is-on">卡片</span><span>列表</span></span></div><span class="sh-seg"><span class="is-on">换桌</span><span>并台</span><span>转菜</span><span>合单</span></span></div>
       <figcaption class="cap"><b>SegmentedControl <code>sh-seg</code></b>浅灰轨道 + gray-200 当前段（墨字加粗），2–4 段互斥选项；多于 4 个改用选择行（›）。</figcaption></figure>
     <figure><div class="pc"><div class="sh-card"><div class="sh-tabs"><span>外卖</span><span>会员</span><span class="is-on">打印</span><span>网络</span><span>设置</span></div></div></div>
@@ -236,6 +239,15 @@
       <figcaption class="cap"><b>ColorSwatch <code>dn-swatch</code></b>设置面板选皮肤，选中加墨色外圈。</figcaption></figure>
     <figure><div class="pc"><div class="row"><span class="dn-layout is-on"><i style="grid-template-columns:8px 1fr 16px"><b class="n"></b><b></b><b class="d"></b></i>L1</span><span class="dn-layout"><i style="grid-template-columns:1fr 16px;grid-template-rows:6px 1fr"><b class="n"></b><b class="d" style="grid-row:span 2"></b><b></b></i>L2</span><span class="dn-layout"><i style="grid-template-columns:16px 1fr;grid-template-rows:6px 1fr"><b class="d" style="grid-row:span 2"></b><b class="n"></b><b></b></i>L3</span></div></div>
       <figcaption class="cap"><b>LayoutPicker <code>dn-layout</code></b>布局缩略图：导航区灰、详情区主色；选中 tint。</figcaption></figure>
+    <figure class="w2"><div class="pc"><div class="sh-card"><span class="lbl">选项 sh-option · 支付方式 dn-pay · 充值方案 dn-plan</span>
+      <div class="row"><span class="sh-option">不辣</span><span class="sh-option is-on">微辣</span><span class="sh-option">中辣<small>加 ¥2</small></span><span class="sh-option is-off" aria-disabled="true">特辣<small>今日售罄</small></span></div>
+      <div class="dn-paylist dn-paylist--h"><span class="dn-pay dn-pay--row is-on" style="--pay:#07C160"><i>微</i><span class="nm">微信<small>扫码</small></span></span><span class="dn-pay dn-pay--row" style="--pay:#A46911"><i>¥</i><span class="nm">现金<small>找零</small></span></span><span class="dn-pay dn-pay--row is-off" style="--pay:#8747AA" aria-disabled="true"><i>储</i><span class="nm">储值<small>先识别会员</small></span></span></div>
+      <div class="dn-plans"><div class="dn-plan is-on"><b>充 300 送 30</b><span class="sh-help">到账 ¥330</span></div><div class="dn-plan"><b>充 500 送 60</b><span class="sh-help">到账 ¥560</span></div></div>
+      <span class="lbl">券 dn-coupon · 布局样张 dn-layout</span>
+      <div class="dn-coupon is-on"><span class="v">¥15</span><span class="tx"><b>满 200 减 15</b><small>满减券 · 有效期至 2026-12-31</small></span><i data-lucide="circle-check"></i></div><div class="dn-coupon is-off"><span class="v">¥30</span><span class="tx"><b>满 300 减 30</b><small>满减券 · 还差 ¥64 可用</small></span></div>
+    </div></div>
+      <figcaption class="cap"><b>选项块一族 <code>sh-option</code> · <code>dn-pay</code> · <code>dn-plan</code> · <code>dn-coupon</code> · <code>dn-layout</code></b>五个组件、一条规则：「一组里选一个」的卡。未选 = 浅灰块 <code>--sh-wash</code>；当前项 = gray-200 块 + 墨字加粗（<code>--sh-sel-bg / -fg</code>）；不可用 = 置灰并把原因写在第二行，不能点（<code>aria-disabled</code>）。内容按对象不同（文字 ± 说明、品牌图标 + 名称、充送、面值 + 条件、缩略图），但底色、选中、不可用三种状态完全一样，所以不合并成一个组件，只统一规则。不画描边，不加勾——券例外，勾选图标放在右侧是因为一单可选两张。</figcaption>
+      <p class="why">和筛选 <code>sh-filter</code>、分段 <code>sh-seg</code> 的区别：那两个是「换视图」，选项块是「选内容」，但用同一套选中色，眼睛不用学两种「选中」。</p></figure>
   </div>
 </section>
 

@@ -1,5 +1,5 @@
 /* 模块 · 结账：左「账单与优惠」右「收款」、完成页、支付失败、选券、整单折扣。 */
-var PAYS = [['wx', '微信', '扫码', '#07C160', '微'], ['ali', '支付宝', '扫码', '#1677FF', '支'], ['cash', '现金', '找零', '#A46911', '¥'], ['card', '银行卡', '刷卡', '#5552BB', '卡'], ['sv', '储值', '会员余额', '#8747AA', '储'], ['mix', '组合支付', '多种方式', '#5E5E5E', '组']];
+var PAYS = [['wx', '微信', '扫码', '#07C160', '微'], ['ali', '支付宝', '扫码', '#1677FF', '支'], ['cash', '现金', '找零', '#A46911', '¥'], ['card', '银行卡', '刷卡', '#5552BB', '卡'], ['sv', '储值', '会员余额', '#8747AA', '储'], ['mix', '组合支付', '多种方式', 'var(--c-control-off)', '组']];
 var PAYNAME = { wx: '微信', ali: '支付宝', cash: '现金', card: '银行卡', sv: '储值' };
 function svWhy(t) { return !S.member ? '先识别会员' : MEMBER.bal < t.rest ? '余额不足，差 ' + money(t.rest - MEMBER.bal) : (S.paid || []).length ? '储值不能和其他方式组合' : ''; }
 function payRow(t) {
@@ -40,16 +40,17 @@ function billSide(t) {
     promoRow(false, '积分', '', 0, '', '平台积分，线下支付不抵扣') +
     promoRow(t.manual > 0, '整单折扣 / 免单', t.manual ? (S.mwhy || '') : '必须选原因 · 超额度需授权', t.manual, 'ov:manual', t.pv ? pvNo : act || c ? '已用活动或券，不能再人工打折' : '') +
     promoRow(t.round > 0, '抹零', t.round ? '抹掉 ' + money(t.round) : '', t.round, '', t.pv ? '用平台券后不抹零' : c ? '用券后不能抹零' : t.round ? '' : '没有零头');
-  return ledger('<div class="row row--between"><b class="h-title">' + S.table + ' 结账</b><span class="row"><span class="sh-help">#1024 · 4 人</span>' + btn('改单', 'sh-btn--muted sh-btn--sm', 'goorder') + '</span></div>',
-    '<div class="dn-block"><div class="dn-sec"><span>① 账单 · ' + LINES.length + ' 道 · ' + money(t.sub) + '</span><a class="sh-link sh-hit" data-act="lines:' + (S.lines ? 'off' : 'on') + '">' + (S.lines ? '收起' : '展开') + '</a></div>' + (S.lines ? '<div class="dn-olist">' + LINES.map(function (l, i) { return oline(l, i, false); }).join('') + '</div>' : '') + '</div>' +
-    '<div class="dn-block"><div class="dn-sec"><span>② 会员</span></div>' + mem + '</div>' +
-    '<div class="dn-block"><div class="dn-sec"><span>③ 费用与优惠</span><span>平台券 → 调价 → 活动 → 券 → 储值 → 抹零</span></div><div class="dn-promos"><div class="dn-promo is-on">' + ico('receipt') + '<span class="tx"><b>服务费 5%</b><small>堂食收取</small></span><span class="am">+' + money(t.svc) + '</span></div>' + promos + '</div></div>',
+  return ledger('<div class="row row--between"><b class="h-title">' + S.table + ' 账单</b><span class="row"><span class="sh-help">#1024 · 4 人</span>' + btn('改单', 'sh-btn--muted sh-btn--sm', 'goorder') + '</span></div>',
+    '<div class="dn-block"><div class="dn-sec"><span>菜品 · ' + LINES.length + ' 道 · ' + money(t.sub) + '</span><a class="sh-link sh-hit" data-act="lines:' + (S.lines ? 'off' : 'on') + '">' + (S.lines ? '收起' : '展开') + '</a></div>' + (S.lines ? '<div class="dn-olist">' + LINES.map(function (l, i) { return oline(l, i, false); }).join('') + '</div>' : '') + '</div>' +
+    '<div class="dn-block"><div class="dn-sec"><span>会员</span></div>' + mem + '</div>' +
+    '<div class="dn-block"><div class="dn-sec"><span>费用与优惠</span><span>平台券 → 调价 → 活动 → 券 → 储值 → 抹零</span></div><div class="dn-promos"><div class="dn-promo is-on">' + ico('receipt') + '<span class="tx"><b>服务费 5%</b><small>堂食收取</small></span><span class="am">+' + money(t.svc) + '</span></div>' + promos + '</div></div>',
     dueFoot('应付', money(t.due), dishCount() + ' 道 · 已优惠 ' + money(t.mem + t.round)));
 }
 function checkoutWB() {
   var t = totals(), body, foot = '', paid = S.paid || [];
   if (!t.rest && paid.length) body = '<div class="sh-empty sh-empty--fill">' + ico('circle-check') + '<b>已收齐</b><span>点「完成」</span></div>';
   else if (!t.due && t.pv) body = '<div class="sh-empty sh-empty--fill">' + ico('ticket-check') + '<b>平台券已抵扣全部金额</b><span data-notr="1">' + (S.lang === 'en' ? (t.pvOver ? 'Vouchers exceed the bill by ' + money(t.pvOver) + ' (no change or refund). ' : '') + 'Tap Done to redeem with the platform' : (t.pvOver ? '券面额超出 ' + money(t.pvOver) + '，不找零、不退回；' : '') + '点「完成」向平台核销') + '</span></div>';
+  else if (!S.pay) body = '<div class="sh-empty sh-empty--fill">' + ico('hand-coins') + '<b>选一种收款方式</b><span>扫码、刷卡、现金或会员储值；多种方式一起付选「组合支付」</span></div>';
   else if (S.pay === 'cash') body = cashBlock(t.rest);
   else if (S.pay === 'mix') {
     body = '<div class="dn-block"><div class="dn-sec"><span>已付 · ' + paid.length + ' 笔</span><span>待收 ' + money(t.rest) + '</span></div>' + (paid.length ? '<div class="sh-cells">' + paid.map(function (p, i) { return '<div class="sh-cell"><span class="k mlabel">' + stIcon('payment', 'paid') + PAYNAME[p[0]] + '</span><span class="row"><b class="num">' + money(p[1]) + '</b><a class="sh-link sh-hit" data-act="undo:' + i + '">撤销</a></span></div>'; }).join('') + '</div>' : '<div class="sh-note">先选这一笔的方式，再输金额。储值不能参与组合（ai-shop 首期规则）。</div>') + '</div>' +
@@ -65,8 +66,11 @@ function checkoutWB() {
   }
   else { body = waitBlock('请顾客出示付款码', '用扫码枪扫顾客的付款码，或让顾客扫桌上的收款码；也可以点页首「模拟扫码 › 付款码」', 'online', '扫码枪已连接'); foot = btn('取消收款', 'sh-btn--muted', 'pay:cash') + btn('手动确认到账', 'sh-btn--soft sh-btn--block', 'payok'); }
   if (!t.rest && (paid.length || t.pv)) foot = btn('完成', 'sh-btn--block', 'ov:p3');
-  var steps = '<div class="dn-paysum dn-paysum--5"><div><span>应收</span><b>' + money(t.sub + t.svc) + '</b></div><div><span>优惠</span><b>−' + money(t.mem + t.round) + '</b></div><div class="due"><span>应付</span><b>' + money(t.due) + '</b></div><div><span>已收</span><b>' + money(t.paid) + '</b></div><div class="' + (t.rest ? '' : 'is-done') + '"><span>待收</span><b>' + money(t.rest) + '</b></div></div>';
-  var main = panel(steps + '<span class="sh-gt"><span>④ 收款方式</span></span>' + payRow(t), body, foot ? '<div class="dn-acts">' + foot + '</div>' : '', 'sh-panel--fill');
+  /* 步骤条：① 账单（左栏）→ ② 收款方式 → ③ 收款 → ④ 完成；当前步由状态推出，不另存 */
+  var done = !t.rest && (paid.length || t.pv), step = done ? 4 : S.pay ? 3 : 2;
+  var steps = '<ol class="dn-steps">' + ['账单', '收款方式', '收款', '完成'].map(function (s, i) { var n = i + 1; return '<li class="' + (n < step ? 'is-done' : n === step ? 'is-cur' : '') + '"><i>' + (n < step ? ico('check') : n) + '</i><span>' + s + '</span></li>'; }).join('') + '</ol>';
+  var sum = '<div class="dn-paysum"><div class="due' + (t.rest ? '' : ' is-done') + '"><span>待收</span><b>' + money(t.rest) + '</b></div><div><span>应付</span><b>' + money(t.due) + '</b></div><div><span>已收</span><b>' + money(t.paid) + '</b></div></div>';
+  var main = panel(steps + sum + '<span class="sh-gt"><span>收款方式' + (step === 2 ? ' · 先选一种' : '') + '</span></span>' + payRow(t), body, foot ? '<div class="dn-acts">' + foot + '</div>' : '', 'sh-panel--fill');
   return billSide(t) + main;
 }
 
@@ -188,7 +192,7 @@ ACT['gopay'] = function (v, k) {
     S.wb = 'checkout'; S.ov = 'none'; S.got = Math.ceil(totals().rest / 100) * 100; return;
 };
 ACT['paid'] = function (v, k) {
-    var tb = TABLES.filter(function (x) { return x.id === S.table; })[0]; if (tb) tb.st = 'to_clear'; S.ov = 'none'; S.wb = 'tables'; S.paid = []; S.change = 0; if ((S.pv || []).length) REDEEMED['#1024'] = S.pv.map(function (x) { return [x.id, x.n, '12:31', 0, ME, 'redeemed']; }); S.cpn = ''; S.pv = []; S.pvLast = ''; S.manual = 0; S.pAct = true; S.member = false; toast(S.table + ' 已结账'); return;
+    var tb = TABLES.filter(function (x) { return x.id === S.table; })[0]; if (tb) tb.st = 'to_clear'; S.ov = 'none'; S.wb = 'tables'; S.paid = []; S.change = 0; if ((S.pv || []).length) REDEEMED['#1024'] = S.pv.map(function (x) { return [x.id, x.n, '12:31', 0, ME, 'redeemed']; }); S.cpn = ''; S.pay = ''; S.pv = []; S.pvLast = ''; S.manual = 0; S.pAct = true; S.member = false; toast(S.table + ' 已结账'); return;
 };
 MODULES.checkout.render = checkoutWB;
 MODULES.checkout.sections = ['账单与优惠', '收款', '完成页'];

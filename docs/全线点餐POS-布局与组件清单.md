@@ -33,7 +33,7 @@
 |---|---|---|---|---|---|
 | 桌台 tables | W1 | 128 | 360 | 全部桌台、按状态筛选 | 选桌 `x3`、清台提示 `confirm` |
 | 点餐 order | W1 | 104 | 360 | 菜单、结单区 | 规格 `x1`、挂单 `hold`、拼桌 `share`、调价 `reprice`、备注 `note`、更多 `menu` |
-| 结账 checkout | W2 | — | 440（左） | 账单与优惠、收款、完成页 | 完成 `p3`、支付失败 `p4`、选券 `coupons`、平台券验券 `pvoucher`、整单折扣 `manual` |
+| 结账 checkout | W2 | — | 440（左） | 账单（左栏）· 步骤条 + 收款（右栏）· 完成页 | 完成 `p3`、支付失败 `p4`、选券 `coupons`、平台券验券 `pvoucher`、整单折扣 `manual` |
 | 订单 orders | W1 | 128 | 360 | 订单列表、订单卡片、订单详情 | — |
 | 菜品 menu | W1 | 128 | 360 | 菜品、分类、规格、套餐、同步 | — |
 | 会员 members | W1 | 128 | 360 | 会员、标签、储值、活动、优惠券、积分 | 新建会员 `mnew`、充值 `recharge`、标签 `mtag` / `mtagnew`、充值方案 `plannew` |
@@ -146,6 +146,7 @@
 | 角标 | `sh-badge` | 系统栏 |
 | 金额 | `dn-amount`（`--sm`、`--short`）、`dn-due2` | 结账、会员、白色窄底 |
 | 快捷操作 | `dn-quick--row` / `dn-quick-it` · `quickBar()` | 结单区头 |
+| 步骤条 | `dn-steps`（`is-done` / `is-cur`） | 结账右栏顶部 |
 | 资源栏 | `dn-rail` · `rail()` | 导航栏 |
 | 双语名 | `sh-biname` · `biName()` | 菜品 |
 | 帮助字 | `sh-help`、`sh-note` | 全部 |
@@ -202,7 +203,7 @@
 | 导航宽 | 六档收成三档 `NAV.sm / md / lg` = 104 / 128 / 160 | 桌台 136 → 128、订单 120 → 128、报表 152 → 160、设置 168 → 160 |
 | 面板 | 新增 `ledger()`；桌台、点餐、结账、订单、班次、报表的手写面板改用 `panel` / `ledger` | 无（358 个画面 DOM 逐个比对 0 差异） |
 
-剩下一条：选项块（`sh-option`、`dn-pay`、`dn-plan`、`dn-coupon`、`dn-layout`）保持 5 个组件，在组件页补一节「选项块」统一说明。
+选项块（`sh-option`、`dn-pay`、`dn-plan`、`dn-coupon`、`dn-layout`）保持 5 个组件，组件页「04 按钮」末尾已补「选项块一族」统一说明（2026-10-24）。
 
 ## 七、第三轮（同日）：系统栏与设置
 
