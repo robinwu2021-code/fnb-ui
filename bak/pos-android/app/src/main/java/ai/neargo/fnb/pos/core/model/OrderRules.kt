@@ -1,0 +1,157 @@
+package ai.neargo.fnb.pos.core.model
+
+/** 规则校验结果：成功给出新订单，失败给出可直接展示的原因。 */
+sealed interface OrderResult {
+    data class Ok(val order: TableOrder) : OrderResult
+    data class Rejected(val reason: String) : OrderResult
+}
+
+/**
+ * 订单纯规则（无副作用、可单测）：加菜合并、SKU / 商品库存上限、草稿改量、送厨（在线 / 离线）、
+ * 批次补发幂等、状态只进不退、金额计算。
+ */
+object OrderRules {
+    const val DEFAULT_SPEC = "标准做法"
+    private const val COUPON_FEN = 1000L
+    private const val ACTIVITY_FEN = 500L
+
+    fun qtyOf(order: TableOrder, dishId: String) = order.lines.filter { it.dishId == dishId }.sumOf { it.qty }
+    private fun qtyOfSku(order: TableOrder, key: String) = order.lines.filter { it.skuKey == key }.sumOf { it.qty }
+
+    /** 加菜：有 SKU 时按所选 SKU 校验余量与单价；同菜同 SKU 的草稿行合并。 */
+    fun add(order: TableOrder, product: Product, sku: Sku?, qty: Int, newUid: Long, note: String = "", mealChoiceIds: List<String> = emptyList()): OrderResult {
+        if (qty <= 0) return OrderResult.Rejected("数量必须大于 0")
+        if (product.hasSpec && sku == null) return OrderResult.Rejected("请先选择${product.name}的规格")
+        if (sku != null) {
+            if (sku.stock == 0) return OrderResult.Rejected("${product.name}（${sku.label}）已沽清")
+            if (qtyOfSku(order, sku.key) + qty > sku.stock) return OrderResult.Rejected("${product.name}（${sku.label}）仅剩 ${sku.stock} 份")
+        } else {
+            if (product.soldOut) return OrderResult.Rejected("${product.name}已沽清")
+            val stock = product.stock
+            if (stock != null && qtyOf(order, product.id) + qty > stock) return OrderResult.Rejected("${product.name}仅剩 $stock 份")
+        }
+        val selections = MealRules.resolve(product, mealChoiceIds).getOrElse { return OrderResult.Rejected(it.message ?: "请选择套餐菜品") }
+        val spec = listOfNotNull(sku?.label, selections.takeIf { it.isNotEmpty() }?.joinToString(" · ") { "${it.groupName}：${it.choiceName}" }).joinToString(" · ").ifBlank { DEFAULT_SPEC }
+        val unit = MealRules.price(sku?.price ?: product.price, selections)
+        val lines = order.lines.toMutableList()
+        val i = lines.indexOfFirst { it.status == LineStatus.New && !it.gifted && it.dishId == product.id && it.skuKey == sku?.key && it.spec == spec && it.unit == unit && it.note == note.trim() }
+        if (unit > Money.MAX_UNIT) return OrderResult.Rejected("${product.name}单价超出上限 ${yuan(Money.MAX_UNIT)}")
+        if (i >= 0) {
+            if (lines[i].qty + qty > Money.MAX_QTY) return OrderResult.Rejected("单行最多 ${Money.MAX_QTY} 份")
+            lines[i] = lines[i].copy(qty = lines[i].qty + qty)
+        } else {
+            if (qty > Money.MAX_QTY) return OrderResult.Rejected("单行最多 ${Money.MAX_QTY} 份")
+            val at = lines.indexOfLast { it.status == LineStatus.New } + 1
+            lines.add(at, OrderLine(newUid, product.id, product.name, spec, unit, qty, LineStatus.New, skuKey = sku?.key, note = note.trim(), mealSelections = selections))
+        }
+        val next = order.copy(lines = lines)
+        val due = runCatching { totals(next).due }.getOrNull()
+        if (due == null || due > Money.MAX_BILL) return OrderResult.Rejected("单据金额超出上限 ${yuan(Money.MAX_BILL)}")
+        return OrderResult.Ok(next)
+    }
+
+    /** 只改草稿行；增加走库存校验，减到 0 移除；已送厨（含待同步）行拒绝。 */
+    fun changeQty(order: TableOrder, uid: Long, delta: Int, product: Product): OrderResult {
+        val line = order.lines.firstOrNull { it.uid == uid } ?: return OrderResult.Rejected("菜品已不在账单中")
+        if (line.status != LineStatus.New) return OrderResult.Rejected("${line.name}已送厨，不能直接改数量")
+        if (line.gifted) return OrderResult.Rejected("赠送菜品请通过主管调整")
+        if (delta > 0) {
+            val sku = line.skuKey?.let { k -> product.skus.firstOrNull { it.key == k } }
+            if (line.skuKey != null && sku == null) return OrderResult.Rejected("${line.name}的规格已下架")
+            return add(order, product, sku, delta, uid, line.note, line.mealSelections.map { it.choiceId })
+        }
+        val q = line.qty + delta
+        val lines = if (q <= 0) order.lines.filterNot { it.uid == uid } else order.lines.map { if (it.uid == uid) it.copy(qty = q) else it }
+        return OrderResult.Ok(order.copy(lines = lines))
+    }
+
+    /** 菜品备注只改草稿行；已送厨的备注需通过厨房沟通，不在此修改。 */
+    fun setNote(order: TableOrder, uid: Long, note: String): OrderResult {
+        val line = order.lines.firstOrNull { it.uid == uid } ?: return OrderResult.Rejected("菜品已不在账单中")
+        if (line.status != LineStatus.New) return OrderResult.Rejected("${line.name}已送厨，备注请通知厨房")
+        if (note.length > 40) return OrderResult.Rejected("备注最多 40 字")
+        return OrderResult.Ok(order.copy(lines = order.lines.map { if (it.uid == uid) it.copy(note = note.trim()) else it }))
+    }
+
+    fun clearNew(order: TableOrder) = order.copy(lines = order.lines.filterNot { it.status == LineStatus.New })
+
+    /** 送厨：草稿行打上批次号；在线直接已下单，离线为待同步。 */
+    fun send(order: TableOrder, batchId: String, online: Boolean, at: Long = 0) = order.copy(
+        lines = order.lines.map { if (it.status == LineStatus.New) it.copy(status = if (online) LineStatus.Sent else LineStatus.Queued, batchId = batchId, sentAt = at) else it },
+    )
+
+    /** 批次补发成功：只把该批次的待同步行改为已下单；重复调用无副作用（幂等）。 */
+    fun markBatchSent(order: TableOrder, batchId: String) = order.copy(
+        lines = order.lines.map { if (it.batchId == batchId && it.status == LineStatus.Queued) it.copy(status = LineStatus.Sent) else it },
+    )
+
+    /** 推进行状态，只进不退；草稿与待同步行不能直接推进。 */
+    fun advance(order: TableOrder, uid: Long, to: LineStatus) = order.copy(
+        lines = order.lines.map {
+            if (it.uid == uid && it.status != LineStatus.New && it.status != LineStatus.Queued && it.status.ordinal < to.ordinal) it.copy(status = to) else it
+        },
+    )
+
+    /**
+     * 计价顺序：会员折扣（按订单快照费率）→ 主管整单折扣 → 活动折扣（整单折扣类）→ 满减（按小计判断门槛）；优惠合计不超过小计。
+     * 服务费按小计计算。所有比例为整数万分比、四舍五入。
+     */
+    fun totals(order: TableOrder): Totals {
+        val sub = Money.sum(order.lines.map { if (it.gifted) 0L else Money.line(it.unit, it.qty) })
+        val service = Money.rate(sub, order.serviceBp.coerceIn(0, 2000))
+        val member = if (order.member) Money.rate(sub, order.memberBp.coerceIn(0, 5000)) else 0L
+        val manual = Money.rate(sub - member, (100 - order.discountPercent.coerceIn(1, 100)) * 100)
+        val afterManual = sub - member - manual
+        val pct = order.promotions.filter { it.kind == PromotionKind.Percent && sub >= it.threshold }
+            .sumOf { Money.rate(afterManual, (100 - it.percent.coerceIn(1, 100)) * 100) }
+        val cut = Money.sum(order.promotions.filter { it.kind == PromotionKind.Threshold && sub >= it.threshold }.map { it.amount })
+        // 旧版开关（迁移前订单）
+        val coupon = if (order.coupon && sub >= 20_000) COUPON_FEN else 0L
+        val activity = if (order.activity && sub >= 10_000) ACTIVITY_FEN else 0L
+        val promo = Money.sum(listOf(pct, cut, coupon, activity))
+        val discount = Money.sum(listOf(member, manual, promo)).coerceAtMost(sub)
+        return Totals(
+            sub = sub, service = service, discount = discount, due = Math.subtractExact(Math.addExact(sub, service), discount),
+            items = order.lines.sumOf { it.qty }, newItems = order.pending.sumOf { it.qty }, queuedItems = order.queued.sumOf { it.qty },
+            memberOff = member, manualOff = manual, promoOff = promo,
+        )
+    }
+
+    /** 活动可用性：启用、门槛满足；整单折扣类同时只能一个。 */
+    fun promotionBlock(order: TableOrder, chosen: List<Promotion>): String? {
+        val sub = totals(order.copy(promotions = emptyList(), coupon = false, activity = false)).sub
+        chosen.firstOrNull { !it.enabled }?.let { return "活动「${it.name}」已停用" }
+        chosen.firstOrNull { sub < it.threshold }?.let { return "菜品小计未满 ${yuan(it.threshold)}，不能使用「${it.name}」" }
+        if (chosen.count { it.kind == PromotionKind.Percent } > 1) return "整单折扣类活动只能选一个"
+        return null
+    }
+
+    /** 结账核对条件：有菜品，且没有新加或待同步行（数据契约 §7）。 */
+    fun checkoutBlock(t: Totals): String? = when {
+        t.items == 0 -> "本单没有菜品"
+        t.newItems > 0 -> "先送厨再结账"
+        // N3-02：云待同步时是否允许本地现金记账属经营策略，确认前维持阻止（见 CheckoutPolicy）
+        t.queuedItems > 0 && CheckoutPolicy.BLOCK_WHEN_CLOUD_PENDING -> "有 ${t.queuedItems} 份待云端同步，联网后再结账"
+        else -> null
+    }
+}
+
+/** 金额统一两位小数，负数写作 −¥。 */
+fun yuan(fen: Long): String {
+    val sign = if (fen < 0) "−" else ""
+    val abs = kotlin.math.abs(fen)
+    return "$sign¥${abs / 100}.${(abs % 100).toString().padStart(2, '0')}"
+}
+
+/** 分转「元」输入文本：4800 → "48"，4850 → "48.5"。 */
+fun fenToInput(fen: Long): String = if (fen % 100 == 0L) "${fen / 100}" else yuan(fen).removePrefix("¥").trimEnd('0')
+
+
+/**
+ * 结账策略（N3-02）。建议规则：主POS已提交且必需厨房目标已送达时，云待同步也可本地现金记账；线上支付须取得渠道可信结果。
+ * 该规则待门店确认，确认前保持 new/queued 阻止结账；厨房失败或未知始终须先处理（DeliveryRules）。
+ */
+object CheckoutPolicy {
+    const val BLOCK_WHEN_CLOUD_PENDING = true
+    const val STATUS = "待门店确认：云待同步时暂不允许结账"
+}
