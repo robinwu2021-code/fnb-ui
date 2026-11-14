@@ -24,7 +24,7 @@ internal class DiningService(private val k: StoreKernel) : FloorRepository, Orde
     private fun newId(prefix: String) = k.newId(prefix)
     private fun actorName(v: Vault) = k.actorName(v)
     private fun supervisorAuth(v: Vault, who: String, secret: String) = k.supervisorAuth(v, who, secret)
-    private fun StoreData.withCopies(job: PrintJob) = k.copies(this, job)
+    private fun StoreData.enqueue(job: PrintJob) = k.enqueue(this, job)
     private fun StoreData.kitchenJob(tableId: String, batch: String) = k.kitchenJob(this, tableId, batch)
     private fun page(type: String, tableId: String) = k.pageEvent(type, tableId)
     private fun fail(msg: String) = Result.failure<Unit>(IllegalStateException(msg))
@@ -114,7 +114,7 @@ internal class DiningService(private val k: StoreKernel) : FloorRepository, Orde
             // 收款记录、离线同步队列、会员积分 / 储值：公共收款 Settlement（零售收银同一份）
             var next = settlement.collect(s, pay, online, tableId, "$tableId $method 收款 ${yuan(amount)}", member?.id, null, pid, actorName(state.value))
             next.withTable(tableId) { it.copy(status = TableStatus.Paid, paid = amount) }.withOrder(tableId, TableOrder())
-                .copy(printJobs = next.printJobs + next.withCopies(receipt), settledOrders = next.settledOrders + snap)
+                .enqueue(receipt).copy(settledOrders = next.settledOrders + snap)
         }
     }
 
@@ -235,8 +235,8 @@ internal class DiningService(private val k: StoreKernel) : FloorRepository, Orde
             if (request.kind == AdjustmentKind.Void) {
                 val station = line?.let { KdsRules.stationFor(s, it.dishId) }.orEmpty()
                 val tag = if (s.kdsStations.size > 1 && station.isNotBlank()) "·$station" else ""
-                next = next.copy(printJobs = next.printJobs + next.withCopies(PrintJob(newId("V"), PrintKind.Kitchen,
-                    "$tableId 退菜单$tag", listOf("【退菜单$tag】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock(), station = station)))
+                next = next.enqueue(PrintJob(newId("V"), PrintKind.Kitchen,
+                    "$tableId 退菜单$tag", listOf("【退菜单$tag】$tableId", "${line?.name} ×${request.quantity}", line?.spec.orEmpty(), "原因：${audit.reason}", "授权：${audit.supervisor}"), clock(), station = station))
             }
             v.copy(stores = v.stores + (s.id to next))
         }

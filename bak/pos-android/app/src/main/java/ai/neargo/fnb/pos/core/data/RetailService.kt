@@ -26,7 +26,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
     private fun actorName(v: Vault) = k.actorName(v)
     private fun need(perm: Perm) = k.need(perm)
     private fun supervisorAuth(v: Vault, who: String, secret: String) = k.supervisorAuth(v, who, secret)
-    private fun StoreData.withCopies(job: PrintJob) = k.copies(this, job)
+    private fun StoreData.enqueue(job: PrintJob) = k.enqueue(this, job)
     private suspend fun storeOp(event: LocalWorkspace.EventSpec? = null, check: (StoreData) -> String? = { null }, f: (StoreData) -> StoreData) = k.storeOp(event, check, f)
     private suspend fun <T> transaction(event: LocalWorkspace.EventSpec? = null, f: (Vault) -> Pair<Vault, T>): T = k.transaction(event, f)
     private fun EventSpec(resolve: (StoreData, StoreData) -> Triple<String, String, List<String>>) = LocalWorkspace.EventSpec(resolve)
@@ -242,7 +242,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                 mem?.id, credit?.memberId?.ifBlank { null }, no, actor)
             val body = saleReceipt(s0, x, credit, pay)
             sale = x
-            s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no", body, clock())))
+            s.enqueue(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no", body, clock()))
                 .withRetail { it.copy(sales = listOf(x) + it.sales, saleSeq = it.saleSeq + 1, credit = null) }
         }.map { sale!! }
     }
@@ -313,7 +313,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
                     else if (req.method == PayMethods.STORED) s.copy(walletBalance = s.walletBalance + amount) else s
                 val body = listOf(s0.settings.shortName, "退货小票", "原单 $ref") + back.map { (l, n) -> "${l.name}${l.sku?.let { " $it" }.orEmpty()}  ${if (l.grams != null) "${l.grams}g" else "×$n"}" } +
                     listOfNotNull("退款 ${req.method} ${yuan(amount)}", "原因：${req.reason.label}", approver.ifBlank { null }?.let { "授权：$it" })
-                s = s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "退货小票 $ref", body, clock())))
+                s = s.enqueue(PrintJob(newId("R"), PrintKind.Receipt, "退货小票 $ref", body, clock()))
             }
             out = r
             s.withRetail { d ->
@@ -332,7 +332,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
         retailOnly(s) ?: if (s.retail.sales.none { it.no == no }) "原单不存在" else need(Perm.Checkout)
     }) { s ->
         val x = s.retail.sales.first { it.no == no }
-        s.copy(printJobs = s.printJobs + s.withCopies(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no（补打）", saleReceipt(s, x), clock(), reprint = true)))
+        s.enqueue(PrintJob(newId("R"), PrintKind.Receipt, "零售小票 $no（补打）", saleReceipt(s, x), clock(), reprint = true))
     }
 
     override suspend fun setRetailPrice(productId: String, price: Long): Result<Unit> = storeOp(event = retailEvent("RetailPriceChanged", """{"product":"$productId","price":$price}"""), check = { s ->
@@ -417,7 +417,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
             var next = s
             if (s.retail.settings.autoAccept) {
                 o = o.copy(state = OnlineState.Picking)
-                if (s.retail.settings.printPick) next = next.copy(printJobs = next.printJobs + next.withCopies(pickList(s, o)))
+                if (s.retail.settings.printPick) next = next.enqueue(pickList(s, o))
             }
             next.withRetail { it.copy(online = listOf(o) + it.online, onlineSeq = seq + 1) }
         }.map { no }
@@ -438,7 +438,7 @@ internal class RetailService(private val k: StoreKernel) : RetailRepository {
             val o = s0.retail.online.first { it.no == no }
             var s = s0
             val next = when (o.state) {
-                OnlineState.New -> { if (s.retail.settings.printPick) s = s.copy(printJobs = s.printJobs + s.withCopies(pickList(s, o))); o.copy(state = OnlineState.Picking) }
+                OnlineState.New -> { if (s.retail.settings.printPick) s = s.enqueue(pickList(s, o)); o.copy(state = OnlineState.Picking) }
                 OnlineState.Picking -> o.copy(state = OnlineState.Ready)
                 else -> {
                     // 完成：生成零售单（渠道 = 小程序 / 平台），扣库存，记「线上支付」收款（钱在平台，不进现金）

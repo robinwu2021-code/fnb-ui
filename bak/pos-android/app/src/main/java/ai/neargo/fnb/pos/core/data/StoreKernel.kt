@@ -31,6 +31,8 @@ internal interface StoreKernel {
     suspend fun <T> transaction(event: LocalWorkspace.EventSpec? = null, f: (Vault) -> Pair<Vault, T>): T
     /** 打印任务加上路由配置的副本 */
     fun copies(s: StoreData, job: PrintJob): List<PrintJob>
+    /** 打印任务入队（含副本份数）：餐饮、零售共用 */
+    fun enqueue(s: StoreData, job: PrintJob): StoreData = s.copy(printJobs = s.printJobs + copies(s, job))
     /** 主管授权：员工姓名 / ID + PIN、主管账号 + 密码或体验账号；返回授权人 */
     fun supervisorAuth(v: Vault, who: String, secret: String): Result<String>
     /** 桌台 / 订单事件（载荷与聚合按桌台、订单、预订划分） */
